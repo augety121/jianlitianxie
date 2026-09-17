@@ -1,0 +1,29 @@
+name: Review source bundle
+on:
+  push:
+    branches: ['codex/local-vault-quality-20260917']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test && npm run check
+      - name: Bundle tracked active source only
+        run: |
+          mkdir -p dist
+          git archive --format=zip --output=dist/active-source.zip HEAD README.md LICENSE .gitignore package.json bridge extension tests scripts docs .github
+      - uses: actions/upload-artifact@v4
+        with:
+          name: active-source-review
+          path: dist/active-source.zip
+          if-no-files-found: error
+          retention-days: 14
