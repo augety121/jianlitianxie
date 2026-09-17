@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "简历填写 · 本地资料与 MCP",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "整表扫描、本地匹配、授权批量填写、集中核对。不自动提交。",
   "permissions": [
     "activeTab",

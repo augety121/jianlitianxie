@@ -15,6 +15,17 @@ test('MCP handshake, authenticated local UI, consent and redaction',{timeout:150
  const noOrigin=auth=>fetch('http://127.0.0.1:19329/status',{headers:{Authorization:'Bearer '+auth}});
  assert.equal((await noOrigin(token)).status,200);
  assert.equal((await noOrigin('wrong')).status,401);
+ assert.equal((await request('/mcp',{method:'tools/call',params:{name:'profile_catalog'}},undefined,'wrong')).status,401);
+ assert.equal((await request('/mcp',{method:'tools/call',params:{name:'eval'}})).status,400);
+ const httpCatalog=await (await request('/mcp',{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'profile_catalog',arguments:{}}})).json();
+ assert.deepEqual(JSON.parse(httpCatalog.result.content[0].text),{facts:[]});
+ const proxy=spawn(process.execPath,['bridge/server.mjs'],{env:{...process.env,RESUME_DATA_DIR:dir,RESUME_BRIDGE_PORT:19329},stdio:['pipe','pipe','pipe']});
+ try{
+  const line=readline.createInterface({input:proxy.stdout});
+  const response=new Promise((resolve,reject)=>{line.once('line',s=>resolve(JSON.parse(s)));proxy.once('error',reject);proxy.once('exit',()=>reject(Error('proxy exited')));});
+  proxy.stdin.write(JSON.stringify({jsonrpc:'2.0',id:7,method:'tools/call',params:{name:'profile_catalog',arguments:{}}})+'\n');
+  assert.deepEqual(JSON.parse((await response).result.content[0].text),{facts:[]});
+ }finally{proxy.stdin.end();await new Promise(r=>proxy.once('exit',r));}
  assert.equal((await request('/status',null,'null')).status,403);
  await request('/profile',{facts:[{id:'n',label:'姓名',value:'PRIVATE_VALUE',confirmed:true}]});
  const catalog=await rpc('tools/call',{name:'profile_catalog'});assert.ok(!JSON.stringify(catalog).includes('PRIVATE_VALUE'));

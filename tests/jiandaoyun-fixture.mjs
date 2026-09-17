@@ -1,0 +1,21 @@
+import {makePlan} from '../bridge/planner.mjs?v=0.3.0';
+const $=s=>document.querySelector(s);
+$('#gender').onclick=()=>$('#menu').hidden=!$('#menu').hidden;
+for(const o of document.querySelectorAll('.x-combo-dropdown-item'))o.onclick=()=>{$('#gender .value-content').textContent=o.textContent;$('#menu').hidden=true;};
+for(const o of document.querySelectorAll('.x-radio-wrapper'))o.onclick=()=>{document.querySelectorAll('.x-radio').forEach(x=>x.classList.remove('is-checked'));o.parentElement.classList.add('is-checked');};
+$('#teams').style.minHeight='20px';$('#teams').onclick=()=>$('#team-menu').hidden=!$('#team-menu').hidden;
+function wireTeams(){for(const o of document.querySelectorAll('#team-menu .x-combo-dropdown-item'))o.onclick=()=>{const tag=document.createElement('span');tag.className='x-tag';tag.textContent=o.textContent;$('#teams .value-content').append(tag);$('#team-menu').innerHTML='<div class="x-combo-dropdown-item">团队甲</div><div class="x-combo-dropdown-item">团队乙</div>';wireTeams();};}wireTeams();
+$('#add-award').onclick=()=>{$('#awards').insertBefore($('#awards .fx-subform-row').cloneNode(true),$('#add-award'));};
+$('#run').onclick=async()=>{try{
+const s=await globalThis.__resumeFillEngine.scan();const by=name=>s.fields.find(f=>f.label===name);
+const facts=[['name','姓名','测试者'],['gender','性别','男'],['intern','是否有实习经历','是'],['birth','出生年月','2000-02'],['role','职位','测试工程师']].map(([id,label,value])=>({id,label,value,confirmed:true}));
+const p=makePlan(s,{facts},{[by('职位').id]:'role'});const result=await globalThis.__resumeFillEngine.apply(p);
+const s2=await globalThis.__resumeFillEngine.scan();const checks={labels:s.coverage.unlabeled===0,fields:s.fields.length===11,dropdownOptions:by('性别').options.length===2,subtableSection:by('职位').section==='实习经历',subtableAnchor:by('职位').anchors.includes('示例公司'),required:by('公司').required,month:by('出生年月').datePrecision==='month',files:s.coverage.attachments===1,text:$('#name').value==='测试者',selection:$('#gender .value-content').textContent==='男',radio:s2.fields.find(f=>f.label==='是否有实习经历').value==='是',date:$('#birth').value==='2000-02',row:$('#role').value==='测试工程师',preserve:$('#company').value==='示例公司',verified:result.results.filter(r=>r.status==='verified').length===5,noSubmit:result.submitted===false};const rows=s2.fields.find(f=>f.type==='repeat-group');
+const multi=s2.fields.find(f=>f.label==='意向岗位');const teams=s2.fields.find(f=>f.label==='意向团队');
+const extra=makePlan(s2,{facts:[{id:'count',label:rows.label,value:'3',confirmed:true},{id:'multi',label:'意向岗位',value:'["后端","AI"]',confirmed:true},{id:'teams',label:'意向团队',value:'["团队甲","团队乙"]',confirmed:true}]},{[rows.id]:'count',[multi.id]:'multi',[teams.id]:'teams'});
+const more=await globalThis.__resumeFillEngine.apply(extra);const s3=await globalThis.__resumeFillEngine.scan();
+const added=s3.fields.filter(f=>f.label==='奖项名称');const mappings=Object.fromEntries(added.map((f,i)=>[f.id,'award-'+i]));const awards=added.map((f,i)=>({id:'award-'+i,label:f.label,value:'虚构奖项'+i,confirmed:true}));
+const awardReport=await globalThis.__resumeFillEngine.apply(makePlan(s3,{facts:awards},mappings));
+checks.addedRows=added.length===3&&added.every((f,i)=>f.rowIndex===i);checks.multi=[...$('#roles').selectedOptions].length===2;checks.allRowsFilled=awardReport.results.filter(r=>r.status==='verified').length===3&&[...document.querySelectorAll('#awards input')].every((e,i)=>e.value==='虚构奖项'+i);checks.onlyAddsMissing=more.results.filter(r=>r.status==='verified').length===3;checks.customMultiAfterRedraw=document.querySelectorAll('#teams .x-tag').length===2;
+$('#report').textContent=JSON.stringify({passed:Object.values(checks).every(Boolean),checks,result,extra,more,awardReport},null,2);
+}catch(e){$('#report').textContent=e.stack;}};
