@@ -22,6 +22,9 @@ test('MCP handshake, authenticated local UI, consent and redaction',{timeout:150
  await request('/share',{ids:['n']});assert.ok(JSON.stringify(await rpc('tools/call',{name:'profile_read_approved'})).includes('PRIVATE_VALUE'));
  assert.equal((await rpc('tools/call',{name:'profile_read_approved'})).result.isError,true);
  await request('/snapshot',{snapshot:{id:'s',url:'https://example.test/form',fields:[{id:'f',label:'姓名',type:'text',value:''}]}});
+ assert.equal((await rpc('tools/call',{name:'form_context'})).result.isError,true);
+ await request('/snapshot',{snapshot:{id:'s',shareWithCodex:true,url:'https://example.test/form',fields:[{id:'f',label:'姓名',type:'text',value:''}]}});
+ assert.ok(JSON.stringify(await rpc('tools/call',{name:'form_context'})).includes('PRIVATE_VALUE'));
  const plan=await rpc('tools/call',{name:'form_plan'});assert.ok(!JSON.stringify(plan).includes('PRIVATE_VALUE'));
  const pid=JSON.parse(plan.result.content[0].text).id;
  const req=await rpc('tools/call',{name:'form_request_fill',arguments:{planId:pid}});assert.match(req.result.content[0].text,/needs-user-approval/);

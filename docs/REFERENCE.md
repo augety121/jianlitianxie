@@ -9,3 +9,5 @@
 - https://developers.openai.com/codex/mcp ：Codex stdio MCP 配置。
 
 没有引入上述项目的源代码或依赖。MIT 许可仅覆盖本仓库作者拥有的代码。
+
+2026-09-17只读检查了用户指定的Edge塔塔0.8.2安装目录，查看manifest与content.js中控件处理结构。观察到全站content script、选择器/日期面板/事件派发/上传处理等不同路径，以及远端resume接口。新实现参考分类型适配思路，未复制其实现、图标、密钥、压缩包或商业资源到仓库。
