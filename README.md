@@ -1,1 +1,68 @@
-# jianlitianxie
+# 简历填写助手（Edge / Chrome + Codex MCP）
+
+本地资料匹配 → 整表扫描 → 计划审阅 → 一次授权批量填写 → 集中回读。不会点击保存、下一步、同意声明或最终提交。
+
+## 安装
+
+需要 Node.js 22 或更新版本，不需要 npm 安装依赖。
+
+1. `edge://extensions` 开启开发者模式，加载本仓库 `extension` 文件夹。
+2. 在 Codex MCP 配置中添加以下内容，替换为本机绝对路径。重启或重新连接 MCP。桥接只由一个 Codex 客户端启动，不要重复启动占用端口。
+
+```toml
+[mcp_servers.resume_fill]
+command = "C:/path/to/node.exe"
+args = ["D:/path/to/jianlitianxie/bridge/server.mjs"]
+[mcp_servers.resume_fill.env]
+RESUME_DATA_DIR = "D:/private/resume-data"
+```
+
+3. 将整理后的 `profile.json` 放入上述私密目录（必须在仓库之外）。首次启动自动创建 `bridge-token.txt`。
+4. 打开具体岗位申请页，先上传自己的最新简历并等待网站解析；已有本人修订的信息不要重传覆盖。
+5. 点击扩展图标，粘贴本机配对码、连接桥接。保持面板打开。点击“扫描整表并匹配”或让 Codex 调用 `form_scan` / `form_plan`。
+6. 审阅完整计划，取消不想填写的项目；点击“授权本次计划并批量填写”。最后自己检查、保存、提交。
+
+## 资料来源与导入
+
+```powershell
+python scripts/import-profile.py --md "个人主档.md" --html "最新岗位简历.html" --out "D:/private/resume-data/profile.json"
+```
+
+导入器只负责初步整理，界面支持编辑 JSON。来源优先级：本人最新确认 > 当前岗位简历 > 证书对应字段 > 旧主档。项目最新文字单独存为事实，旧稿不能覆盖。多段教育/项目同名标签不能按数组顺序盲填，Codex 可以通过 `profile_catalog` 获取事实 ID 后指定字段映射。入党月份不能补成1日，未知日期、GPA满分、薪资期待保留空白。岗位亲属声明不能从另一家公司的答案推断。
+
+事实格式：
+```json
+{"schemaVersion":1,"facts":[{"id":"basic-name","label":"姓名","value":"自行填写","aliases":["中文姓名"],"section":"基本信息","source":"本人确认","confirmed":true}]}
+```
+
+## MCP 工具
+
+- `form_scan`：读取用户选定网页的字段结构，不返回已填写的值。
+- `profile_catalog`：仅返回事实标签和 ID。
+- `form_plan`：本机将事实映射到字段，可指定 mappings；返回状态和缺项。
+- `form_request_fill`：提示插件展示计划，不能代替用户批准。
+- `form_result`：读取填写与回读结果，不返回个人值。
+- `profile_read_approved`：仅在插件内逐项勾选授权后，一次性向Codex提供所选资料，5分钟过期。
+- `form_propose_answer`：根据已确认事实提出叙述类草稿；需在插件审阅批准后才能填入，不用于猜测日期、分数或资格。
+
+回读确认成功后，本机会记住该站点路径、分区、字段类型与事实ID的对应关系；同名歧义不记忆，失败会删除对应经验。它是可审查的本地映射积累，不是模型训练，也不能扩大授权。
+
+## 隐私边界
+
+个人资料和审计记录存放在本机目录；配对码只保存在本机文件与扩展会话存储。不使用云同步、遥测或第三方AI接口。HTTP桥接只绑定127.0.0.1，检查扩展Origin、Host和随机配对码。
+
+Codex是外部模型服务：字段标签、分区名以及事实目录会进入Codex上下文；网页标签本身可能夹带个人信息。默认不返回事实值或已填值，不等于所有MCP内容绝对不出设备。将资料填入招聘网站后，网站可能自动保存，这是本次填表授权的目的地。禁止把整个个人目录提交GitHub。
+
+本机文件目前是明文，依赖Windows账户权限及磁盘保护；不声称已做加密保险库。用共享电脑请设置私密目录权限。
+
+## 当前支持范围
+
+支持原生文本、多行文本、日期、select、contenteditable，及可识别的可见Ant/Element候选精确选择。已有非空值默认保留。异步控件不匹配会列出待处理，不反复整表重填。
+
+不是“所有网站一键通吃”：跨域iframe、折叠未展开、下一页、新增多段经历、复杂级联地区、文件上传和验证码需要本人操作后再次扫描；控件回读成功不代表服务器已保存。单选/自定义控件覆盖有限，生产网站仍需逐站验证。
+
+## 开发与测试
+
+`npm test` 测试匹配、来源冲突、日期精度、已有值保护和隐私输出。`npm run check` 检查发布源代码是否混入个人文件和已知敏感样例。实际网站验收与隔离夹具测试分开记录，不能将测试耗时宣称真实网申耗时。
+
+参考项目与原压缩包处理说明见 [docs/REFERENCE.md](docs/REFERENCE.md)。

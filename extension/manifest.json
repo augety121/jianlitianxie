@@ -1,0 +1,10 @@
+{
+  "manifest_version":3,"name":"简历填写 · 本地资料与 MCP","version":"0.1.0",
+  "description":"整表扫描、本地匹配、授权批量填写、集中核对。不自动提交。",
+  "permissions":["activeTab","scripting","storage"],
+  "host_permissions":["http://127.0.0.1:19327/*"],
+  "optional_host_permissions":["https://*/*","http://*/*"],
+  "background":{"service_worker":"background.js"},
+  "action":{"default_title":"打开简历填写助手"},
+  "content_security_policy":{"extension_pages":"script-src 'self'; object-src 'none'; connect-src http://127.0.0.1:19327"}
+}

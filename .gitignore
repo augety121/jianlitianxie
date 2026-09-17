@@ -1,0 +1,11 @@
+legacy/
+node_modules/
+dist/
+private/
+*.local.*
+*.pdf
+*.docx
+*.zip
+test-results/
+.env*
+!*.example.json

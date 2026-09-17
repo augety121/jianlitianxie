@@ -1,0 +1,11 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {makePlan,publicPlan,publicSnapshot} from '../bridge/planner.mjs';
+const fact={id:'name',label:'姓名',value:'示例甲',confirmed:true};
+const snapshot=fields=>({id:'s',url:'https://example.test/form?private=1',fields});
+const field=(extra={})=>({id:'f1',label:'姓名',type:'text',value:'',...extra});
+test('batch uses exact fact; preserves existing input',()=>{const p=makePlan(snapshot([field(),field({id:'f2',label:'邮箱',value:'existing'})]),{facts:[fact]});assert.equal(p.entries[0].value,'示例甲');assert.equal(p.entries[1].status,'preserve');});
+test('no invented date precision or facts',()=>{let p=makePlan(snapshot([field({type:'date'})]),{facts:[{...fact,value:'2024-09'}]});assert.equal(p.entries[0].status,'missing');assert.equal(makePlan(snapshot([field()]),{facts:[]}).entries[0].status,'missing');});
+test('conflicts and ambiguous repeated entities left blank',()=>{const p=makePlan(snapshot([field(),field({id:'f2'})]),{facts:[fact]});assert.ok(p.entries.every(e=>e.status==='missing'));assert.equal(makePlan(snapshot([field()]),{facts:[{...fact,conflict:true}]}).entries[0].status,'missing');});
+test('exact dropdown option only',()=>{assert.equal(makePlan(snapshot([field({options:[{label:'示例甲',value:'a'}]})]),{facts:[fact]}).entries[0].value,'a');assert.equal(makePlan(snapshot([field({options:[{label:'示例',value:'b'}]})]),{facts:[fact]}).entries[0].status,'missing');});
+test('consent and passwords cannot be filled',()=>{for(const f of [field({type:'password'}),field({label:'同意隐私政策'}),field({type:'file'})])assert.equal(makePlan(snapshot([f]),{facts:[fact]}).entries[0].status,'manual');});
+test('MCP omits values and URL query',()=>{const s=snapshot([field({value:'SECRET'})]);assert.ok(!JSON.stringify(publicSnapshot(s)).includes('SECRET'));assert.ok(!JSON.stringify(publicSnapshot(s)).includes('private=1'));const p=makePlan(snapshot([field()]),{facts:[fact]});assert.ok(!JSON.stringify(publicPlan(p)).includes('示例甲'));});
+test('explicit fact mapping resolves repeated education',()=>{const p=makePlan(snapshot([field(),field({id:'f2'})]),{facts:[fact]},{f1:'name'});assert.equal(p.entries[0].status,'ready');assert.equal(p.entries[1].status,'missing');});
