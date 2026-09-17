@@ -11,9 +11,9 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
  const tabId=sender.tab.id;
  (async()=>{
  if(m.type==='resume-manage'){await chrome.tabs.create({url:chrome.runtime.getURL('panel.html')+'?tab='+tabId});return {ok:true};}
- if(m.type==='resume-scan'){const snapshot=await engine(tabId,'scan');await api('/snapshot',{snapshot:{...snapshot,shareWithCodex:!!m.shareWithCodex},commandId:m.commandId});return api('/plan',{});}
+ if(m.type==='resume-scan'){const snapshot=await engine(tabId,'scan');await api('/snapshot',{snapshot:{...snapshot,owner:String(tabId),shareWithCodex:!!m.shareWithCodex},commandId:m.commandId});return api('/plan',{});}
  if(m.type==='resume-upload'){if(!m.file||m.file.base64?.length>14000000)throw Error('附件过大（最多10MB）');return engine(tabId,'upload',{...m,url:sender.url});}
- if(m.type==='resume-poll'){return api('/poll');}
+ if(m.type==='resume-poll'){return api('/poll?owner='+tabId);}
  if(m.type==='resume-plan'){return api('/plan');}
  if(m.type==='resume-fill'){
  const plan=await api('/plan');if(!plan||plan.id!==m.planId)throw Error('计划已变化，请重新扫描核对');

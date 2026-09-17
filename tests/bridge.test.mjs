@@ -36,5 +36,27 @@ test('MCP handshake, authenticated local UI, consent and redaction',{timeout:150
  assert.equal((await request('/result',{planId:pid,results:[{fieldId:'f',status:'verified'}]})).status,200);
  const memory=JSON.parse(await fs.readFile(path.join(dir,'experience.json'),'utf8'));assert.deepEqual(Object.values(memory),['n']);
  assert.equal((await request('/begin',{planId:pid})).status,400);
+ // Codex owns the local profile and hands one prepared batch to the extension.
+ const callTool=(name,args={})=>rpc('tools/call',{name,arguments:args});
+ await request('/snapshot',{snapshot:{id:'s2',owner:'tab-A',shareWithCodex:true,url:'https://example.test/form',fields:[{id:'f',label:'姓名',type:'text',value:''},{id:'intro',label:'自我评价',type:'textarea',value:'',maxLength:30}]}});
+ assert.equal((await callTool('profile_upsert',{facts:[{id:'n',label:'姓名',value:'UPDATED_PRIVATE',source:'本人确认',confirmed:true}]})).result.isError,undefined);
+ assert.ok(JSON.stringify(await callTool('profile_search',{query:'姓名'})).includes('UPDATED_PRIVATE'));
+ await fs.writeFile(path.join(dir,'evidence.json'),JSON.stringify({pages:[{document:'示例.pdf',page:1,text:'教育经历 历史记录'}]}));
+ assert.ok(JSON.stringify(await callTool('source_search',{query:'教育经历'})).includes('示例.pdf'));
+ assert.equal((await callTool('form_prepare',{snapshotId:'old'})).result.isError,true);
+ const prepared=await callTool('form_prepare',{snapshotId:'s2',mappings:{f:'n'},answers:[{fieldId:'intro',text:'虚构测试描述',factIds:['n']}]});
+ assert.equal(prepared.result.isError,undefined);const pid2=JSON.parse(prepared.result.content[0].text).id;
+ assert.equal((await callTool('form_fill',{planId:pid2})).result.isError,undefined);
+ assert.deepEqual((await (await request('/poll?owner=tab-B')).json()).commands,[]);
+ const commands=(await (await request('/poll?owner=tab-A')).json()).commands;
+ assert.equal(commands[0].type,'fill');assert.deepEqual(commands[0].fieldIds,['f','intro']);
+ const localPlan=await (await request('/plan')).json();assert.equal(localPlan.entries[1].factId,undefined);
+ assert.equal((await request('/begin',{planId:pid2})).status,200);
+ await request('/result',{planId:pid2,results:[{fieldId:'intro',status:'verified'}]});
+ assert.ok(!JSON.stringify(JSON.parse(await fs.readFile(path.join(dir,'experience.json'),'utf8'))).includes('自我评价'));
+ await request('/snapshot',{snapshot:{id:'s3',shareWithCodex:false,url:'https://example.test/form',fields:[]}});
+ assert.equal((await callTool('profile_upsert',{facts:[]})).result.isError,true);
+ assert.equal((await callTool('source_search',{query:'教育经历'})).result.isError,true);
+
  }finally{p.stdin.end();await new Promise(r=>p.once('exit',r));await fs.rm(dir,{recursive:true,force:true});}
 });
