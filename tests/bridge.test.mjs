@@ -1,17 +1,21 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import readline from 'node:readline';
 test('MCP handshake, authenticated local UI, consent and redaction',{timeout:15000},async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'resume-bridge-test-'));
- const p=spawn(process.execPath,['bridge/server.mjs'],{env:{...process.env,RESUME_DATA_DIR:dir},stdio:['pipe','pipe','pipe']});
+ const p=spawn(process.execPath,['bridge/server.mjs'],{env:{...process.env,RESUME_DATA_DIR:dir,RESUME_BRIDGE_PORT:19329},stdio:['pipe','pipe','pipe']});
  const answers=new Map();let id=0;readline.createInterface({input:p.stdout}).on('line',line=>{const r=JSON.parse(line);answers.get(r.id)?.(r);});
  const rpc=(method,params={})=>new Promise(resolve=>{const n=++id;answers.set(n,resolve);p.stdin.write(JSON.stringify({jsonrpc:'2.0',id:n,method,params})+'\n');});
  try{
  await new Promise((resolve,reject)=>{p.stderr.once('data',resolve);p.once('error',reject);p.once('exit',code=>reject(Error('bridge exited '+code)));});
  const token=(await fs.readFile(path.join(dir,'bridge-token.txt'),'utf8')).trim();
- const request=(url,data,origin='chrome-extension://'+'a'.repeat(32),auth=token)=>fetch('http://127.0.0.1:19327'+url,{method:data?'POST':'GET',headers:{Origin:origin,Authorization:'Bearer '+auth,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
+ const request=(url,data,origin='chrome-extension://'+'a'.repeat(32),auth=token)=>fetch('http://127.0.0.1:19329'+url,{method:data?'POST':'GET',headers:{Origin:origin,Authorization:'Bearer '+auth,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
  assert.equal((await rpc('initialize')).result.serverInfo.name,'jianlitianxie');
  const list=(await rpc('tools/list')).result.tools;assert.ok(!list.some(x=>/submit|execute|eval/.test(x.name)));
  assert.equal((await request('/profile',null,'https://evil.test')).status,403);
  assert.equal((await request('/profile',null,undefined,'wrong')).status,401);
+ const noOrigin=auth=>fetch('http://127.0.0.1:19329/status',{headers:{Authorization:'Bearer '+auth}});
+ assert.equal((await noOrigin(token)).status,200);
+ assert.equal((await noOrigin('wrong')).status,401);
+ assert.equal((await request('/status',null,'null')).status,403);
  await request('/profile',{facts:[{id:'n',label:'姓名',value:'PRIVATE_VALUE',confirmed:true}]});
  const catalog=await rpc('tools/call',{name:'profile_catalog'});assert.ok(!JSON.stringify(catalog).includes('PRIVATE_VALUE'));
  assert.equal((await rpc('tools/call',{name:'profile_read_approved'})).result.isError,true);

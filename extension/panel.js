@@ -1,8 +1,13 @@
 const $=id=>document.getElementById(id);const tabId=Number(new URLSearchParams(location.search).get('tab'));
 let token='',plan=null,busy=false,timer;const API='http://127.0.0.1:19327';
-async function api(route,data){const r=await fetch(API+route,{method:data===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});if(!r.ok)throw Error('连接失败或配对码错误（'+r.status+'）');const body=await r.json();if(body?.error)throw Error(body.error);return body;}
+async function api(route,data){
+ let r;try{r=await fetch(API+route,{method:data===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(8000)});}catch{throw Error('未连上本机服务：请在Codex重新连接resume_fill MCP，再点连接。');}
+ const body=await r.json().catch(()=>({}));
+ if(!r.ok){if(r.status===401)throw Error('配对码不正确，请重新复制本机 bridge-token.txt 的完整内容。');if(r.status===403)throw Error('来源校验被旧版桥接拒绝：请在Codex重新连接resume_fill MCP，加载更新后再连接。');throw Error(body.error||'本机服务错误（'+r.status+'）');}
+ return body;
+}
 async function engine(action,arg){const tab=await chrome.tabs.get(tabId);if(!/^https?:/.test(tab.url||''))throw Error('请从岗位网页点击扩展图标');await chrome.scripting.executeScript({target:{tabId},files:['engine.js']});const r=await chrome.scripting.executeScript({target:{tabId},func:(a,b)=>globalThis.__resumeFillEngine[a](b),args:[action,arg??null]});return r[0].result;}
-function show(p){plan=p;$('approve').disabled=!p||!p.entries.some(x=>x.status==='ready');$('table').replaceChildren();$('missing').replaceChildren();if(!p)return;
+function show(p){plan=p;$('empty').hidden=!!p;$('approve').disabled=!p||!p.entries.some(x=>x.status==='ready');$('table').replaceChildren();$('missing').replaceChildren();if(!p)return;
  $('target').textContent=p.url;$('summary').textContent=`待填 ${p.entries.filter(x=>x.status==='ready').length} 项，保留 ${p.entries.filter(x=>x.status==='preserve').length} 项，待处理 ${p.entries.filter(x=>['missing','manual'].includes(x.status)).length} 项`;
  const table=document.createElement('table');const head=document.createElement('tr');for(const t of ['填写','字段 / 分区','本地内容','来源 / 原因']){const th=document.createElement('th');th.textContent=t;head.append(th);}table.append(head);
  for(const entry of p.entries){const tr=document.createElement('tr');const check=document.createElement('input');check.type='checkbox';check.checked=entry.status==='ready';check.disabled=entry.status!=='ready';check.onchange=()=>entry.status=check.checked?'ready':'skipped';
@@ -11,8 +16,8 @@ function show(p){plan=p;$('approve').disabled=!p||!p.entries.some(x=>x.status===
  }$('table').append(table);
 }
 async function scan(commandId){if(busy)return;busy=true;try{const s=await engine('scan');await api('/snapshot',{snapshot:s,commandId});show(await api('/plan',{}));$('result').textContent=s.limitations.join('；');}finally{busy=false;}}
-function handle(fn){return async()=>{try{await fn();}catch(e){$('status').textContent=e.message;}};}
-$('connect').onclick=handle(async()=>{token=$('token').value.trim();await api('/status');await chrome.storage.session.set({bridgeToken:token});clearInterval(timer);timer=setInterval(handle(async()=>{const p=await api('/poll');$('status').textContent='已连接';$('count').textContent=`${p.profileCount} 条本地事实`;for(const c of p.commands){if(c.type==='scan')await scan(c.id);if(c.type==='review')show(await api('/plan'));}}),1500);$('status').textContent='已连接';await catalog();});
+function handle(fn){return async()=>{try{await fn();}catch(e){$('status').textContent=e.message;$('status').dataset.state='error';}};}
+$('connect').onclick=handle(async()=>{token=$('token').value.trim();if(!token)throw Error('请先粘贴本机配对码');clearInterval(timer);await api('/status');await chrome.storage.session.set({bridgeToken:token});clearInterval(timer);timer=setInterval(handle(async()=>{const p=await api('/poll');$('status').textContent='已连接 · 资料在本机';$('status').dataset.state='ok';$('count').textContent=`${p.profileCount} 条本地事实`;for(const c of p.commands){if(c.type==='scan')await scan(c.id);if(c.type==='review')show(await api('/plan'));}}),1500);$('status').textContent='已连接 · 资料在本机';$('status').dataset.state='ok';await catalog();});
 $('scan').onclick=handle(()=>scan());
 $('approve').onclick=handle(async()=>{if(!plan||busy)return;busy=true;$('approve').disabled=true;try{const current=await api('/plan');if(!current||current.id!==plan.id)throw Error('计划已变化，请重新查看');await api('/begin',{planId:plan.id});let report;try{report=await engine('apply',plan);await api('/result',{...report,planId:plan.id});}catch(e){await api('/cancel',{planId:plan.id});throw e;}$('result').textContent=`回读确认 ${report.results.filter(x=>x.status==='verified').length} 项；待检查 ${report.results.filter(x=>x.status!=='verified').length} 项。未点击保存或提交。`;for(const r of report.results.filter(x=>x.status!=='verified')){const li=document.createElement('li');li.textContent=(plan.entries.find(x=>x.fieldId===r.fieldId)?.label||r.fieldId)+'：'+r.status;$('missing').append(li);}plan=null;}finally{busy=false;}});
 $('import').onchange=handle(async()=>{const f=$('import').files[0];if(!f)return;const p=JSON.parse(await f.text());await api('/profile',p);$('count').textContent=p.facts.length+' 条事实已导入';show(null);});
@@ -24,4 +29,4 @@ $('saveProfile').onclick=handle(async()=>{await api('/profile',JSON.parse($('pro
 async function records(){const {records=[]}=await chrome.storage.local.get('records');$('records').textContent=records.map(r=>`${r.date} ${r.company} ${r.role} ${r.stage}`).join('\n');return records;}
 $('record').onclick=handle(async()=>{const list=await records();list.unshift({company:$('company').value,role:$('role').value,stage:$('stage').value,date:new Date().toISOString().slice(0,10)});await chrome.storage.local.set({records:list});await records();});
 $('export').onclick=handle(async()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(await records(),null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='投递记录.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-chrome.storage.session.get('bridgeToken').then(s=>{if(s.bridgeToken)$('token').value=s.bridgeToken;});records();
+if(chrome?.storage?.session)chrome.storage.session.get('bridgeToken').then(s=>{if(s.bridgeToken){$('token').value=s.bridgeToken;$('connect').click();}});if(chrome?.storage?.local)records();
