@@ -3,7 +3,7 @@ import {FrameBroker} from './core/frame-broker.mjs';
 import {WorkspaceRun} from './core/workspace-run.mjs';
 import {trustedWorkspace, secureTarget} from './core/workspace-policy.mjs';
 /** No web-page sender can call these routes, even if it guesses the message names. */
-export function createWorkspace(chrome, {api, inject, legacyBusy}) {
+export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
   const storageReady = Promise.all([chrome.storage.local.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'}), chrome.storage.session.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'})]);
   const vault = new VaultSession(chrome.storage.local), broker = new FrameBroker(chrome), run = new WorkspaceRun(vault, broker);
   let sharedTab = null, sharedUntil = 0, grantId = null, epoch = 0, pendingShare = null;
@@ -47,6 +47,11 @@ export function createWorkspace(chrome, {api, inject, legacyBusy}) {
       if (!s.unlocked && run.job) await run.stop();
       if (sharedTab !== null && Date.now() >= sharedUntil) {sharedTab=null;sharedUntil=0;grantId=null;await remember();}
       return {...s, mode: await mode(), sharedUntil, busy: run.busy};
+    }
+    if (m.type === 'workspace-pair') {
+      if (pendingShare || sharedTab !== null || run.busy || legacyBusy()) throw Error('请先撤销授权并停止当前任务，再更改配对');
+      if (typeof pair !== 'function') throw Error('配对功能未初始化，请重新加载扩展');
+      return pair(m.token);
     }
     if (m.type === 'workspace-stop') return run.stop();
     if (m.type === 'workspace-lock') { vault.lock(); await run.stop(); await revoke(); return {locked: true}; }

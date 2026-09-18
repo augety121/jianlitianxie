@@ -1,3 +1,5 @@
+import {verifyBridgePairing} from '../extension/core/bridge-pairing.mjs';
+import {withDeadline} from '../extension/core/execution-deadline.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -7,7 +9,7 @@ async function harness(fetcher) {
  let listener, opened = 0; const executed = [], routes = [];
  const local={bridgeToken:'fictional-test',resumeMode:'mcp'}, session={};
  const store=data=>({setAccessLevel:async()=>{},get:async key=>({[key]:structuredClone(data[key])}),set:async values=>Object.assign(data,structuredClone(values))});
- const plan = {id:'p', url:'https://jobs.test/apply', entries:[{fieldId:'f',status:'ready'}]};
+ const plan = {expiresAt:Date.now()+300000,id:'p', url:'https://jobs.test/apply', entries:[{fieldId:'f',status:'ready'}]};
  const chrome = {runtime:{id:'own-extension',getURL:x=>'chrome-extension://own/'+x,onMessage:{addListener:f=>listener=f}},
   storage:{local:store(local),session:store(session)},
   tabs:{create:async()=>opened++,onUpdated:{addListener(){}},onRemoved:{addListener(){}}},action:{onClicked:{addListener(){}}},
@@ -18,8 +20,8 @@ async function harness(fetcher) {
   if(route==='/begin' && body.url!==plan.url)return {ok:false,json:async()=>({error:'计划不属于当前页面'})};
   return {ok:true,json:async()=>route==='/begin'?{ok:true,plan}:{ok:true}};
  };
- const source=(await fs.readFile('extension/background.js','utf8')).replace("import {createWorkspace} from './workspace-worker.mjs';",'');
- vm.runInNewContext(source,{createWorkspace,chrome,URL,Set,Map,console,AbortController,setTimeout,clearTimeout,fetch});
+ const source=(await fs.readFile('extension/background.js','utf8')).replace("import {createWorkspace} from './workspace-worker.mjs';",'').replace("import {withDeadline} from './core/execution-deadline.mjs';",'').replace("import {verifyBridgePairing} from './core/bridge-pairing.mjs';",'');
+ vm.runInNewContext(source,{createWorkspace,withDeadline,verifyBridgePairing,chrome,URL,Set,Map,console,AbortController,setTimeout,clearTimeout,fetch});
  const call=(m,url='https://jobs.test/apply',id='own-extension',frameId=0)=>new Promise(resolve=>{const handled=listener(m,{id,frameId,tab:{id:77},url},resolve);if(!handled)resolve(null);});
  return {call,executed,routes,get opened(){return opened;},local};
 }

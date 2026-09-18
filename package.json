@@ -16,7 +16,6 @@
     "test:ui": "python tests/transport-ui.py",
     "bench:transport": "node tests/transport-bench.mjs",
     "test:workspace": "python tests/workspace-ui.py",
-    "test:coverage": "python tests/coverage-browser.py",
     "test:mv3": "python tests/workspace-mv3.py"
   }
 }

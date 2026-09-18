@@ -37,7 +37,7 @@ SHIM=r"""() => {
    else data={ok:true};return {data};
   }catch(e){return {error:e.message};}
  }};
- window.chrome={runtime,storage:{local:{get:async()=>({}),set:async()=>{},remove:async()=>{}},session:{remove:async()=>{}}},
+ window.chrome={runtime,storage:{local:{get:async()=>({resumeMode:'mcp'}),set:async()=>{},remove:async()=>{}},session:{remove:async()=>{}}},
   tabs:{get:async()=>({url:'https://jobs.example.invalid/form'})},scripting:{executeScript:async command=>{
    if(command.files)return [];
    const [action,arg]=command.args;state.calls.push({engine:action});
@@ -52,7 +52,7 @@ SHIM=r"""() => {
   else if(path==='/poll')data={revision:state.revision,commands:[],selected:true,profileCount:state.entries};
   else if(path==='/events')data=await pendingWait(options.signal);
   else if(path==='/snapshot'){wake();data={plan:plan()};}
-  else if(path==='/begin')data={plan:{...state.plan,entries:state.plan.entries.map(e=>({...e,status:body.fieldIds.includes(e.fieldId)?'ready':'skipped'}))}};
+  else if(path==='/begin')data={plan:{...state.plan,expiresAt:Date.now()+300000,entries:state.plan.entries.map(e=>({...e,status:body.fieldIds.includes(e.fieldId)?'ready':'skipped'}))}};
   else if(path==='/cancel'){state.endFill?.();data={ok:true};}
   else data={ok:true};return {ok:true,json:async()=>data};
  };
@@ -74,7 +74,10 @@ with sync_playwright() as pw:
             html=re.sub(r'<link\b[^>]*>','',html)
             page.set_content(html);page.add_style_tag(path=str(ROOT/'extension/panel.css'))
         page.evaluate(SHIM);page.add_script_tag(path=str(ROOT/'extension/poll-loop.js'))
-        page.add_script_tag(path=str(ROOT/f'extension/{kind if kind=="widget" else "panel"}.js'))
+        source=(ROOT/f'extension/{kind if kind=="widget" else "panel"}.js').read_text()
+        if kind=='panel':
+            source=source.replace("import {withDeadline} from './core/execution-deadline.mjs';",(ROOT/'extension/core/execution-deadline.mjs').read_text().replace('export ',''))
+        page.add_script_tag(content=source)
     def shadow_click(selector):
         rect=page.evaluate("s=>{const e=testRoot.querySelector(s);e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}",selector)
         page.mouse.click(rect['x'],rect['y'])

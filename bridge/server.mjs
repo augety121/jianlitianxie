@@ -70,6 +70,12 @@ function eraseSession() {
   if (!sessionProfile || sessionProfile.revoked) return;
   clearTimeout(sessionTimer); sessionProfile.revoked = true; sessionProfile.profile = {facts: []};
   profile = {facts: []}; fieldIndex = null; sharedUntil = 0; shareGrant = null; plan = null;
+  if (inFlight) {
+    // Retain the execution lock and receipt IDs, not a second copy of private values.
+    inFlight.cancelRequested = true;
+    inFlight.plan = {id: inFlight.plan.id, entries: [...inFlight.ids].map(fieldId => ({fieldId}))};
+    result = {...result, state: 'stopping', submitted: false};
+  }
   if(snapshot) snapshot = {...snapshot, fields: [], shareWithCodex: false};
   dropCommands('本次资料授权已撤销或到期');
 }
@@ -236,7 +242,7 @@ async function route(method, route, owner, data) {
     if(data.consent !== true) throw Error('需要用户明确授权本次资料进入Codex');
     validateSnapshot(data.snapshot); secureTarget(data.snapshot.url);
     if(typeof data.grantId!=='string'||!/^[a-f0-9-]{36}$/.test(data.grantId))throw Error('无效授权标识');
-    for(const [id,until] of revokedGrants) if(until<Date.now())revokedGrants.delete(id);
+    for(const [id,expires] of revokedGrants)if(expires<Date.now())revokedGrants.delete(id);
     if(revokedGrants.has(data.grantId)||sessionProfile?.id===data.grantId)throw Error('本次授权已取消或重复');
     if(!data.snapshot.owner) throw Error('必须指定当前标签页');
     const next = normalizeProfile({facts:data.facts});
@@ -293,7 +299,9 @@ async function route(method, route, owner, data) {
     const ids = data.fieldIds ?? current.entries.filter(e => e.status === 'ready').map(e => e.fieldId);
     if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length || ids.some(id => !current.entries.some(e => e.fieldId === id && e.status === 'ready'))) throw Error('所选字段为空、重复或不属于此计划');
     const selected = new Set(ids);
-    const approved = {...current, entries: current.entries.map(e => ({...e, status: selected.has(e.fieldId) ? 'ready' : 'skipped'}))};
+    const approved = {...current,
+      expiresAt: Math.min(current.createdAt + TTL, sessionProfile?.expiresAt || Infinity),
+      entries: current.entries.filter(e => selected.has(e.fieldId)).map(e => ({...e, status: 'ready'}))};
     inFlight = {plan: approved, ids: selected, owner: snapshot.owner || '', cancelRequested: false};
     queue = queue.filter(c => c.planId !== current.id);
     result = {state: 'running', planId: current.id, submitted: false}; changes.notify();

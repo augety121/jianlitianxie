@@ -7,6 +7,8 @@ export class FrameBroker {
     const tab = await this.chrome.tabs.get(tabId); secureTarget(tab.url); return tab;
   }
   async invoke(tabId, frame, action, argument) {
+    if (action === 'apply' && frame.frameId !== 0) throw Error('嵌入文档本次仅扫描，请单独打开后填写');
+    if (action === 'locate') throw Error('当前执行器尚无精确高亮功能');
     if (!['scan','apply','cancel','locate'].includes(action)) throw Error('不支持的控件操作');
     const target = frame.documentId ? {tabId, documentIds: [frame.documentId]} : {tabId, frameIds: [frame.frameId]};
     const results = await this.chrome.scripting.executeScript({target, func: async (a, arg) => {
@@ -55,7 +57,10 @@ export class FrameBroker {
         await this.chrome.scripting.executeScript({target, files: ['engine.js']});
         const r = await this.invoke(tabId, frame, 'scan');
         if (new URL(r.result.url).origin !== topOrigin) throw Error('页面来源已变化');
-        scanned.push({...r, snapshot: r.result});
+        if (!Array.isArray(r.result.fields) || new Set(r.result.fields.map(f=>f.id)).size !== r.result.fields.length) throw Error('字段结构无效或重复');
+        const truncated = Math.max(0, r.result.fields.length - 1000);
+        const snapshot = {...r.result, fields:r.result.fields.slice(0,1000), coverage:{...r.result.coverage, planTruncated:truncated}};
+        scanned.push({frameId:r.frameId,documentId:r.documentId,snapshot});
       } catch (e) {
         if (frame.frameId === 0) throw Error('无法扫描主页面，请在具体申请页重新点击工具栏图标');
         skipped.push({frameId: frame.frameId, reason: '嵌入文档隐藏、已导航或未获授权'});
@@ -64,10 +69,7 @@ export class FrameBroker {
     if (!(scanned.some(f => f.frameId === 0)) || (await this.tab(tabId)).url !== tab.url) throw Error('扫描时网页发生变化，请重扫');
     return {url: tab.url, frames: scanned, skipped, includeFrames};
   }
-  async locate(tabId, frame, request) {
-    const r = await this.invoke(tabId, frame, 'locate', request);
-    await this.chrome.tabs.update(tabId, {active: true}); return r.result;
-  }
+  async locate() { throw Error('当前执行器尚无精确高亮功能，请在网页核对字段标签'); }
   async cancel(tabId, frames) {
     await Promise.allSettled(frames.map(frame => this.invoke(tabId, frame, 'cancel')));
   }

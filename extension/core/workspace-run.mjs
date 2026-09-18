@@ -30,12 +30,17 @@ export class WorkspaceRun {
     const j = this.job, entries = [];
     for (const f of j.frames) {
       f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings);
+      // The retained executor has no parent-frame hit test. Never send values there.
+      if(f.frameId!==0)f.plan.entries=f.plan.entries.map(e=>{
+        const {value,factId,source,...entry}=e;
+        return {...entry,status:e.status==='preserve'?'preserve':'manual',reason:'嵌入文档仅扫描；请单独打开为主页面后填写'};
+      });
       for (const e of f.plan.entries) entries.push({...e, id: `${f.frameId}:${e.fieldId}`, frameId: f.frameId,
         origin: new URL(f.snapshot.url).origin, sensitive: sensitive(e.label), required: !!e.required});
     }
     return {id: j.id, expiresAt: j.expiresAt, origin: new URL(j.url).origin, entries,
       frames: j.frames.map(f => ({frameId: f.frameId, fields: f.snapshot.fields.length, coverage: f.snapshot.coverage})),
-      skipped: j.skipped, includeFrames: j.includeFrames};
+      skipped: j.skipped, includeFrames: j.includeFrames, capabilities:{locate:false,embeddedWrite:false}};
   }
   remap(owner, {planId, id, factId}) {
     if (this.busy) throw Error('请等待当前操作');
@@ -70,6 +75,8 @@ export class WorkspaceRun {
         if (halt) { results.push(...ids.map(id => ({id, status: 'not-attempted'}))); continue; }
         try {
           if ((await this.broker.tab(j.tabId)).url !== j.url || this.vault.read().revision !== j.revision) throw Error('目标或资料改变');
+          // stop()/expiry may have happened while tabs.get() was pending.
+          if(epoch!==this.epoch||!this.vault.unlocked||this.clock()>=j.expiresAt){results.push(...ids.map(id=>({id,status:'cancelled'})));halt=true;continue;}
           // Only the chosen entries, never the full profile or skipped values, cross into the page.
           const r = (await this.broker.invoke(j.tabId, {frameId:f.frameId,documentId:f.documentId}, 'apply', {...f.plan, entries})).result;
           const known = new Set(['verified','invalid','stale','manual','needs-user','cancelled','not-attempted','preserve']);
@@ -91,7 +98,7 @@ export class WorkspaceRun {
   async forMCP(owner, {planId, factIds, consent}) {
     if (this.busy || consent !== true) throw Error('须明确授权所选资料进入 Codex 上下文');
     const j = this.current(owner, planId);
-    if (j.frames.length !== 1 || j.frames[0].frameId !== 0) throw Error('本次 MCP 协作仅限主文档；嵌入表单请使用本地填写或单独打开');
+    if (j.frames.length !== 1 || j.frames[0].frameId !== 0) throw Error('本次 MCP 协作仅限主文档；嵌入表单请单独打开并重新授权');
     if ((await this.broker.tab(j.tabId)).url !== j.url) throw Error('页面已变化');
     this.current(owner, planId);
     const facts = selectedFacts({facts: j.facts}, factIds);

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "简历填写 · 本地资料与 MCP",
   "version": "0.4.3",
-  "description": "本地加密资料、同源嵌入表单扫描、逐项定位与授权填写；MCP 可选，默认不上传，不自动提交。",
+  "description": "本地加密资料、同源嵌入表单扫描、逐项映射与授权填写；MCP 可选，默认不上传，不自动提交。",
   "permissions": [
     "activeTab",
     "scripting",

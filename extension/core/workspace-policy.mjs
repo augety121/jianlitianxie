@@ -29,11 +29,22 @@ export function selectedFacts(profile, ids) {
   });
 }
 export function redactSnapshot(snapshot) {
-  // Existing website values and record anchors are not part of the default AI grant.
-  const empty = v => v == null || v === '' || v === false || Array.isArray(v) && !v.length;
-  return {...snapshot, shareWithCodex: true, fields: snapshot.fields.filter(f => !secret(f.label) && f.type !== 'password').map(f => ({
-    ...f, value: empty(f.value) ? '' : '（已有内容，未共享）', anchors: [], control: undefined
-  }))};
+  // Allowlist: arbitrary page metadata or future scanner properties cannot leak silently.
+  const fieldKeys=['id','label','section','type','required','maxLength','action','accept','multiple','datePrecision','rowIndex','currentRows'];
+  const empty=v=>v==null||v===''||v===false||Array.isArray(v)&&!v.length;
+  const fields=snapshot.fields.filter(f=>!secret(f.label)&&f.type!=='password').map(f=>{
+    const result=Object.fromEntries(fieldKeys.filter(k=>f[k]!==undefined).map(k=>[k,f[k]]));
+    // Empty arrays must remain arrays: the executor compares oldValue before writing.
+    result.value=empty(f.value)?structuredClone(f.value??''):'（已有内容，未共享）';
+    result.anchors=[];
+    if(Array.isArray(f.options))result.options=f.options.map(o=>({label:o.label,value:o.value,disabled:!!o.disabled}));
+    return result;
+  });
+  const coverage={};
+  for(const k of ['fields','unlabeled','attachments','customControls','frames','collapsed','planTruncated']){
+    const n=snapshot.coverage?.[k];if(Number.isSafeInteger(n)&&n>=0&&n<=100000)coverage[k]=n;
+  }
+  return {id:snapshot.id,url:snapshot.url,owner:snapshot.owner,engineVersion:snapshot.engineVersion,shareWithCodex:true,fields,coverage};
 }
 export function summaryOnly(report) {
   const known = new Set(['verified','invalid','stale','manual','needs-user','cancelled','not-attempted','preserve']);

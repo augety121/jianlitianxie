@@ -1,3 +1,5 @@
+import {verifyBridgePairing} from './core/bridge-pairing.mjs';
+import {withDeadline} from './core/execution-deadline.mjs';
 import {createWorkspace} from './workspace-worker.mjs';
 /* Only the user-selected tab may drive the authenticated local bridge. */
 chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'});
@@ -30,7 +32,7 @@ async function engine(tabId, action, arg) {
   if (!r?.length || r[0].result === undefined) throw Error('网页未返回执行结果，请核对已填写内容，不要自动重试');
   return r[0].result;
 }
-const workspace = createWorkspace(chrome, {api, inject, legacyBusy: () => runs.size > 0});
+const workspace = createWorkspace(chrome, {api, inject, pair: async token => {const status = await verifyBridgePairing(token); await chrome.storage.local.set({bridgeToken:token}); return status;}, legacyBusy: () => runs.size > 0});
 chrome.action.onClicked.addListener(async tab => {
   if (!tab.id || !/^https?:/.test(tab.url || '')) return;
   try { await workspace.open(tab); }
@@ -94,7 +96,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       try {
         const {plan} = await api(owned('/begin'), {planId: m.planId, fieldIds: m.fieldIds, url: sender.url}); begun = true;
         if (!plan || plan.url !== sender.url || run.cancelled) throw Error('操作已取消或计划不属于当前页面');
-        const report = await engine(tabId, 'apply', plan);
+        const report = await withDeadline(plan, () => engine(tabId, 'apply', plan), () => engine(tabId, 'cancel'));
         const receipt = await api(owned('/result'), {...report, planId: plan.id});
         return {...report, ...(receipt.warning ? {warning: receipt.warning} : {})};
       } catch (e) {

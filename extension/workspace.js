@@ -35,9 +35,10 @@ function clearPrivate() {
   profile = {facts:[],revision:0}; chosenFacts.clear(); pendingImport = []; edited = null;
   clearPlan(); $('factList').replaceChildren(); $('importPreview').replaceChildren(); $('saveImport').hidden = true;
   $('importText').value = ''; $('importFile').value = ''; $('factSearch').value=''; $('importEntity').value='';
+  $('pairToken').value='';$('pairStatus').textContent='';
   $('restorePassword').value=''; $('newPassword').value=''; $('newPasswordAgain').value='';
   $('factForm').reset(); $('editor').close(); $('factCount').textContent='—'; $('profileSummary').textContent='资料库已锁定';
-  $('reveal').checked=false;
+  $('reveal').checked=false; $('result').textContent=''; $('target').textContent=''; $('coverage').textContent=''; lastReport=null;
 }
 async function status() {
   const next = await send('status'); state = next;
@@ -99,9 +100,13 @@ function showPlan(next) {
   $('readyCount').textContent=next.entries.filter(e=>e.status==='ready').length;
   $('pendingCount').textContent=next.entries.filter(e=>['manual','missing'].includes(e.status)).length;
   const text=[`已扫描 ${next.frames.length} 个文档、${next.entries.length} 个字段。`];
-  const omitted={hidden:0,disabled:0,readonly:0,secret:0,truncated:0};
-  for(const f of next.frames) for(const k in omitted) omitted[k]+=f.coverage?.excluded?.[k]||0;
-  text.push(`未纳入可填项：隐藏 ${omitted.hidden} · 禁用 ${omitted.disabled} · 只读 ${omitted.readonly} · 密码／验证码 ${omitted.secret} · 超上限 ${omitted.truncated}`);
+  if(next.frames.every(f=>f.coverage?.excluded)){
+    const omitted={hidden:0,disabled:0,readonly:0,secret:0,truncated:0};
+    for(const f of next.frames)for(const k in omitted)omitted[k]+=f.coverage.excluded[k]||0;
+    text.push(`未纳入：隐藏 ${omitted.hidden} · 禁用 ${omitted.disabled} · 只读 ${omitted.readonly} · 密码／验证码 ${omitted.secret} · 超上限 ${omitted.truncated}`);
+  }else text.push('当前执行器未提供完整隐藏／禁用字段统计；未计算，不代表没有遗漏。');
+  const truncated=next.frames.reduce((n,f)=>n+(f.coverage?.planTruncated||0),0);
+  if(truncated)text.push(`超过本次计划上限的字段 ${truncated} 项，未纳入填写计划。`);
   if(!next.includeFrames&&next.frames.some(f=>f.coverage?.frames))text.push('页面含嵌入文档，尚未扫描；可启用同源嵌入表单识别。');
   text.push(...next.skipped.map(s=>`文档 ${s.frameId}：${s.reason}`));
   text.push('这些是当前可观察区域的计数，不是整站完整率。');
@@ -120,8 +125,8 @@ function renderEntries() {
     const content=e.status==='ready'?($('reveal').checked?(Array.isArray(e.value)?e.value.join('、'):String(e.value)):'••••••  内容已隐藏，可在上方勾选显示'):e.status==='preserve'?'网页已有内容，保持原样':e.reason;
     const value=node('div',content,'field-value'),actions=node('div',null,'field-actions');
     const locate=node('button','定位到网页','secondary');locate.disabled=busy;locate.onclick=async()=>{try{await send('locate',{planId:plan.id,id:e.id});notify('已在目标网页高亮这个字段；没有点击或更改内容。');}catch(error){notify(error.message,true);}};
-    actions.append(locate);
-    if(e.status!=='preserve'&&e.kind!=='file'){
+    if(plan.capabilities?.locate!==false)actions.append(locate);
+    if(e.frameId===0&&e.status!=='preserve'&&e.kind!=='file'){
       const select=document.createElement('select');select.setAttribute('aria-label',e.label+' 资料映射');select.disabled=busy;
       const defaultOption=node('option','自动匹配 / 选择准确来源');defaultOption.value='';select.append(defaultOption);
       for(const f of profile.facts.filter(f=>chosenFacts.has(f.id)&&usable(f))){const o=node('option',[f.section,f.entity,f.label].filter(Boolean).join(' / ')+($('reveal').checked?' · '+f.value.slice(0,35):''));o.value=f.id;o.selected=e.factId===f.id;select.append(o);}
@@ -168,7 +173,7 @@ on('enableFrames',async()=>{const granted=await chrome.permissions.request({perm
 on('scan',async()=>{
   if(busy)return;const ids=[...chosenFacts];if(!ids.length)throw Error('先到“我的资料”勾选已核实资料');
   if(profile.facts.some(f=>ids.includes(f.id)&&!usable(f)))throw Error('所选资料中还有待核实或冲突条目，请先核对');
-  clearPlan();busy=true;controls();notify('正在扫描当前页面，并在本机匹配所选资料…');
+  clearPlan();$('result').textContent='';lastReport=null;busy=true;controls();notify('正在扫描当前页面，并在本机匹配所选资料…');
   try{showPlan(await send('scan',{tabId,factIds:ids,includeFrames:$('includeFrames').checked}));notify('扫描完成。请核对字段位置、来源以及未扫描区域。');}
   finally{busy=false;renderEntries();controls();}
 });
@@ -195,9 +200,16 @@ on('restore',async()=>{
 });
 on('changePassword',async()=>{const password=$('newPassword').value,again=$('newPasswordAgain').value;$('newPassword').value=$('newPasswordAgain').value='';if(password!==again)throw Error('两次口令不一致');await send('password',{password});clearPlan();notify('口令已更换；之前导出的旧备份仍需原口令。');});
 on('share',async()=>{
+  if(busy)return;
   if(!plan)throw Error('先在本地扫描主页面，并选择本次资料');
   if(!$('shareConsent').checked)throw Error('请先阅读并勾选本次 Codex 分享授权');
-  const r=await send('share',{tabId,planId:plan.id,factIds:[...chosenFacts],consent:true});await status();notify(`已将 ${r.count} 条所选资料临时分享给 MCP，5分钟有效、不写入旧主档。现在可以让 Codex 读取 form_context。`);
+  busy=true;controls();
+  try{const r=await send('share',{tabId,planId:plan.id,factIds:[...chosenFacts],consent:true});await status();notify(`已将 ${r.count} 条所选资料临时分享给 MCP，5分钟有效、不写入旧主档。现在可以让 Codex 读取 form_context。`);}
+  finally{busy=false;controls();}
+});
+on('pairBridge',async()=>{
+  const token=$('pairToken').value.trim();$('pairToken').value='';
+  const r=await send('pair',{token});$('pairStatus').textContent=`已配对本机桥接 ${r.version}。尚未共享资料。`;notify('本机配对已验证；回到填写工作台扫描后，再单独授权所选资料。');
 });
 on('revoke',async()=>{await send('revoke');await status();notify('已撤销后续读取授权；已经进入 Codex 上下文或网站的数据不能因此收回。');});
 on('legacy',async()=>{if(!confirm('原 MCP 模式使用旧本机明文主档，与新加密库分开；扫描授权后相关资料会进入 Codex。继续？'))return;await send('legacy',{tabId});await status();notify('已打开原 MCP 模式，新资料库已锁定。');});
