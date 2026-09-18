@@ -6,7 +6,7 @@ Requires full Playwright Chromium, not chromium-headless-shell.
 """
 from pathlib import Path
 import contextlib,http.server,json,os,shutil,subprocess,tempfile,threading,time,sys
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'test-results/workspace-mv3.json';OUT.parent.mkdir(exist_ok=True)
 NAME='MV3_SYNTHETIC_PERSON';EMAIL='mv3@example.invalid';results=[];report={};bridge=None;context=None
 class Fixture(http.server.BaseHTTPRequestHandler):
@@ -38,16 +38,17 @@ try:
     tab_id=worker.evaluate('''async url=>{const tabs=await chrome.tabs.query({});return tabs.find(t=>t.url===url)?.id}''',base+'/form');require(tab_id is not None,'fixture browser tab missing')
     worker.evaluate('''async args=>{await chrome.storage.session.set({['workspace-target-'+args.id]:args.origin})}''',{'id':tab_id,'origin':base})
     page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept())
-    page.goto(extension_origin+'/workspace.html?tab='+str(tab_id));page.wait_for_function("document.getElementById('notice').textContent.includes('就绪')")
+    # Locator assertions do not ask extension CSP to evaluate string predicates.
+    page.goto(extension_origin+'/workspace.html?tab='+str(tab_id));expect(page.locator("#notice")).to_contain_text("就绪")
     def create_import():
-        page.locator('#password').fill('synthetic mv3 private passphrase');page.locator('#repeatPassword').fill('synthetic mv3 private passphrase');page.locator('#unlock').click();page.wait_for_function("document.getElementById('gate').hidden")
-        page.locator('[data-view=profile]').click();page.locator('#importFile').set_input_files({'name':'synthetic.txt','mimeType':'text/plain','buffer':f'姓名：{NAME}\n邮箱：{EMAIL}'.encode()});page.locator('#parse').click();page.locator('#saveImport').click();page.wait_for_function("document.getElementById('notice').textContent.includes('仍为待核实')")
-        page.locator('#confirmFacts').click();page.wait_for_function("document.getElementById('factCount').textContent==='2'")
+        page.locator('#password').fill('synthetic mv3 private passphrase');page.locator('#repeatPassword').fill('synthetic mv3 private passphrase');page.locator('#unlock').click();expect(page.locator("#gate")).to_be_hidden()
+        page.locator('[data-view=profile]').click();page.locator('#importFile').set_input_files({'name':'synthetic.txt','mimeType':'text/plain','buffer':f'姓名：{NAME}\n邮箱：{EMAIL}'.encode()});page.locator('#parse').click();page.locator('#saveImport').click();expect(page.locator("#notice")).to_contain_text("仍为待核实")
+        page.locator('#confirmFacts').click();expect(page.locator("#factCount")).to_have_text("2")
         raw=worker.evaluate('()=>chrome.storage.local.get(null)');require(NAME not in json.dumps(raw),'plaintext stored');require('synthetic mv3 private passphrase' not in json.dumps(raw),'password stored')
     step('installed-worker-create-import-confirm-and-ciphertext-storage',create_import)
     def scan_main():
-        page.locator('[data-view=fill]').click();page.locator('#scan').click();page.wait_for_function("document.querySelectorAll('.field-card').length===2")
-        require(page.locator('#fillSelected').is_disabled(),'review missing');page.locator('#reviewed').check();page.locator('#fillSelected').click();page.wait_for_function("document.getElementById('result').textContent.includes('回读通过 2')")
+        page.locator('[data-view=fill]').click();page.locator('#scan').click();expect(page.locator(".field-card")).to_have_count(2)
+        require(page.locator('#fillSelected').is_disabled(),'review missing');page.locator('#reviewed').check();page.locator('#fillSelected').click();expect(page.locator("#result")).to_contain_text("回读通过 2")
         require(target.locator('#name').input_value()==NAME,'name not retained');require(target.locator('#email').input_value()==EMAIL,'email not retained');require(target.evaluate('submitted')==0,'submitted');require(target.locator('#secret').input_value()=='','password changed')
     step('real-runtime-messaging-document-target-and-independent-DOM-readback',scan_main)
     def boundaries():
@@ -58,7 +59,7 @@ try:
         require(not result['accessible'],'page content script can read trusted storage');require(result['rejected'],'page impersonated workspace')
     step('installed-content-script-cannot-read-vault-or-impersonate-workspace',boundaries)
     def children():
-        page.locator('#includeFrames').check();page.locator('#scan').click();page.wait_for_function("document.querySelectorAll('.field-card').length===3")
+        page.locator('#includeFrames').check();page.locator('#scan').click();expect(page.locator(".field-card")).to_have_count(3)
         cards=page.locator('.field-card');child=cards.filter(has_text='嵌入文档');require(child.count()==1,'same-origin child inventory');require(child.locator('input[type=checkbox]').is_disabled(),'child write was exposed');require(target.frame_locator('iframe').locator('#school').input_value()=='','child overwritten')
     step('real-same-origin-frame-enumeration-read-only-child-plan',children)
     def start_mcp():
@@ -71,9 +72,9 @@ try:
                 logs.append(line)
                 if 'bridge listening' in line:ready.set()
         threading.Thread(target=consume,daemon=True).start();require(ready.wait(8),'test bridge could not acquire its port')
-        token=(data/'bridge-token.txt').read_text().strip();page.locator('[data-view=security]').click();page.locator('#pairToken').fill(token);page.locator('#pairBridge').click();page.wait_for_function("document.getElementById('pairStatus').textContent.includes('已配对')");page.locator('[data-view=fill]').click()
-        target.locator('#name').fill('');target.locator('#email').fill('');page.locator('#includeFrames').uncheck();page.locator('#scan').click();page.wait_for_function("document.querySelectorAll('.field-card').length===2")
-        page.locator('#shareConsent').check();page.locator('#share').click();page.wait_for_function("document.getElementById('notice').textContent.includes('临时分享给 MCP')")
+        token=(data/'bridge-token.txt').read_text().strip();page.locator('[data-view=security]').click();page.locator('#pairToken').fill(token);page.locator('#pairBridge').click();expect(page.locator("#pairStatus")).to_contain_text("已配对");page.locator('[data-view=fill]').click()
+        target.locator('#name').fill('');target.locator('#email').fill('');page.locator('#includeFrames').uncheck();page.locator('#scan').click();expect(page.locator(".field-card")).to_have_count(2)
+        page.locator('#shareConsent').check();page.locator('#share').click();expect(page.locator("#notice")).to_contain_text("临时分享给 MCP")
     step('real-local-vault-to-loopback-MCP-explicit-session-grant',start_mcp)
     seq=0
     def rpc(name,arguments={}):
@@ -90,7 +91,7 @@ try:
         rpc('form_fill',{'planId':current['plan']['id']});target.wait_for_function('expected=>document.getElementById("name").value===expected',arg=NAME)
         target.wait_for_timeout(800);require(target.locator('#email').input_value()==EMAIL,'MCP email mismatch');require(target.evaluate('submitted')==0,'MCP submitted')
         r=rpc('form_result');require(r.get('state')=='completed','MCP result not completed')
-        page.locator('[data-view=security]').click();page.locator('#revoke').click();page.wait_for_function("document.getElementById('notice').textContent.includes('已撤销')")
+        page.locator('[data-view=security]').click();page.locator('#revoke').click();expect(page.locator("#notice")).to_contain_text("已撤销")
         files=''.join(f.read_text() for f in (root/'private').iterdir() if f.is_file());require(NAME not in files and EMAIL not in files,'temporary session persisted plaintext')
     step('stdio-MCP-to-actual-extension-fill-and-revoke-without-profile-persistence',mcp_fill)
     step('no-uncaught-extension-UI-errors',lambda:require(not errors,str(errors)))
