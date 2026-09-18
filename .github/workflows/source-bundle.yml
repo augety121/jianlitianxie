@@ -1,7 +1,7 @@
 name: Review source bundle
 on:
   push:
-    branches: ['codex/local-vault-quality-20260917']
+    branches: [main, 'codex/**']
   pull_request:
 permissions:
   contents: read

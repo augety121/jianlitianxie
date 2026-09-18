@@ -37,7 +37,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards
+        run: npm run test:dom && npm run test:guards && npm run test:ui
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -63,11 +63,15 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: Matched local-DOM comparison; never silently discard failures
-        run: npm run bench -- --pairs 3
+        run: |
+          npm run bench -- --pairs 3
+          npm run bench:transport -- test-results/transport-benchmark.json 3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: matched-performance-raw
-          path: test-results/performance-matched.json
+          path: |
+            test-results/performance-matched.json
+            test-results/transport-benchmark.json
           if-no-files-found: error
           retention-days: 14
