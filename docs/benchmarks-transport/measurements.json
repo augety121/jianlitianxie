@@ -1,0 +1,310 @@
+{
+  "scope": "synthetic localhost HTTP/MCP notification + isolated memory preparation; no browser, model, external site or submit",
+  "baselineCommit": "9cbcac860aa4080cd638eda0b49233de281aa9b7",
+  "node": "v22.16.0",
+  "platform": "linux",
+  "intervalMs": 1500,
+  "pairs": 6,
+  "sources": {
+    "server": "b4bd4134a33a1abcc5ff26eaa9a66d06f94229230c1e492e7457502c59b717ee",
+    "memory": "138397509a58e45b530634aa8374dec501cec263d40afc93e08a520175063f13",
+    "driver": "9a65c464fb77170f16efabd65a8d74e03b26f8b7201d837dfffc1eb235535624"
+  },
+  "complete": true,
+  "notification": [
+    {
+      "pair": 1,
+      "arm": "interval",
+      "phaseMs": 100,
+      "verified": true,
+      "latencyMs": 1405.2124949999998,
+      "requests": 2
+    },
+    {
+      "pair": 1,
+      "arm": "event",
+      "phaseMs": 100,
+      "verified": true,
+      "latencyMs": 6.1873279999999795,
+      "requests": 3
+    },
+    {
+      "pair": 2,
+      "arm": "event",
+      "phaseMs": 400,
+      "verified": true,
+      "latencyMs": 4.9450809999998455,
+      "requests": 3
+    },
+    {
+      "pair": 2,
+      "arm": "interval",
+      "phaseMs": 400,
+      "verified": true,
+      "latencyMs": 1102.8271989999998,
+      "requests": 2
+    },
+    {
+      "pair": 3,
+      "arm": "interval",
+      "phaseMs": 700,
+      "verified": true,
+      "latencyMs": 801.5643650000002,
+      "requests": 2
+    },
+    {
+      "pair": 3,
+      "arm": "event",
+      "phaseMs": 700,
+      "verified": true,
+      "latencyMs": 4.9910149999996065,
+      "requests": 3
+    },
+    {
+      "pair": 4,
+      "arm": "event",
+      "phaseMs": 1000,
+      "verified": true,
+      "latencyMs": 5.772326000000248,
+      "requests": 3
+    },
+    {
+      "pair": 4,
+      "arm": "interval",
+      "phaseMs": 1000,
+      "verified": true,
+      "latencyMs": 503.93087599999944,
+      "requests": 2
+    },
+    {
+      "pair": 5,
+      "arm": "interval",
+      "phaseMs": 1300,
+      "verified": true,
+      "latencyMs": 202.471227,
+      "requests": 2
+    },
+    {
+      "pair": 5,
+      "arm": "event",
+      "phaseMs": 1300,
+      "verified": true,
+      "latencyMs": 3.9250630000005913,
+      "requests": 3
+    },
+    {
+      "pair": 6,
+      "arm": "event",
+      "phaseMs": 250,
+      "verified": true,
+      "latencyMs": 6.382787000000462,
+      "requests": 3
+    },
+    {
+      "pair": 6,
+      "arm": "interval",
+      "phaseMs": 250,
+      "verified": true,
+      "latencyMs": 1259.425561,
+      "requests": 2
+    }
+  ],
+  "preparation": [
+    {
+      "fields": 160,
+      "pair": 1,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 79.79618699999992
+    },
+    {
+      "fields": 160,
+      "pair": 1,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 2.2927400000007765
+    },
+    {
+      "fields": 160,
+      "pair": 2,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 1.189886000000115
+    },
+    {
+      "fields": 160,
+      "pair": 2,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 61.369354000002204
+    },
+    {
+      "fields": 160,
+      "pair": 3,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 58.80391700000109
+    },
+    {
+      "fields": 160,
+      "pair": 3,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 1.0472910000025877
+    },
+    {
+      "fields": 160,
+      "pair": 4,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 1.3072189999984403
+    },
+    {
+      "fields": 160,
+      "pair": 4,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 51.74665100000129
+    },
+    {
+      "fields": 160,
+      "pair": 5,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 51.699446999999054
+    },
+    {
+      "fields": 160,
+      "pair": 5,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 2.1125000000029104
+    },
+    {
+      "fields": 160,
+      "pair": 6,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 1.1606930000016291
+    },
+    {
+      "fields": 160,
+      "pair": 6,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 54.987551999998686
+    },
+    {
+      "fields": 500,
+      "pair": 1,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 551.0514750000002
+    },
+    {
+      "fields": 500,
+      "pair": 1,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 3.3368570000020554
+    },
+    {
+      "fields": 500,
+      "pair": 2,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 3.7665669999987585
+    },
+    {
+      "fields": 500,
+      "pair": 2,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 490.92957300000126
+    },
+    {
+      "fields": 500,
+      "pair": 3,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 389.3986560000012
+    },
+    {
+      "fields": 500,
+      "pair": 3,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 4.329866999996739
+    },
+    {
+      "fields": 500,
+      "pair": 4,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 3.1011639999996987
+    },
+    {
+      "fields": 500,
+      "pair": 4,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 431.89517200000046
+    },
+    {
+      "fields": 500,
+      "pair": 5,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 408.2957540000025
+    },
+    {
+      "fields": 500,
+      "pair": 5,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 4.901547999998002
+    },
+    {
+      "fields": 500,
+      "pair": 6,
+      "arm": "indexed",
+      "verified": true,
+      "durationMs": 4.759610999997676
+    },
+    {
+      "fields": 500,
+      "pair": 6,
+      "arm": "nested",
+      "verified": true,
+      "durationMs": 416.5379589999975
+    }
+  ],
+  "idle": {
+    "windowMs": 6000,
+    "intervalRequests": 4,
+    "eventRequests": 2,
+    "elapsedMs": 6012.132507999999
+  },
+  "summary": {
+    "notification": {
+      "interval": {
+        "medianMs": 952.195782
+      },
+      "event": {
+        "medianMs": 5.381670499999927
+      }
+    },
+    "preparation": [
+      {
+        "fields": 160,
+        "nested": 56.89573449999989,
+        "indexed": 1.2485524999992776
+      },
+      {
+        "fields": 500,
+        "nested": 424.216565499999,
+        "indexed": 4.048216999997749
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "jianlitianxie",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,6 +12,8 @@
     "check": "node scripts/check-release.mjs",
     "test:dom": "python tests/browser-regression.py --isolated-dom",
     "test:guards": "python tests/performance-browser.py",
-    "bench": "python tests/performance-bench.py"
+    "bench": "python tests/performance-bench.py",
+    "test:ui": "python tests/transport-ui.py",
+    "bench:transport": "node tests/transport-bench.mjs"
   }
 }

@@ -61,9 +61,9 @@ test('MCP handshake, authenticated local UI, consent and redaction',{timeout:150
  assert.deepEqual((await (await request('/poll?owner=tab-B')).json()).commands,[]);
  const commands=(await (await request('/poll?owner=tab-A')).json()).commands;
  assert.equal(commands[0].type,'fill');assert.deepEqual(commands[0].fieldIds,['f','intro']);
- const localPlan=await (await request('/plan')).json();assert.equal(localPlan.entries[1].factId,undefined);
- assert.equal((await request('/begin',{planId:pid2})).status,200);
- await request('/result',{planId:pid2,results:[{fieldId:'intro',status:'verified'}]});
+ const localPlan=await (await request('/plan?owner=tab-A')).json();assert.equal(localPlan.entries[1].factId,undefined);
+ assert.equal((await request('/begin?owner=tab-A',{planId:pid2})).status,200);
+ await request('/result?owner=tab-A',{planId:pid2,results:[{fieldId:'intro',status:'verified'}]});
  assert.ok(!JSON.stringify(JSON.parse(await fs.readFile(path.join(dir,'experience.json'),'utf8'))).includes('自我评价'));
  await request('/snapshot',{snapshot:{id:'s3',shareWithCodex:false,url:'https://example.test/form',fields:[]}});
  assert.equal((await callTool('profile_upsert',{facts:[]})).result.isError,true);
