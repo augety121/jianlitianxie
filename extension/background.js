@@ -1,3 +1,6 @@
+import {verifyBridgePairing} from './core/bridge-pairing.mjs';
+import {withDeadline} from './core/execution-deadline.mjs';
+import {createWorkspace} from './workspace-worker.mjs';
 /* Only the user-selected tab may drive the authenticated local bridge. */
 chrome.storage.local.setAccessLevel({accessLevel: 'TRUSTED_CONTEXTS'});
 chrome.storage.session.get('bridgeToken').then(async s => {
@@ -29,19 +32,20 @@ async function engine(tabId, action, arg) {
   if (!r?.length || r[0].result === undefined) throw Error('网页未返回执行结果，请核对已填写内容，不要自动重试');
   return r[0].result;
 }
+const workspace = createWorkspace(chrome, {api, inject, pair: async token => {const status = await verifyBridgePairing(token); await chrome.storage.local.set({bridgeToken:token}); return status;}, legacyBusy: () => runs.size > 0});
 chrome.action.onClicked.addListener(async tab => {
   if (!tab.id || !/^https?:/.test(tab.url || '')) return;
-  try { await inject(tab.id); await chrome.storage.session.set({['attach-' + tab.id]: new URL(tab.url).origin}); }
+  try { await workspace.open(tab); }
   catch (e) { console.warn('Unable to attach resume assistant:', e.message); }
 });
 chrome.tabs.onUpdated.addListener((id, change, tab) => {
-  if (change.status === 'loading') { waits.get(id)?.abort(); waits.delete(id); }
+  if (change.status === 'loading') { waits.get(id)?.abort(); waits.delete(id); workspace.navigated(id).catch(()=>{}); }
   if (change.status !== 'complete' || !tab.url) return;
   chrome.storage.session.get('attach-' + id).then(s => {
-    if (s['attach-' + id] === new URL(tab.url).origin) return inject(id);
+    if (s['attach-' + id] === new URL(tab.url).origin) return workspace.allowsLegacy().then(allowed=>allowed&&inject(id));
   }).catch(() => {});
 });
-chrome.tabs.onRemoved?.addListener(id => { waits.get(id)?.abort(); waits.delete(id); runs.delete(id); });
+chrome.tabs.onRemoved?.addListener(id => { waits.get(id)?.abort(); waits.delete(id); runs.delete(id); workspace.navigated(id).catch(()=>{}); });
 // Upgrade only already-authorized registrations; do not request new host access.
 chrome.runtime.onInstalled?.addListener(async () => {
   try {
@@ -52,9 +56,13 @@ chrome.runtime.onInstalled?.addListener(async () => {
   } catch { console.warn('请从目标网页点击工具栏图标重新打开助手'); }
 });
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
+  if (typeof m?.type === 'string' && m.type.startsWith('workspace-')) {
+    workspace.request(m, sender).then(data=>reply({data})).catch(e=>reply({error:e.message})); return true;
+  }
   if (sender.id !== chrome.runtime.id || !sender.tab?.id || sender.frameId !== 0 || !/^https?:/.test(sender.url || '')) return;
   const tabId = sender.tab.id, owned = route => route + '?owner=' + tabId;
   (async () => {
+    if (!await workspace.allowsLegacy()) throw Error('当前为本地模式，请从工具栏工作台主动切换 MCP；未共享资料');
     if (m.type === 'resume-manage') { await chrome.tabs.create({url: chrome.runtime.getURL('panel.html') + '?tab=' + tabId}); return {ok: true}; }
     if (m.type === 'resume-scan') {
       const snapshot = await engine(tabId, 'scan');
@@ -88,7 +96,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       try {
         const {plan} = await api(owned('/begin'), {planId: m.planId, fieldIds: m.fieldIds, url: sender.url}); begun = true;
         if (!plan || plan.url !== sender.url || run.cancelled) throw Error('操作已取消或计划不属于当前页面');
-        const report = await engine(tabId, 'apply', plan);
+        const report = await withDeadline(plan, () => engine(tabId, 'apply', plan), () => engine(tabId, 'cancel'));
         const receipt = await api(owned('/result'), {...report, planId: plan.id});
         return {...report, ...(receipt.warning ? {warning: receipt.warning} : {})};
       } catch (e) {

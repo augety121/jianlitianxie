@@ -1,6 +1,10 @@
+import {withDeadline} from './core/execution-deadline.mjs';
 const $=id=>document.getElementById(id);const tabId=Number(new URLSearchParams(location.search).get('tab'));
 let token='',plan=null,busy=false,loop=null,eventWait=null,cancelRequested=false;const API='http://127.0.0.1:19327';
 async function api(route,data,options={}){
+ if(route!=='/status' && (await chrome.storage.local.get('resumeMode')).resumeMode!=='mcp') {
+  loop?.stop(); throw Error('当前为本地模式；旧面板不会读取或发送资料。需主动连接旧 MCP 模式。');
+ }
  if(['/plan','/begin','/cancel','/result'].includes(route))route+='?owner='+tabId;
  const timeout=AbortSignal.timeout(options.timeout||8000);
  const controller=new AbortController(),abort=()=>controller.abort();
@@ -50,6 +54,8 @@ function startLoop(){
  });loop.start();
 }
 $('connect').onclick=handle(async()=>{
+ const switched=await chrome.runtime.sendMessage({type:'workspace-legacy'});
+ if(!switched || switched.error)throw Error(switched?.error || '请重新加载扩展后连接');
  token=$('token').value.trim();if(!token)throw Error('请先粘贴本机配对码');loop?.stop();const status=await api('/status');
  if(status.transport!==2)throw Error('需要更新并重启 0.3.2 resume_fill 桥接，不要关闭无关 Node 程序');
  await chrome.storage.local.set({bridgeToken:token});startLoop();await catalog();
@@ -62,7 +68,7 @@ async function fill(){
  try{
   const {plan:approved}=await api('/begin',{planId:requested.id,fieldIds,url:requested.url});begun=true;
   if(cancelRequested)throw Error('本人已停止');
-  const report=await engine('apply',approved);const receipt=await api('/result',{...report,planId:requested.id});
+  const report=await withDeadline(approved,()=>engine('apply',approved),()=>engine('cancel'));const receipt=await api('/result',{...report,planId:requested.id});
   $('result').textContent=`回读通过 ${report.results.filter(x=>x.status==='verified').length} 项；需核对 ${report.results.filter(x=>x.status!=='verified').length} 项。未提交。`+(receipt.warning||'');
   $('missing').replaceChildren();for(const r of report.results.filter(x=>x.status!=='verified')){const li=document.createElement('li');li.textContent=(requested.entries.find(x=>x.fieldId===r.fieldId)?.label||r.fieldId)+'：'+(r.reason||r.status);$('missing').append(li);}
  }catch(e){if(begun)await api('/cancel',{planId:requested.id,executionStopped:true}).catch(()=>{});$('result').textContent='结果需核对，未自动重试；请检查网页已填内容。';throw e;}
@@ -82,7 +88,7 @@ $('saveProfile').onclick=handle(async()=>{await api('/profile',JSON.parse($('pro
 async function records(){const {records=[]}=await chrome.storage.local.get('records');$('records').textContent=records.map(r=>`${r.date} ${r.company} ${r.role} ${r.stage}`).join('\n');return records;}
 $('record').onclick=handle(async()=>{const list=await records();list.unshift({company:$('company').value,role:$('role').value,stage:$('stage').value,date:new Date().toISOString().slice(0,10)});await chrome.storage.local.set({records:list});await records();});
 $('export').onclick=handle(async()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(await records(),null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='投递记录.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-if(chrome?.storage?.local)chrome.storage.local.get('bridgeToken').then(s=>{if(s.bridgeToken){$('token').value=s.bridgeToken;$('connect').click();}});if(chrome?.storage?.local)records();
+if(chrome?.storage?.local)chrome.storage.local.get('bridgeToken').then(s=>{if(s.bridgeToken){$('token').value=s.bridgeToken;$('status').textContent='配对码已在本机保存。点击连接将主动切换至旧 MCP 明文资料模式。';}});if(chrome?.storage?.local)records();
 
 $('forgetToken').onclick=handle(async()=>{loop?.stop();await chrome.storage.local.remove('bridgeToken');await chrome.storage.session.remove('bridgeToken');token='';$('token').value='';$('status').textContent='已清除本机配对码';});
 

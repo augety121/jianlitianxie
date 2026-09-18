@@ -6,9 +6,11 @@ import {randomBytes, timingSafeEqual} from 'node:crypto';
 import readline from 'node:readline';
 import {makePlan, publicSnapshot, publicPlan, restricted} from './planner.mjs';
 import {candidatesFor, normalize} from './semantics.mjs';
+import {normalizeProfile} from '../extension/core/profile.mjs';
+import {redactSnapshot, secret, secureTarget} from '../extension/core/workspace-policy.mjs';
 import {ChangeSignal} from './change-signal.mjs';
 import {indexFields, rememberedMappings, relevantFacts} from './field-memory.mjs';
-const VERSION = '0.3.2';
+const VERSION = '0.4.3';
 const PORT = Number(process.env.RESUME_BRIDGE_PORT || 19327);
 const DIR = process.env.RESUME_DATA_DIR || path.join(os.homedir(), '.jianlitianxie');
 const TTL = 300000;
@@ -20,6 +22,7 @@ let profile = {facts: []}, experience = {};
 try { profile = JSON.parse(await fs.readFile(path.join(DIR, 'profile.json'), 'utf8')); } catch {}
 try { experience = JSON.parse(await fs.readFile(path.join(DIR, 'experience.json'), 'utf8')); } catch {}
 let snapshot = null, plan = null, result = null, inFlight = null, fieldIndex = null;
+let sessionProfile = null, sessionTimer; const revokedGrants = new Map();
 let queue = [], shareGrant = null, sharedUntil = 0, profileJSON = JSON.stringify(profile);
 const pending = new Map(), changes = new ChangeSignal(), connections = new Map();
 const authorized = value => {
@@ -61,7 +64,23 @@ function queueScan() {
   });
 }
 function planWithMemory(mappings = {}) {
-  return makePlan(snapshot, profile, {...rememberedMappings(fieldIndex, experience), ...mappings});
+  return makePlan(snapshot, profile, {...(sessionProfile ? {} : rememberedMappings(fieldIndex, experience)), ...mappings});
+}
+function eraseSession() {
+  if (!sessionProfile || sessionProfile.revoked) return;
+  clearTimeout(sessionTimer); sessionProfile.revoked = true; sessionProfile.profile = {facts: []};
+  profile = {facts: []}; fieldIndex = null; sharedUntil = 0; shareGrant = null; plan = null;
+  if (inFlight) {
+    // Retain the execution lock and receipt IDs, not a second copy of private values.
+    inFlight.cancelRequested = true;
+    inFlight.plan = {id: inFlight.plan.id, entries: [...inFlight.ids].map(fieldId => ({fieldId}))};
+    result = {...result, state: 'stopping', submitted: false};
+  }
+  if(snapshot) snapshot = {...snapshot, fields: [], shareWithCodex: false};
+  dropCommands('本次资料授权已撤销或到期');
+}
+function liveSession() {
+  if(sessionProfile && (sessionProfile.revoked || Date.now() >= sessionProfile.expiresAt)) { eraseSession(); throw Error('本次资料授权已到期或撤销，请在工作台重新授权'); }
 }
 function safeCatalog() {
   return profile.facts.map(({id, label, section, entity, confirmed, conflict}) => ({id, label, section, entity, confirmed, conflict: Boolean(conflict)}));
@@ -73,13 +92,16 @@ function checkProfile(value) {
   return value;
 }
 async function refreshProfile() {
+  if (sessionProfile) { liveSession(); profile = sessionProfile.profile; return; }
   let next;
   try { next = checkProfile(JSON.parse(await fs.readFile(path.join(DIR, 'profile.json'), 'utf8'))); }
   catch (e) { if (e.code === 'ENOENT') next = {facts: []}; else throw Error('本机主档格式无效，请先修复；未使用旧值'); }
   const json = JSON.stringify(next);
-  if (json !== profileJSON) { profile = next; profileJSON = json; plan = null; dropCommands('资料已更新，请重新生成计划'); }
+  profile = next;
+  if (json !== profileJSON) { profileJSON = json; plan = null; dropCommands('资料已更新，请重新生成计划'); }
 }
 async function writeProfile(next) {
+  if (sessionProfile) throw Error('本次使用临时资料，不写入旧明文主档；请在工作台编辑');
   checkProfile(next);
   await fs.writeFile(path.join(DIR, 'profile.previous.json'), JSON.stringify(profile, null, 2), {mode: 0o600});
   await fs.writeFile(path.join(DIR, 'profile.json.tmp'), JSON.stringify(next, null, 2), {mode: 0o600});
@@ -87,6 +109,7 @@ async function writeProfile(next) {
   profile = next; profileJSON = JSON.stringify(next); plan = null; dropCommands('资料已更新，请重新生成计划');
 }
 function sharedScan() {
+  liveSession();
   if (!snapshot?.shareWithCodex || Date.now() >= sharedUntil) throw Error('请先在当前申请页点扫描给Codex；共享授权5分钟有效');
 }
 const tools=[
@@ -112,7 +135,7 @@ function draftEntries(base,answers=[]){
   const f=snapshot.fields.find(x=>x.id===a.fieldId),e=entries.find(x=>x.fieldId===a.fieldId);
   if(!f||!e||restricted(f)||!['textarea','text'].includes(f.type)||!/评价|介绍|描述|职责|成果|规划|爱好|特长|优势|内容/.test(f.label))throw Error('只支持叙述类草稿');
   if(f.value||typeof a.text!=='string'||!a.text.trim()||a.text.length>10000||f.maxLength>0&&a.text.length>f.maxLength)throw Error('草稿已有值或长度不符');
-  if(!a.factIds?.length||a.factIds.some(id=>!profile.facts.some(x=>x.id===id&&x.confirmed!==false&&!x.conflict)))throw Error('草稿必须引用已确认资料');
+  if(!a.factIds?.length||a.factIds.some(id=>!profile.facts.some(x=>x.id===id&&x.confirmed!==false&&!x.conflict&&(!x.origin||x.origin===new URL(snapshot.url).origin))))throw Error('草稿必须引用已确认资料');
   Object.assign(e,{status:'ready',value:a.text,factId:undefined,source:'Codex草稿；依据 '+a.factIds.join(', '),reason:'根据来源组织文字',draft:true});
  }
  return {...base,id:randomBytes(16).toString('hex'),entries};
@@ -124,7 +147,7 @@ async function callInternal(name, args = {}) {
   }
   if (name !== 'form_result') await refreshProfile();
   if (name === 'source_search') {
-    sharedScan(); const q = normalize(args.query || ''); if (!q) throw Error('请指定字段关键词');
+    sharedScan(); if(sessionProfile) return {pages:[],message:'临时资料模式不读取旧磁盘证据；仅使用本人本次授权资料'}; const q = normalize(args.query || ''); if (!q) throw Error('请指定字段关键词');
     let evidence;
     try { evidence = JSON.parse(await fs.readFile(path.join(DIR, 'evidence.json'), 'utf8')); }
     catch { return {pages: [], message: '尚无本地材料索引'}; }
@@ -161,7 +184,7 @@ async function callInternal(name, args = {}) {
   }
   if (name === 'form_context') {
     sharedScan();
-    return {snapshot: {...snapshot, fields: snapshot.fields.filter(f => f.type !== 'password' && !/验证码|密码|captcha/i.test(f.label))},
+    return {snapshot: {...snapshot, url: new URL(snapshot.url).origin, fields: snapshot.fields.filter(f => f.type !== 'password' && !/验证码|密码|captcha/i.test(f.label))},
       plan: plan ? publicPlan(plan) : null,
       facts: relevantFacts(snapshot, profile.facts, plan)};
   }
@@ -188,7 +211,7 @@ async function callInternal(name, args = {}) {
 async function call(name, args = {}) {
   if (name !== 'form_scan') return serial(() => callInternal(name, args));
   let waiting;
-  await serial(() => { if (inFlight) throw Error('正在执行已授权计划'); waiting = queueScan(); waiting.catch(() => {}); });
+  await serial(() => { liveSession(); if (inFlight) throw Error('正在执行已授权计划'); waiting = queueScan(); waiting.catch(() => {}); });
   const scanned = await waiting;
   return publicSnapshot(scanned);
 }
@@ -210,7 +233,37 @@ function validateSnapshot(s) {
 }
 const resultStatuses = new Set(['verified', 'invalid', 'stale', 'manual', 'needs-user', 'cancelled', 'not-attempted', 'preserve']);
 async function route(method, route, owner, data) {
-  if (inFlight && method === 'POST' && ['/snapshot', '/plan', '/profile', '/begin'].includes(route)) throw Error('正在执行已授权计划');
+  if (inFlight && method === 'POST' && ['/snapshot', '/session', '/legacy-mode', '/plan', '/profile', '/begin'].includes(route)) throw Error('正在执行已授权计划');
+  if(route === '/legacy-mode' && method === 'POST') {
+    eraseSession(); sessionProfile=null; snapshot=null; plan=null; fieldIndex=null;
+    await refreshProfile(); return {mode:'disk'};
+  }
+  if (route === '/session' && method === 'POST') {
+    if(data.consent !== true) throw Error('需要用户明确授权本次资料进入Codex');
+    validateSnapshot(data.snapshot); secureTarget(data.snapshot.url);
+    if(typeof data.grantId!=='string'||!/^[a-f0-9-]{36}$/.test(data.grantId))throw Error('无效授权标识');
+    for(const [id,expires] of revokedGrants)if(expires<Date.now())revokedGrants.delete(id);
+    if(revokedGrants.has(data.grantId)||sessionProfile?.id===data.grantId)throw Error('本次授权已取消或重复');
+    if(!data.snapshot.owner) throw Error('必须指定当前标签页');
+    const next = normalizeProfile({facts:data.facts});
+    if(!next.facts.length || next.facts.some(f=>!f.confirmed || f.conflict || secret(f.label))) throw Error('仅接受本次选中、已核实且非密码的资料');
+    clearTimeout(sessionTimer); dropCommands();
+    snapshot = redactSnapshot(data.snapshot); fieldIndex = indexFields(snapshot); result = null; plan = null; shareGrant = null;
+    sessionProfile = {id:data.grantId,profile:next, expiresAt:Date.now()+TTL, revoked:false}; profile = next;
+    sharedUntil = sessionProfile.expiresAt;
+    sessionTimer = setTimeout(()=>serial(()=>eraseSession()), TTL); sessionTimer.unref();
+    const mappings=data.mappings||{};
+    if(typeof mappings!=='object'||Object.entries(mappings).some(([id,fact])=>!snapshot.fields.some(f=>f.id===id)||!next.facts.some(f=>f.id===fact))) { eraseSession(); throw Error('映射超出本次授权范围'); }
+    plan = planWithMemory(mappings); changes.notify();
+    return {ok:true, count:next.facts.length, expiresAt:sharedUntil, storage:'memory-only'};
+  }
+  if(route === '/session/end' && method === 'POST') {
+    if(typeof data.grantId!=='string'||!/^[a-f0-9-]{36}$/.test(data.grantId))throw Error('无效授权标识');
+    if(revokedGrants.size>=128)revokedGrants.delete(revokedGrants.keys().next().value);
+    revokedGrants.set(data.grantId,Date.now()+TTL);
+    if(sessionProfile?.id===data.grantId){assertOwner(owner);eraseSession();}
+    return {revoked:true, state:inFlight?'stopping':'stopped'};
+  }
   if (route === '/snapshot' && method === 'POST') {
     validateSnapshot(data.snapshot);
     let request;
@@ -219,11 +272,16 @@ async function route(method, route, owner, data) {
       if (!request || request.owner !== (data.snapshot.owner || '') || request.snapshotId !== snapshot?.id) throw Error('扫描命令已过期或标签页不匹配');
       // refreshProfile may invalidate queued work: validate again after that await.
     }
+    if(sessionProfile) {
+      liveSession();
+      if(data.snapshot.owner!==snapshot.owner||data.snapshot.url!==snapshot.url)throw Error('临时资料仅授权当前申请页面，请重新在工作台授权');
+      data.snapshot=redactSnapshot(data.snapshot);
+    }
     await refreshProfile();
     if (request && pending.get(data.commandId) !== request) throw Error('资料已变化，请重新扫描');
     if (request) { clearTimeout(request.timer); pending.delete(data.commandId); }
     dropCommands(); snapshot = data.snapshot; plan = null; result = null; shareGrant = null;
-    fieldIndex = indexFields(snapshot); sharedUntil = snapshot.shareWithCodex ? (request ? sharedUntil : Date.now() + TTL) : 0;
+    fieldIndex = indexFields(snapshot); sharedUntil = snapshot.shareWithCodex ? (sessionProfile ? sessionProfile.expiresAt : request ? sharedUntil : Date.now() + TTL) : 0;
     const response = {ok: true, revision: changes.revision};
     if (data.prepare === true) response.plan = plan = planWithMemory();
     request?.resolve(snapshot); changes.notify(); return {...response, revision: changes.revision};
@@ -232,15 +290,18 @@ async function route(method, route, owner, data) {
   if (route === '/plan' && method === 'POST') {
     await refreshProfile(); if (!snapshot) throw Error('先扫描'); return newPlan(planWithMemory(data.mappings || {}));
   }
-  if (route === '/plan' && method === 'GET') return plan && Date.now() - plan.createdAt <= TTL ? plan : null;
+  if (route === '/plan' && method === 'GET') { liveSession(); return plan && Date.now() - plan.createdAt <= TTL ? plan : null; }
   if (route === '/begin' && method === 'POST') {
     await refreshProfile(); const current = activePlan(data.planId);
+    secureTarget(current.url);
     if (data.url && data.url !== current.url) throw Error('计划不属于当前页面，请重新扫描');
     if (data.snapshotId && data.snapshotId !== current.snapshotId) throw Error('扫描已变化');
     const ids = data.fieldIds ?? current.entries.filter(e => e.status === 'ready').map(e => e.fieldId);
     if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length || ids.some(id => !current.entries.some(e => e.fieldId === id && e.status === 'ready'))) throw Error('所选字段为空、重复或不属于此计划');
     const selected = new Set(ids);
-    const approved = {...current, entries: current.entries.map(e => ({...e, status: selected.has(e.fieldId) ? 'ready' : 'skipped'}))};
+    const approved = {...current,
+      expiresAt: Math.min(current.createdAt + TTL, sessionProfile?.expiresAt || Infinity),
+      entries: current.entries.filter(e => selected.has(e.fieldId)).map(e => ({...e, status: 'ready'}))};
     inFlight = {plan: approved, ids: selected, owner: snapshot.owner || '', cancelRequested: false};
     queue = queue.filter(c => c.planId !== current.id);
     result = {state: 'running', planId: current.id, submitted: false}; changes.notify();
@@ -275,6 +336,7 @@ async function route(method, route, owner, data) {
     const entries = new Map(inFlight.plan.entries.map(e => [e.fieldId, e]));
     const nextMemory = {...experience};
     for (const r of results) {
+      if(sessionProfile)break;
       const key = fieldIndex.keys.get(r.fieldId), e = entries.get(r.fieldId);
       if (r.status === 'verified' && e.factId && fieldIndex.counts.get(key) === 1) nextMemory[key] = e.factId;
       else if (r.status !== 'verified') delete nextMemory[key];
@@ -284,6 +346,7 @@ async function route(method, route, owner, data) {
     const nextResult = {state: inFlight.cancelRequested ? 'cancelled' : 'completed', planId: inFlight.plan.id, results, counts, submitted: false, saved: false};
     // Release the completed execution even if diagnostic persistence fails. Never re-execute.
     result = nextResult; plan = null; inFlight = null; experience = nextMemory; changes.notify();
+    if (sessionProfile) return {ok:true, storage:'memory-only'};
     try {
       await fs.writeFile(path.join(DIR, 'experience.json.tmp'), JSON.stringify(experience, null, 2), {mode: 0o600});
       await fs.rename(path.join(DIR, 'experience.json.tmp'), path.join(DIR, 'experience.json'));
@@ -312,7 +375,7 @@ const server = http.createServer(async (req, res) => {
       if (data.method !== 'tools/call' || !tools.some(t => t.name === data.params?.name)) throw Error('只接受已有MCP工具调用');
       out = {jsonrpc: '2.0', id: data.id, result: {content: [{type: 'text', text: JSON.stringify(await call(data.params.name, data.params.arguments || {}))}]}};
     } else if (url.pathname === '/status' && req.method === 'GET') {
-      out = {version: VERSION, transport: 2, connected: Date.now() - (connections.get(snapshot?.owner || '') || 0) < 25000, facts: profile.facts.length, waiting: changes.waiting};
+      out = {version: VERSION, transport: 2, profileMode: sessionProfile ? 'session' : 'disk', sessionExpiresAt: sessionProfile?.revoked ? 0 : sessionProfile?.expiresAt || 0, connected: Date.now() - (connections.get(snapshot?.owner || '') || 0) < 25000, facts: profile.facts.length, waiting: changes.waiting};
     } else if (url.pathname === '/poll' && req.method === 'GET') out = poll(owner);
     else if (url.pathname === '/events' && req.method === 'GET') {
       const controller = new AbortController(), close = () => controller.abort();

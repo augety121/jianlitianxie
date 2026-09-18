@@ -37,7 +37,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards && npm run test:ui
+        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -73,5 +73,29 @@ jobs:
           path: |
             test-results/performance-matched.json
             test-results/transport-benchmark.json
+          if-no-files-found: error
+          retention-days: 14
+
+  installed-mv3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install full test Chromium
+        run: |
+          python -m pip install -r requirements-test.txt
+          python -m playwright install --with-deps chromium
+      - name: Installed extension and local-only MCP fixture
+        run: npm run test:mv3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installed-mv3-verification
+          path: test-results/workspace-mv3.json
           if-no-files-found: error
           retention-days: 14
