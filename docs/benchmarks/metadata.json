@@ -1,0 +1,355 @@
+{
+  "schemaVersion": 1,
+  "format": "CSV cells are JSON scalars; empty cell means absent; dotted headers are nested JSON object paths. All attempts and fields are preserved; use scripts/read-benchmark-records.py to reconstruct report objects.",
+  "reports": {
+    "development-interrupted": {
+      "records": "development-interrupted.csv",
+      "originalJsonSha256": "baa64676adab46a5c44069fcc2af4373cf440dbb9c929bbcea94e829c071d7a5",
+      "reportWithoutAttempts": {
+        "schemaVersion": 1,
+        "createdAt": "2026-09-18T00:10:40.952785+00:00",
+        "scope": "synthetic local DOM; not installed MV3, AI-agent, network or real recruiting website benchmark",
+        "timing": "one page evaluate: scan + matching + apply including readback wait; excludes browser/page setup, fixture initialization, and independent verification 100 ms after timed return",
+        "pairsPerFixture": 6,
+        "viewport": {
+          "width": 1120,
+          "height": 780
+        },
+        "modelsUsed": [],
+        "externalNetworkUsed": false,
+        "testSourceSha256": "2992894ca752159cf086cf546888ecbd44ce82e48bcce292de8452f098152e67",
+        "sourceHashes": {
+          "baseline": {
+            "extension/engine.js": "30bb4323c4b717720b485f6c24d82211de96f1651a7c588340eead9e26e2e0e4",
+            "extension/core/semantics.mjs": "26f6552101b7d95e2ee28382b5a60d44d79c2463a25b36ad8f1b4168a247f2f7",
+            "extension/core/planner.mjs": "e66d10396742ecccbeced42c59b43eedf121f9410f8e3410387c2dc0d3ac745d"
+          },
+          "candidate": {
+            "extension/engine.js": "7db4d62c04f2ab3f9cb1c94402b49868b298c4a6b630ac081bb4afc0e8f43acb",
+            "extension/core/performance.mjs": "477348539f0e958488dc0cf7423fe86b10fddd94488dfc0526be6ae01093dd20",
+            "extension/core/semantics.mjs": "f391596119dc1af9f58d3e747d18a0c67d4f9f725c07c314c5bc38836af98fec",
+            "extension/core/planner.mjs": "98de64fc5bc2d6291ebd43a5c9f28a3ac12649426e087fefb1fdf102760f8bf4"
+          }
+        },
+        "environment": {
+          "python": "3.13.5",
+          "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+          "playwright": "1.57.0",
+          "browser": "144.0.7559.96"
+        },
+        "complete": false,
+        "interruption": "Execution environment terminated the multi-fixture run after 20 recorded attempts; no complete summary. Retained as development evidence, not the final comparison."
+      }
+    },
+    "final-combobox": {
+      "records": "final-combobox.csv",
+      "originalJsonSha256": "b6dc83cdc5a7c6bdec097d5556603276e95460898674e5094569166d00cbab8c",
+      "reportWithoutAttempts": {
+        "schemaVersion": 1,
+        "createdAt": "2026-09-18T00:12:30.612163+00:00",
+        "scope": "synthetic local DOM; not installed MV3, AI-agent, network or real recruiting website benchmark",
+        "timing": "one page evaluate: scan + matching + apply including readback wait; excludes browser/page setup, fixture initialization, and independent verification 100 ms after timed return",
+        "pairsPerFixture": 6,
+        "viewport": {
+          "width": 1120,
+          "height": 780
+        },
+        "modelsUsed": [],
+        "externalNetworkUsed": false,
+        "testSourceSha256": "c67aabe0c1505a68a9da1b5ef331d3ee9eb83aaaadda93cdd990261c3e436925",
+        "sourceHashes": {
+          "baseline": {
+            "extension/engine.js": "30bb4323c4b717720b485f6c24d82211de96f1651a7c588340eead9e26e2e0e4",
+            "extension/core/semantics.mjs": "26f6552101b7d95e2ee28382b5a60d44d79c2463a25b36ad8f1b4168a247f2f7",
+            "extension/core/planner.mjs": "e66d10396742ecccbeced42c59b43eedf121f9410f8e3410387c2dc0d3ac745d"
+          },
+          "candidate": {
+            "extension/engine.js": "7db4d62c04f2ab3f9cb1c94402b49868b298c4a6b630ac081bb4afc0e8f43acb",
+            "extension/core/performance.mjs": "477348539f0e958488dc0cf7423fe86b10fddd94488dfc0526be6ae01093dd20",
+            "extension/core/semantics.mjs": "f391596119dc1af9f58d3e747d18a0c67d4f9f725c07c314c5bc38836af98fec",
+            "extension/core/planner.mjs": "98de64fc5bc2d6291ebd43a5c9f28a3ac12649426e087fefb1fdf102760f8bf4"
+          }
+        },
+        "environment": {
+          "python": "3.13.5",
+          "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+          "playwright": "1.57.0",
+          "browser": "144.0.7559.96"
+        },
+        "summary": [
+          {
+            "fixture": "async-combobox-8",
+            "baseline": {
+              "attempted": 6,
+              "verified": 6,
+              "medianMs": 1947.2999999999884,
+              "p95Ms": 1947.5499999999593,
+              "scanMs": 4.400000000081491,
+              "matchMs": 1.2999999999301508,
+              "applyMs": 1941.5000000000582,
+              "medianQuerySelectorAllCalls": 540.0
+            },
+            "candidate": {
+              "attempted": 6,
+              "verified": 6,
+              "medianMs": 1572.2000000000116,
+              "p95Ms": 1572.9999999998836,
+              "scanMs": 3.400000000023283,
+              "matchMs": 1.400000000023283,
+              "applyMs": 1567.3000000000466,
+              "medianQuerySelectorAllCalls": 538.0
+            },
+            "allAttemptsVerified": true,
+            "medianReductionPercent": 19.262568684844606
+          }
+        ],
+        "allAttemptsVerified": true
+      }
+    },
+    "final-native": {
+      "records": "final-native.csv",
+      "originalJsonSha256": "ff4a8292104a3653cf6b533e54a23dc12120bd123ad5d87b02d8d394000f0ccb",
+      "reportWithoutAttempts": {
+        "schemaVersion": 1,
+        "createdAt": "2026-09-18T00:12:07.611579+00:00",
+        "scope": "synthetic local DOM; not installed MV3, AI-agent, network or real recruiting website benchmark",
+        "timing": "one page evaluate: scan + matching + apply including readback wait; excludes browser/page setup, fixture initialization, and independent verification 100 ms after timed return",
+        "pairsPerFixture": 6,
+        "viewport": {
+          "width": 1120,
+          "height": 780
+        },
+        "modelsUsed": [],
+        "externalNetworkUsed": false,
+        "testSourceSha256": "c67aabe0c1505a68a9da1b5ef331d3ee9eb83aaaadda93cdd990261c3e436925",
+        "sourceHashes": {
+          "baseline": {
+            "extension/engine.js": "30bb4323c4b717720b485f6c24d82211de96f1651a7c588340eead9e26e2e0e4",
+            "extension/core/semantics.mjs": "26f6552101b7d95e2ee28382b5a60d44d79c2463a25b36ad8f1b4168a247f2f7",
+            "extension/core/planner.mjs": "e66d10396742ecccbeced42c59b43eedf121f9410f8e3410387c2dc0d3ac745d"
+          },
+          "candidate": {
+            "extension/engine.js": "7db4d62c04f2ab3f9cb1c94402b49868b298c4a6b630ac081bb4afc0e8f43acb",
+            "extension/core/performance.mjs": "477348539f0e958488dc0cf7423fe86b10fddd94488dfc0526be6ae01093dd20",
+            "extension/core/semantics.mjs": "f391596119dc1af9f58d3e747d18a0c67d4f9f725c07c314c5bc38836af98fec",
+            "extension/core/planner.mjs": "98de64fc5bc2d6291ebd43a5c9f28a3ac12649426e087fefb1fdf102760f8bf4"
+          }
+        },
+        "environment": {
+          "python": "3.13.5",
+          "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+          "playwright": "1.57.0",
+          "browser": "144.0.7559.96"
+        },
+        "summary": [
+          {
+            "fixture": "large-native-160",
+            "baseline": {
+              "attempted": 6,
+              "verified": 6,
+              "medianMs": 1618.5999999999767,
+              "p95Ms": 1627.024999999965,
+              "scanMs": 381.7499999999418,
+              "matchMs": 18.25,
+              "applyMs": 1218.100000000035,
+              "medianQuerySelectorAllCalls": 82572.0
+            },
+            "candidate": {
+              "attempted": 6,
+              "verified": 6,
+              "medianMs": 699.8499999999767,
+              "p95Ms": 711.0249999999651,
+              "scanMs": 15.299999999988358,
+              "matchMs": 3.799999999930151,
+              "applyMs": 680.9499999999534,
+              "medianQuerySelectorAllCalls": 3850.0
+            },
+            "allAttemptsVerified": true,
+            "medianReductionPercent": 56.762016557519665
+          }
+        ],
+        "allAttemptsVerified": true
+      }
+    },
+    "final-shadow": {
+      "records": "final-shadow.csv",
+      "originalJsonSha256": "cc5119631a6eb459c5639ae68e291ae36a6ffa4954bb42447759176faead2b15",
+      "reportWithoutAttempts": {
+        "schemaVersion": 1,
+        "createdAt": "2026-09-18T00:13:01.720078+00:00",
+        "scope": "synthetic local DOM; not installed MV3, AI-agent, network or real recruiting website benchmark",
+        "timing": "one page evaluate: scan + matching + apply including readback wait; excludes browser/page setup, fixture initialization, and independent verification 100 ms after timed return",
+        "pairsPerFixture": 6,
+        "viewport": {
+          "width": 1120,
+          "height": 780
+        },
+        "modelsUsed": [],
+        "externalNetworkUsed": false,
+        "testSourceSha256": "c67aabe0c1505a68a9da1b5ef331d3ee9eb83aaaadda93cdd990261c3e436925",
+        "sourceHashes": {
+          "baseline": {
+            "extension/engine.js": "30bb4323c4b717720b485f6c24d82211de96f1651a7c588340eead9e26e2e0e4",
+            "extension/core/semantics.mjs": "26f6552101b7d95e2ee28382b5a60d44d79c2463a25b36ad8f1b4168a247f2f7",
+            "extension/core/planner.mjs": "e66d10396742ecccbeced42c59b43eedf121f9410f8e3410387c2dc0d3ac745d"
+          },
+          "candidate": {
+            "extension/engine.js": "7db4d62c04f2ab3f9cb1c94402b49868b298c4a6b630ac081bb4afc0e8f43acb",
+            "extension/core/performance.mjs": "477348539f0e958488dc0cf7423fe86b10fddd94488dfc0526be6ae01093dd20",
+            "extension/core/semantics.mjs": "f391596119dc1af9f58d3e747d18a0c67d4f9f725c07c314c5bc38836af98fec",
+            "extension/core/planner.mjs": "98de64fc5bc2d6291ebd43a5c9f28a3ac12649426e087fefb1fdf102760f8bf4"
+          }
+        },
+        "environment": {
+          "python": "3.13.5",
+          "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+          "playwright": "1.57.0",
+          "browser": "144.0.7559.96"
+        },
+        "summary": [
+          {
+            "fixture": "shadow-records-48",
+            "baseline": {
+              "attempted": 6,
+              "verified": 6,
+              "medianMs": 707.4000000000233,
+              "p95Ms": 711.5,
+              "scanMs": 12.75,
+              "matchMs": 4.199999999953434,
+              "applyMs": 689.6500000000233,
+              "medianQuerySelectorAllCalls": 1064.0
+            },
+            "candidate": {
+              "attempted": 6,
+              "verified": 6,
+              "medianMs": 540.75,
+              "p95Ms": 542.6000000000349,
+              "scanMs": 7.099999999976717,
+              "matchMs": 3.200000000069849,
+              "applyMs": 529.7999999999302,
+              "medianQuerySelectorAllCalls": 607.0
+            },
+            "allAttemptsVerified": true,
+            "medianReductionPercent": 23.558100084820154
+          }
+        ],
+        "allAttemptsVerified": true
+      }
+    },
+    "matched-development": {
+      "records": "matched-development.csv",
+      "originalJsonSha256": "c71dce58dbb904e7023f2a4a385f3b28ec2498f2791111d4fdcc5f32fb2d20ef",
+      "reportWithoutAttempts": {
+        "schemaVersion": 1,
+        "createdAt": "2026-09-18T00:08:30.800548+00:00",
+        "scope": "synthetic local DOM; not installed MV3, AI-agent, network or real recruiting website benchmark",
+        "timing": "one page evaluate: scan + matching + apply including readback wait; excludes browser/page setup, fixture initialization, and independent verification 100 ms after timed return",
+        "pairsPerFixture": 3,
+        "viewport": {
+          "width": 1120,
+          "height": 780
+        },
+        "modelsUsed": [],
+        "externalNetworkUsed": false,
+        "testSourceSha256": "5963f0e137369bd66d7c84edb4a4dddd6a1e2fe7ae6007059dd47d0211a9d2a3",
+        "sourceHashes": {
+          "baseline": {
+            "extension/engine.js": "30bb4323c4b717720b485f6c24d82211de96f1651a7c588340eead9e26e2e0e4",
+            "extension/core/semantics.mjs": "26f6552101b7d95e2ee28382b5a60d44d79c2463a25b36ad8f1b4168a247f2f7",
+            "extension/core/planner.mjs": "e66d10396742ecccbeced42c59b43eedf121f9410f8e3410387c2dc0d3ac745d"
+          },
+          "candidate": {
+            "extension/engine.js": "7db4d62c04f2ab3f9cb1c94402b49868b298c4a6b630ac081bb4afc0e8f43acb",
+            "extension/core/performance.mjs": "477348539f0e958488dc0cf7423fe86b10fddd94488dfc0526be6ae01093dd20",
+            "extension/core/semantics.mjs": "f391596119dc1af9f58d3e747d18a0c67d4f9f725c07c314c5bc38836af98fec",
+            "extension/core/planner.mjs": "98de64fc5bc2d6291ebd43a5c9f28a3ac12649426e087fefb1fdf102760f8bf4"
+          }
+        },
+        "environment": {
+          "python": "3.13.5",
+          "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+          "playwright": "1.57.0",
+          "browser": "144.0.7559.96"
+        },
+        "summary": [
+          {
+            "fixture": "large-native-160",
+            "baseline": {
+              "attempted": 3,
+              "verified": 3,
+              "medianMs": 1635.2000000000698,
+              "p95Ms": 1642.9399999999441,
+              "scanMs": 382,
+              "matchMs": 18.800000000046566,
+              "applyMs": 1220.3999999999069,
+              "medianQuerySelectorAllCalls": 82572
+            },
+            "candidate": {
+              "attempted": 3,
+              "verified": 3,
+              "medianMs": 698.7999999999302,
+              "p95Ms": 728.140000000014,
+              "scanMs": 16.099999999976717,
+              "matchMs": 3.599999999976717,
+              "applyMs": 677.6999999999534,
+              "medianQuerySelectorAllCalls": 3850
+            },
+            "allAttemptsVerified": true,
+            "medianReductionPercent": 57.26516634051491
+          },
+          {
+            "fixture": "async-combobox-8",
+            "baseline": {
+              "attempted": 3,
+              "verified": 3,
+              "medianMs": 1947.5999999999767,
+              "p95Ms": 1947.6000000000815,
+              "scanMs": 5.099999999976717,
+              "matchMs": 1.2000000000698492,
+              "applyMs": 1940.9000000000233,
+              "medianQuerySelectorAllCalls": 540
+            },
+            "candidate": {
+              "attempted": 3,
+              "verified": 3,
+              "medianMs": 1572.9000000000233,
+              "p95Ms": 1573.2599999999395,
+              "scanMs": 3.199999999953434,
+              "matchMs": 1.400000000023283,
+              "applyMs": 1568.0999999999767,
+              "medianQuerySelectorAllCalls": 538
+            },
+            "allAttemptsVerified": true,
+            "medianReductionPercent": 19.239063462721194
+          },
+          {
+            "fixture": "shadow-records-48",
+            "baseline": {
+              "attempted": 3,
+              "verified": 3,
+              "medianMs": 711.2000000000698,
+              "p95Ms": 712.459999999986,
+              "scanMs": 12.400000000023283,
+              "matchMs": 5.800000000046566,
+              "applyMs": 690,
+              "medianQuerySelectorAllCalls": 1064
+            },
+            "candidate": {
+              "attempted": 3,
+              "verified": 3,
+              "medianMs": 538.1999999999534,
+              "p95Ms": 544.4999999999534,
+              "scanMs": 6.099999999976717,
+              "matchMs": 3.5,
+              "applyMs": 528.9000000000233,
+              "medianQuerySelectorAllCalls": 607
+            },
+            "allAttemptsVerified": true,
+            "medianReductionPercent": 24.32508436446842
+          }
+        ],
+        "allAttemptsVerified": true
+      }
+    }
+  }
+}

@@ -1,0 +1,3 @@
+# Test-only dependency; no runtime browser-extension dependency.
+# This is the version used for the delivered Chromium DOM/UI test evidence.
+playwright==1.57.0

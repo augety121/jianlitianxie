@@ -9,3 +9,9 @@ private/
 test-results/
 .env*
 !*.example.json
+
+__pycache__/
+*.pyc
+.venv/
+test-results/
+dist/
