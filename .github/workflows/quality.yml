@@ -21,3 +21,53 @@ jobs:
           node-version: '22'
       - name: Unit and release checks
         run: npm test && npm run check
+
+  browser-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test-only dependencies
+        run: |
+          python -m pip install -r requirements-test.txt
+          python -m playwright install --with-deps chromium
+      - name: DOM and target-guard fixtures (not installed MV3 acceptance)
+        run: npm run test:dom && npm run test:guards
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-fixture-verification
+          path: |
+            test-results/**/*.json
+            test-results/**/*.png
+            !test-results/**/synthetic-encrypted-backup.json
+          retention-days: 7
+
+  matched-performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test-only browser
+        run: |
+          python -m pip install -r requirements-test.txt
+          python -m playwright install --with-deps chromium
+      - name: Matched local-DOM comparison; never silently discard failures
+        run: npm run bench -- --pairs 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: matched-performance-raw
+          path: test-results/performance-matched.json
+          if-no-files-found: error
+          retention-days: 14

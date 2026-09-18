@@ -20,10 +20,11 @@ jobs:
       - name: Bundle tracked active source only
         run: |
           mkdir -p dist
-          git archive --format=zip --output=dist/active-source.zip HEAD README.md LICENSE .gitignore package.json bridge extension tests scripts docs .github
+          git archive --format=zip --output=dist/active-source.zip HEAD README.md LICENSE .gitignore package.json requirements-test.txt bridge extension tests scripts docs .github
+          git archive --format=zip --output=dist/extension.zip HEAD extension
       - uses: actions/upload-artifact@v4
         with:
           name: active-source-review
-          path: dist/active-source.zip
+          path: dist/*.zip
           if-no-files-found: error
           retention-days: 14

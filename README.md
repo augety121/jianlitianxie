@@ -1,3 +1,35 @@
+# 简历填写助手 · MCP 性能更新
+
+**本分支继续使用原 MCP / Codex 流程。此轮同步的是性能内核与回归测试，不是完整本地加密工作台。**
+
+本轮按 [Jev Ultrafast 性能文档](https://github.com/browser-use/jev-ultrafast/blob/452c1ad2dd628008f1d5608f28158d76e49e6cc0/docs/performance.md) 的方法独立实现扫描缓存、单计划资料索引、有界事件等待、目标／表单／经历／选项检查、遮挡检测和不确定写入停止。没有接入 Jev 或 Mercury，也没有新增第三方云端调用。
+
+扩展和桥接的配对协议版本保持 0.3.1；页面引擎 build 为 0.4.1。升级应同时更新 `bridge` 与 `extension`（新增共享 core 模块），重新加载扩展、重连 MCP，并在申请页重新打开插件。保留原私有资料目录，不卸载或清理存储。
+
+**实际同步范围与安装说明：[SYNC-PERFORMANCE.md](docs/SYNC-PERFORMANCE.md)。性能方法、原始尝试与局限：[PERFORMANCE.md](docs/PERFORMANCE.md)。**
+
+本地虚构表单对上轮 0.4.0 交付引擎的配对中位时间：160 字段 1.619 → 0.700 秒，8 个异步下拉 1.947 → 1.572 秒，48 个 Shadow DOM 经历字段 0.707 → 0.541 秒；三组各 6 对，共 36 次独立核对通过。**不是当前 GitHub 0.3.1、真实招聘官网、服务器保存或模型调用的同条件加速结论。** 两臂同样保留 500ms 最终回读，新守卫不以删减验证换速度。
+
+本轮分支测试：Node 34 项、既有 DOM 25 项、新增守卫 DOM 16 项；安装后 MV3 与官网覆盖未验证。完整本地工作台在另一份本地交付包中；相关加密资料库文件同步被工具拦截，本分支不冒充已包含它，也没有绕过拦截。已有加密基础模块保留但尚未接入完整工作台。
+
+## 开发验证
+
+```bash
+npm test
+npm run check
+python -m pip install -r requirements-test.txt
+python -m playwright install chromium
+npm run test:dom
+npm run test:guards
+npm run bench -- --pairs 3
+```
+
+GitHub Actions 保留测试与原始配对结果，并打包此提交的维护源码和可加载扩展。人工可从 [PR #1](https://github.com/augety121/jianlitianxie/pull/1) 审查；不会自动合并主分支。旧 MCP 文件仍为明文；扫码共享给 Codex 的内容会进入模型上下文，填写到网站的内容会交给网站。不自动同意、保存、下一步或提交。
+
+---
+
+## 原 MCP 使用说明（保留）
+
 # 简历填写助手 0.2.0
 
 Edge / Chrome 扩展 + 本机 MCP。**Codex 维护资料、理解字段并编排本次计划，插件负责扫描、填写和回读。** 不保存网站草稿、不点击同意声明、不最终提交。
