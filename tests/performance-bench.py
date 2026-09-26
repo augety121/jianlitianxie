@@ -15,6 +15,7 @@ def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def sources(root):
  files=['extension/engine.js','extension/core/semantics.mjs','extension/core/planner.mjs']
  if (root/'extension/core/performance.mjs').exists():files.insert(1,'extension/core/performance.mjs')
+ if (root/'extension/core/entity-binding.mjs').exists():files.insert(-1,'extension/core/entity-binding.mjs')
  module='\n'.join((root/f).read_text() for f in files if not f.endswith('engine.js'))
  module=re.sub(r'^import .*?;\s*$','',module,flags=re.M).replace('export {normalize};','').replace('export ','')
  module=module.replace('crypto.randomUUID()',"'bench-'+String(++globalThis.__benchId)")

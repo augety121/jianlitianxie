@@ -35,6 +35,8 @@ export function scope(s=''){
  return '';
 }
 export function entityMatches(a,f){const context=normalize([f.entity,f.section,...f.anchors||[]].filter(Boolean).join(' '));return [a.entity,...a.entityAliases||[]].some(e=>e&&!/^\d+$/.test(e)&&context.includes(normalize(e)));}
+// Explicit record binding is stricter than generic matching: unknown/cross-section facts are excluded.
+export function restrictedFactScope(fact, targetScope){return !targetScope || scope(fact.section)!==targetScope;}
 export function candidatesFor(f,facts){
  const key=semanticLabel(f.label,f.section),fs=scope(f.section);
  return facts.filter(a=>a.confirmed!==false&&!a.conflict&&(!a.origin||a.origin===new URL(f.url||'https://unknown.invalid').origin))

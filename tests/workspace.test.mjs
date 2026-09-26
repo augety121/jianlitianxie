@@ -42,7 +42,7 @@ test('diagnostics do not return values, labels, URLs, errors or unknown statuses
 });
 test('local preview and writes do not use a bridge; only selected entries reach one document',async()=>{
  const h=harness(), p=await h.scan();
- assert.equal(p.entries.length,2);assert.equal(p.capabilities.locate,false);
+ assert.equal(p.entries.length,2);assert.equal(p.capabilities.locate,true);
  const report=await h.run.apply('workspace1',{planId:p.id,ids:['0:f'],reviewed:true});
  assert.equal(report.results[0].status,'verified');assert.equal(h.calls.length,1);
  assert.deepEqual(h.calls[0].target,{frameId:0,documentId:'doc0'});

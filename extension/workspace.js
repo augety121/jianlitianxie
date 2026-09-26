@@ -1,6 +1,7 @@
-import {parseImport, MAX_PROFILE_BYTES, normalizeFact} from './core/profile.mjs';
+import {parseImport, planImport, mergeImport, MAX_PROFILE_BYTES, normalizeFact} from './core/profile.mjs';
 import {MAX_BACKUP_BYTES} from './core/vault.mjs';
 import {secret, summaryOnly} from './core/workspace-policy.mjs';
+import {scope} from './core/semantics.mjs';
 const $ = id => document.getElementById(id), tabId = Number(new URLSearchParams(location.search).get('tab'));
 let state = {exists:false,unlocked:false,mode:'local'}, profile = {facts:[],revision:0}, chosenFacts = new Set();
 let plan = null, chosenFields = new Set(), pendingImport = [], lastReport = null, busy = false, edited = null;
@@ -21,6 +22,8 @@ function usable(f) { return f.confirmed === true && !f.conflict && !secret(f.lab
 function controls() {
   const ready = state.unlocked && state.mode === 'local' && !busy;
   document.querySelectorAll('[data-unlocked]').forEach(n => n.disabled = !ready);
+  // Groups are created while scanning is busy; keep them in the same lifecycle as the plan.
+  document.querySelectorAll('#groupBindings select, #groupBindings button').forEach(n => n.disabled = !ready || !plan);
   $('fillSelected').disabled = !ready || !plan || !chosenFields.size || !$('reviewed').checked;
   $('stop').disabled = !busy; $('lock').disabled = !state.unlocked && !state.sharedUntil;
   $('selectedCount').textContent = `已选 ${chosenFields.size} 项`;
@@ -29,7 +32,7 @@ function controls() {
 function clearPlan() {
   plan = null; chosenFields.clear(); $('entries').replaceChildren(); $('empty').hidden = false;
   $('readyCount').textContent = '—'; $('pendingCount').textContent = '—'; $('coverage').hidden = true;
-  $('reviewed').checked = false; $('shareConsent').checked = false; controls();
+  $('reviewed').checked = false; $('shareConsent').checked = false; $('groupBindings').replaceChildren(); controls();
 }
 function clearPrivate() {
   profile = {facts:[],revision:0}; chosenFacts.clear(); pendingImport = []; edited = null;
@@ -110,7 +113,23 @@ function showPlan(next) {
   if(!next.includeFrames&&next.frames.some(f=>f.coverage?.frames))text.push('页面含嵌入文档，尚未扫描；可启用同源嵌入表单识别。');
   text.push(...next.skipped.map(s=>`文档 ${s.frameId}：${s.reason}`));
   text.push('这些是当前可观察区域的计数，不是整站完整率。');
-  $('coverage').textContent=text.join('\n');$('coverage').hidden=false;renderEntries(); controls();
+  $('coverage').textContent=text.join('\n');$('coverage').hidden=false;renderGroups();renderEntries(); controls();
+}
+function renderGroups() {
+  const box=$('groupBindings');box.replaceChildren();
+  const groups=(plan?.groups||[]).filter(g=>g.bindable);
+  if(!groups.length)return;
+  box.append(node('h3','先绑定整段经历'),node('p','为网页上的教育、项目或实习区块选择对应经历，一次匹配该区块内的字段。没有明确区块的字段仍需单独核对。','muted'));
+  for(const [index,g] of groups.entries()){
+    const label=node('div',null,'group-binding');label.append(node('span',`网页区块 ${index+1}：${g.label||g.section}`));
+    const select=document.createElement('select');select.setAttribute('aria-label',(g.label||g.section)+' 整段经历');select.disabled=busy;
+    const empty=node('option','选择对应经历（不按先后顺序猜测）');empty.value='';select.append(empty);
+    for(const c of g.candidates||[]){const option=node('option',c.label||c.entity);option.value=c.entity;option.selected=c.entity===g.entity;select.append(option);}
+    select.onchange=async()=>{try{showPlan(await send('bind-entity',{planId:plan.id,groupId:g.id,entity:select.value}));notify('这段经历已重新匹配，请核对待填字段。');}catch(error){notify(error.message,true);}};
+    label.append(select,node('small',`${g.fieldIds.length} 个字段 · ${g.reason||'仅作用于本次页面区块'}`));
+    if(plan.capabilities?.locate){const locate=node('button','查看网页区块','secondary');locate.disabled=busy;locate.onclick=async()=>{try{await send('locate',{planId:plan.id,id:g.fieldIds[0]});notify('已高亮该区块的第一个字段。区块编号仅用于本次预览，不代表教育先后顺序。');}catch(error){notify(error.message,true);}};label.append(locate);}
+    box.append(label);
+  }
 }
 function renderEntries() {
   $('entries').replaceChildren(); if(!plan)return;
@@ -129,7 +148,8 @@ function renderEntries() {
     if(e.frameId===0&&e.status!=='preserve'&&e.kind!=='file'){
       const select=document.createElement('select');select.setAttribute('aria-label',e.label+' 资料映射');select.disabled=busy;
       const defaultOption=node('option','自动匹配 / 选择准确来源');defaultOption.value='';select.append(defaultOption);
-      for(const f of profile.facts.filter(f=>chosenFacts.has(f.id)&&usable(f))){const o=node('option',[f.section,f.entity,f.label].filter(Boolean).join(' / ')+($('reveal').checked?' · '+f.value.slice(0,35):''));o.value=f.id;o.selected=e.factId===f.id;select.append(o);}
+      const bound=plan.groups?.find(g=>g.entity&&g.fieldIds.includes(e.id));
+      for(const f of profile.facts.filter(f=>chosenFacts.has(f.id)&&usable(f)&&(!bound||f.entity===bound.entity&&scope(f.section)===bound.scope)&&(!scope(e.section)||!scope(f.section)||scope(e.section)===scope(f.section)||scope(e.section)==='personal'&&scope(f.section)==='language'))){const o=node('option',[f.section,f.entity,f.label].filter(Boolean).join(' / ')+($('reveal').checked?' · '+f.value.slice(0,35):''));o.value=f.id;o.selected=e.factId===f.id;select.append(o);}
       select.onchange=async()=>{try{showPlan(await send('remap',{planId:plan.id,id:e.id,factId:select.value}));notify('映射已更新，请重新核对本次选择。');}catch(error){notify(error.message,true);}};actions.append(select);
     }
     card.append(top,meta,value,actions);$('entries').append(card);
@@ -167,8 +187,30 @@ on('confirmFacts',async()=>{
   await saveFacts(profile.facts.map(f=>chosenFacts.has(f.id)&&!secret(f.label)?{...f,confirmed:true,conflict:false}:f));
 });
 $('importFile').onchange=async()=>{try{const f=$('importFile').files[0];if(!f)return;if(f.size>MAX_PROFILE_BYTES||!/\.(txt|json)$/i.test(f.name))throw Error('仅支持不超过2MB的 TXT / JSON');$('importText').value=await f.text();notify('文件仅在本地读取，请解析并检查。');}catch(e){notify(e.message,true);}};
-on('parse',()=>{pendingImport=parseImport($('importText').value,{section:$('importSection').value,entity:$('importEntity').value});if(pendingImport.some(f=>secret(f.label)))throw Error('请移除密码、验证码或密钥条目');$('importPreview').textContent=pendingImport.map(f=>`${f.section} / ${f.entity||'无经历标识'} / ${f.label}：${f.value}`).join('\n');$('saveImport').hidden=false;notify(`解析了 ${pendingImport.length} 条待核实资料；尚未保存。`);});
-on('saveImport',async()=>{if(!pendingImport.length)return;const ids=pendingImport.map(f=>f.id);await saveFacts([...profile.facts,...pendingImport]);chosenFacts=new Set(ids);pendingImport=[];$('importText').value='';$('importPreview').replaceChildren();$('saveImport').hidden=true;renderFacts();notify('导入内容已加密保存，仍为待核实状态；逐条核对后确认。');});
+function renderImportPreview() {
+  const rows=planImport(profile.facts,pendingImport); $('importPreview').replaceChildren();
+  const counts=rows.reduce((a,r)=>(a[r.status]=(a[r.status]||0)+1,a),{});
+  $('importPreview').append(node('p',`新增 ${counts.new||0} · 相同跳过 ${counts.duplicate||0} · 内容变化 ${counts.change||0} · 文件冲突 ${counts.conflict||0}`,'import-summary'));
+  for(const row of rows){
+    const card=node('article',null,'import-row');card.append(node('b',[row.fact.section,row.fact.entity,row.fact.label].filter(Boolean).join(' / ')),node('p',row.reason));
+    const detail=document.createElement('details');detail.append(node('summary','核对本条内容与来源'),node('pre',row.fact.value),node('small',row.fact.source));
+    if(row.status==='change'){
+      detail.append(node('p','原有内容：'),node('pre',profile.facts.filter(f=>row.existingIds.includes(f.id)).map(f=>f.value).join('\n')));
+      const label=node('label',null,'check'),check=document.createElement('input');check.type='checkbox';check.dataset.replaceFact=row.fact.id;label.append(check,node('span','用导入内容替换此项（需重新核实）'));card.append(label);
+    }
+    card.append(detail);$('importPreview').append(card);
+  }
+  $('saveImport').hidden=!rows.some(r=>r.status==='new'||r.status==='change');
+  notify(`导入预览已就绪。相同内容自动跳过，变化内容默认保留原值。`);
+}
+on('parse',()=>{pendingImport=[]; $('saveImport').hidden=true; $('importPreview').replaceChildren(); const draft=parseImport($('importText').value,{section:$('importSection').value,entity:$('importEntity').value});if(draft.some(f=>secret(f.label)))throw Error('请移除密码、验证码或密钥条目');pendingImport=draft;renderImportPreview();});
+on('saveImport',async()=>{
+  if(!pendingImport.length)return;
+  const replaceIds=[...document.querySelectorAll('[data-replace-fact]:checked')].map(n=>n.dataset.replaceFact);
+  const merged=mergeImport(profile.facts,pendingImport,replaceIds);
+  if(!merged.addedIds.length){notify('没有选择需要保存的新内容，原资料保持不变。');return;}
+  await saveFacts(merged.facts);chosenFacts=new Set(merged.addedIds);pendingImport=[];$('importText').value='';$('importPreview').replaceChildren();$('saveImport').hidden=true;renderFacts();notify(`已保存 ${merged.addedIds.length} 条新增或更新资料，仍为待核实。核对后点击“确认已核对的选中资料”即可使用。`);
+});
 on('enableFrames',async()=>{const granted=await chrome.permissions.request({permissions:['webNavigation']});$('includeFrames').checked=granted;notify(granted?'已授权文档枚举；只扫描本次标签页的同源文档，不请求所有网站内容权限。':'没有授权；仍可扫描主文档。');});
 on('scan',async()=>{
   if(busy)return;const ids=[...chosenFacts];if(!ids.length)throw Error('先到“我的资料”勾选已核实资料');

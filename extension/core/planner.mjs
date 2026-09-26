@@ -1,21 +1,27 @@
 import {normalize,semanticLabel,candidatesFor,createCandidateIndex,entityMatches,dateValue,optionKey} from './semantics.mjs';
 import {numericMetrics} from './performance.mjs';
+import {entityGroups,factMatchesBinding} from './entity-binding.mjs';
 export {normalize};
 export const restricted=f=>/password|file|hidden|submit|button|checkbox/.test(f.type)||/验证码|密码|同意|承诺|声明|签名|授权|captcha|consent|signature/i.test(f.label);
-export function makePlan(snapshot,profile,mappings={}){
+export function makePlan(snapshot,profile,mappings={},entityBindings={}){
  const start=performance.now(),facts=profile.facts||[],counts=new Map();
  const metrics={fieldCount:snapshot.fields.length,factCount:facts.length};
  const index=createCandidateIndex(facts,snapshot.url,metrics);
+ const groups=new Map(entityGroups(snapshot,facts,entityBindings).map(g=>[g.id,g]));
  for(const f of snapshot.fields){const k=semanticLabel(f.label,f.section);counts.set(k,(counts.get(k)||0)+1);}
  const entries=snapshot.fields.map(original=>{
   const f={...original};if(Array.isArray(f.type)&&/\bx-combocheck\b/.test(f.control?.classes||''))f.type='custom-select';
-  const row={fieldId:f.id,label:f.label,section:f.section,kind:f.type,oldValue:f.value,required:f.required,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
+  const row={fieldId:f.id,label:f.label,section:f.section,groupId:f.groupId,kind:f.type,oldValue:f.value,required:f.required,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
   if(restricted(f))return {...row,status:'manual',reason:'附件须选择文件；声明、密码和提交由本人操作'};
   if(f.value!==''&&f.value!==false&&f.value!=null&&(!Array.isArray(f.value)||f.value.length))return {...row,status:'preserve',reason:'已有内容保留；请在网页修正后重新扫描'};
   if((f.multiple||f.type==='repeat-group')&&!mappings[f.id])return {...row,status:'manual',reason:'请明确指定本次多选资料或经历条数'};
   let candidates=index.candidates(f);
+  const bound=groups.get(f.groupId);
   if(mappings[f.id])candidates=index.byId(mappings[f.id]);
-  else{const anchored=candidates.filter(a=>entityMatches(a,f));if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(semanticLabel(f.label,f.section))>1)candidates=[];}
+  if(bound?.entity){
+   if(!bound.valid)return {...row,status:'missing',reason:bound.reason};
+   candidates=candidates.filter(a=>factMatchesBinding(a,f,bound.entity));
+  }else if(!mappings[f.id]){const anchored=candidates.filter(a=>entityMatches(a,f));if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(semanticLabel(f.label,f.section))>1)candidates=[];}
   const targetPrecision=f.type==='month'||f.datePrecision==='month'&&f.type==='date-picker'?'month':['date','date-picker'].includes(f.type)?'day':null;
   if(targetPrecision)candidates=candidates.filter(a=>dateValue(a.value,targetPrecision)).map(a=>({...a,value:dateValue(a.value,targetPrecision)}));
   candidates=candidates.filter((a,i,all)=>all.findIndex(b=>b.value===a.value&&b.entity===a.entity)===i);
@@ -37,7 +43,7 @@ export function makePlan(snapshot,profile,mappings={}){
   if(f.type==='number'){if(['身高','体重'].includes(semanticLabel(f.label)))value=value.replace(/\s*(cm|kg|厘米|公斤|千克)$/i,'');if(!/^-?\d+(\.\d+)?$/.test(value))return {...row,status:'missing',reason:'资料不是有效数值'};}
   if(f.maxLength>0&&value.length>f.maxLength)return {...row,status:'missing',reason:'超过字数限制，需审阅压缩文字'};
   if(f.options?.length){const options=f.options.filter(o=>!o.disabled&&optionKey(f.label,o.label)===optionKey(f.label,value));if(options.length!==1)return {...row,status:'missing',reason:'没有唯一准确的候选选项'};value=options[0].value;}
-  return {...row,status:'ready',value,factId:fact.id,source:fact.source,reason:'分区、字段及经历匹配'};
+  return {...row,status:'ready',value,factId:fact.id,source:fact.source,reason:bound?.entity?'已按本人指定的整段经历匹配':'分区、字段及经历匹配'};
  });
  return {id:crypto.randomUUID(),snapshotId:snapshot.id,url:snapshot.url,createdAt:Date.now(),coverage:snapshot.coverage,limitations:snapshot.limitations,performance:{scan:numericMetrics(snapshot.performance),match:numericMetrics({...metrics,durationMs:performance.now()-start})},entries};
 }

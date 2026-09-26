@@ -23,7 +23,7 @@ with sync_playwright() as pw:
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.on('dialog',lambda d:d.accept())
     page.expose_function('__workspaceHost',rpc)
-    html=(ROOT/'extension/workspace.html').read_text();html=re.sub(r'<script\b[^>]*>[\s\S]*?</script>','',html);html=re.sub(r'<link\b[^>]*>','',html)
+    html=(ROOT/'extension/workspace.html').read_text(encoding='utf-8');html=re.sub(r'<script\b[^>]*>[\s\S]*?</script>','',html);html=re.sub(r'<link\b[^>]*>','',html)
     html=html.replace('icons/icon48.png','data:image/png;base64,'+base64.b64encode((ROOT/'extension/icons/icon48.png').read_bytes()).decode())
     page.set_content(html);page.add_style_tag(path=str(ROOT/'extension/workspace.css'))
     page.evaluate('''() => {
@@ -41,8 +41,14 @@ with sync_playwright() as pw:
     def select_view(name):page.locator('[data-view='+name+']').click()
     def add(label,value):
         select_view('profile');page.locator('#add').click();page.locator('#factLabel').fill(label);page.locator('#factValue').fill(value);page.locator('#factConfirmed').check();page.locator('#factForm button[type=submit]').click();page.wait_for_function("!document.getElementById('editor').open")
-    def scan():
-        select_view('fill');page.locator('#scan').click();page.wait_for_function("document.querySelectorAll('.field-card').length===3")
+    def scan(expected=3):
+        select_view('fill');page.locator('#scan').click();page.wait_for_function("n=>document.querySelectorAll('.field-card').length===n",arg=expected)
+    def responsive_capture(name):
+        page.screenshot(path=str(ROOT/('test-results/'+name+'-desktop.png')),full_page=True)
+        try:
+            page.set_viewport_size({'width':390,'height':844});require(page.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),name+' mobile horizontal overflow')
+            page.screenshot(path=str(ROOT/('test-results/'+name+'-390px.png')),full_page=True)
+        finally:page.set_viewport_size({'width':1320,'height':900})
     def create():
         page.locator('#password').fill('synthetic workspace passphrase');page.locator('#repeatPassword').fill('synthetic workspace passphrase');page.locator('#unlock').click();page.wait_for_function("document.getElementById('gate').hidden")
         require(page.locator('#password').input_value()=='','password remains in input')
@@ -55,7 +61,9 @@ with sync_playwright() as pw:
         scan();require(page.locator('#fillSelected').is_disabled(),'missing review gate')
         require('UI_SYNTHETIC_PERSON' not in page.locator('#entries').inner_text(),'values unmasked by default')
         require('未计算' in page.locator('#coverage').inner_text(),'omissions misleadingly shown as zero')
-        require(page.locator('.field-card button').count()==0,'unsupported locate exposed')
+        require(page.locator('.field-card button').count()==3,'locate missing for scanned fields')
+        page.locator('.field-card button').first.click();page.wait_for_function("document.getElementById('notice').textContent.includes('已在目标网页高亮')")
+        data=rpc({'type':'inspect'})['data'];require(any(c.get('action')=='locate' for c in data['calls']),'locate did not reach document broker');require(data['values']=={},'locate changed field values')
         require(page.locator('.field-card input:checked').count()==2,'sensitive field auto-selected')
     case('preview-masks-values-sensitive-opt-in-and-honest-coverage',preview)
     def reveal_map():
@@ -69,10 +77,23 @@ with sync_playwright() as pw:
         require(page.locator('#fillSelected').is_disabled(),'plan replay possible')
     case('only-selected-field-written-once-no-bridge',write)
     def imports():
-        select_view('profile');page.locator('#importText').fill('技能：SYNTHETIC_DRAFT');page.locator('#parse').click();page.locator('#saveImport').click();page.wait_for_function("document.getElementById('notice').textContent.includes('仍为待核实')")
+        select_view('profile');page.locator('#importText').fill('技能：SYNTHETIC_DRAFT');page.locator('#parse').click();page.locator('#saveImport').click();page.wait_for_function("document.getElementById('notice').textContent.includes('已保存 1 条')")
         require(page.locator('#factList').inner_text().count('待核实')>=1,'import auto-confirmed');select_view('fill');page.locator('#scan').click();page.wait_for_function("document.getElementById('notice').textContent.includes('待核实')")
         select_view('profile');page.locator('#allFacts').click()
     case('text-import-remains-draft-until-user-verifies',imports)
+    def import_differences():
+        select_view('profile');count=page.locator('#factList .fact').count()
+        page.locator('#importText').fill('技能：SYNTHETIC_DRAFT');page.locator('#parse').click();require('相同跳过 1' in page.locator('#importPreview').inner_text(),'identical import not skipped');require(page.locator('#saveImport').is_hidden(),'duplicate-only batch offered a save')
+        require(page.locator('#factList .fact').count()==count,'duplicate import increased profile')
+        page.locator('#importText').fill('技能：SYNTHETIC_UPDATED');page.locator('#parse').click();require('内容变化 1' in page.locator('#importPreview').inner_text(),'changed value preview missing')
+        require(not page.locator('[data-replace-fact]').is_checked(),'update preselected without user review')
+        responsive_capture('workspace-import-diff')
+        page.locator('#saveImport').click();page.wait_for_function("document.getElementById('notice').textContent.includes('原资料保持不变')")
+        original=rpc({'type':'workspace-read'})['data']['facts'];require(any(f['value']=='SYNTHETIC_DRAFT' for f in original),'unchecked update replaced old value')
+        page.locator('[data-replace-fact]').check();page.locator('#saveImport').click();page.wait_for_function("document.getElementById('notice').textContent.includes('已保存 1 条')")
+        updated=rpc({'type':'workspace-read'})['data']['facts'];require(any(f['value']=='SYNTHETIC_UPDATED' and not f['confirmed'] for f in updated),'selected update not saved as draft');require(page.locator('#factList .fact').count()==count,'update added a duplicate')
+        page.locator('#allFacts').click()
+    case('duplicate-import-and-opt-in-update-preview',import_differences)
     def layout():
         rpc({'type':'reset-page'});scan();page.locator('#reveal').uncheck();page.screenshot(path=str(ROOT/'test-results/workspace-desktop-0.4.3.png'),full_page=True)
         page.set_viewport_size({'width':390,'height':844});require(page.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'mobile horizontal overflow');page.screenshot(path=str(ROOT/'test-results/workspace-mobile-0.4.3.png'),full_page=True);page.set_viewport_size({'width':1320,'height':900})
@@ -100,9 +121,32 @@ with sync_playwright() as pw:
         select_view('security');page.locator('#revoke').click();page.wait_for_function("document.getElementById('notice').textContent.includes('已撤销')")
         require(any(c.get('route','').startswith('/session/end') for c in rpc({'type':'inspect'})['data']['calls']),'revoke not sent');page.locator('#localMode').click();page.wait_for_function("document.getElementById('modeBadge').textContent.includes('本地处理')")
     case('explicit-revoke-and-return-to-local',revoke)
+    def group_bindings():
+        page.locator('#password').fill('synthetic workspace passphrase');page.locator('#unlock').click();page.wait_for_function("document.getElementById('gate').hidden")
+        select_view('profile');payload={'facts':[{'id':entity+'-'+str(i),'label':label,'value':value,'entity':entity,'section':'教育经历','source':'synthetic fixture','confirmed':False} for entity,values in [('masters',['学校甲','计算机']),('bachelor',['学校乙','通信'])] for i,(label,value) in enumerate(zip(['学校','专业'],values))]}
+        page.locator('#importText').fill(json.dumps(payload,ensure_ascii=False));page.locator('#parse').click();page.locator('#saveImport').click();page.wait_for_function("document.getElementById('notice').textContent.includes('已保存 4 条')")
+        page.locator('#confirmFacts').click();page.wait_for_function("document.getElementById('notice').textContent.includes('资料已加密保存')");page.locator('#allFacts').click();rpc({'type':'set-scenario','scenario':'education'});scan(4)
+        require(page.locator('#groupBindings select').count()==2,'empty record bindings missing');require(page.locator('.state[data-status=ready]').count()==0,'empty records auto-guessed')
+        for select in page.locator('#groupBindings select').all():
+            require(select.is_enabled(),'completed scan left record binding disabled')
+            require(set(select.locator('option').evaluate_all('(options)=>options.map(o=>o.value)'))=={'','bachelor','masters'},'confirmed education entities missing from binding choices')
+        require(page.locator('#groupBindings button').first.is_enabled(),'completed scan left record locator disabled')
+        page.locator('#groupBindings select').nth(0).select_option('bachelor');page.wait_for_function("document.querySelectorAll('.state[data-status=ready]').length===2")
+        page.locator('#groupBindings select').nth(1).select_option('masters');page.wait_for_function("document.querySelectorAll('.state[data-status=ready]').length===4")
+        require(page.locator('#fillSelected').is_disabled(),'binding did not require review')
+        responsive_capture('workspace-record-binding')
+        page.locator('#groupBindings button').first.click();page.wait_for_function("document.getElementById('notice').textContent.includes('已高亮该区块')")
+        # Hold only the synthetic fill IPC to observe controls during an in-flight write.
+        page.evaluate('''() => { const send=chrome.runtime.sendMessage; chrome.runtime.sendMessage=async m=>{if(m.type==='workspace-fill')await new Promise(resolve=>{window.__releaseFill=resolve});return send(m);}; }''')
+        page.locator('#reviewed').check();page.locator('#fillSelected').click();page.wait_for_function("typeof window.__releaseFill==='function'")
+        require(page.locator('#groupBindings select:disabled').count()==2,'record mapping could change during fill')
+        require(page.locator('#groupBindings button:disabled').count()==2,'record locator remained active during fill')
+        page.evaluate('window.__releaseFill()');page.wait_for_function("document.getElementById('result').textContent.includes('回读通过 4')")
+        data=rpc({'type':'inspect'})['data'];require(data['values']=={'one-school':'学校乙','one-major':'通信','two-school':'学校甲','two-major':'计算机'},'records mixed or wrong fields written')
+    case('bind-two-empty-records-once-each-and-verify-correspondence',group_bindings)
     report={'scope':'real Chromium HTML/CSS/JS; real Node worker/vault/controller; mocked Chrome IPC, page executor and MCP bridge; stateful synthetic workflow','browser':browser.version,'passed':sum(r['status']=='passed' for r in results),'failed':sum(r['status']=='failed' for r in results),'cases':results}
     # Stop the mock IPC before closing its binding target; runtime teardown is covered separately.
     page.evaluate("async()=>{await chrome.runtime.sendMessage({type:'workspace-lock'});chrome.runtime.sendMessage=async()=>({data:{locked:true}})}")
     ctx.close();browser.close()
-host.stdin.close();host.wait(timeout=5);OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n');print(json.dumps({'passed':report['passed'],'failed':report['failed']}))
+host.stdin.close();host.wait(timeout=5);OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8');print(json.dumps({'passed':report['passed'],'failed':report['failed']}))
 if report['failed']:raise SystemExit(1)

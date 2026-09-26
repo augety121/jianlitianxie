@@ -8,7 +8,7 @@ export class FrameBroker {
   }
   async invoke(tabId, frame, action, argument) {
     if (action === 'apply' && frame.frameId !== 0) throw Error('嵌入文档本次仅扫描，请单独打开后填写');
-    if (action === 'locate') throw Error('当前执行器尚无精确高亮功能');
+    if (action === 'locate' && frame.frameId !== 0) throw Error('嵌入文档仅扫描，请单独打开后定位');
     if (!['scan','apply','cancel','locate'].includes(action)) throw Error('不支持的控件操作');
     const target = frame.documentId ? {tabId, documentIds: [frame.documentId]} : {tabId, frameIds: [frame.frameId]};
     const results = await this.chrome.scripting.executeScript({target, func: async (a, arg) => {
@@ -69,7 +69,11 @@ export class FrameBroker {
     if (!(scanned.some(f => f.frameId === 0)) || (await this.tab(tabId)).url !== tab.url) throw Error('扫描时网页发生变化，请重扫');
     return {url: tab.url, frames: scanned, skipped, includeFrames};
   }
-  async locate() { throw Error('当前执行器尚无精确高亮功能，请在网页核对字段标签'); }
+  async locate(tabId,frame,argument) {
+    const reply=await this.invoke(tabId,frame,'locate',argument);
+    if(reply.result?.located!==true)throw Error('未确认定位到当前字段，请重新扫描');
+    await this.chrome.tabs.update(tabId,{active:true});return {located:true};
+  }
   async cancel(tabId, frames) {
     await Promise.allSettled(frames.map(frame => this.invoke(tabId, frame, 'cancel')));
   }

@@ -97,6 +97,7 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
     }
     if (await mode() !== 'local') throw Error('当前是 MCP 模式，请先切换本地模式');
     if (m.type === 'workspace-scan') { await attached(m.tabId); return run.scan(owner(sender), m); }
+    if (m.type === 'workspace-bind-entity') return run.bindEntity(owner(sender), m);
     if (m.type === 'workspace-remap') return run.remap(owner(sender), m);
     if (m.type === 'workspace-locate') return run.locate(owner(sender), m);
     if (m.type === 'workspace-fill') return run.apply(owner(sender), m);

@@ -50,7 +50,7 @@ with sync_playwright() as pw:
     fixture_context = browser.new_context()
     page = fixture_context.new_page()
     page.set_default_timeout(5000)
-    module_source = '\n'.join((ROOT/'extension/core'/f).read_text() for f in ['performance.mjs','semantics.mjs','planner.mjs'])
+    module_source = '\n'.join((ROOT/'extension/core'/f).read_text(encoding='utf-8') for f in ['performance.mjs','semantics.mjs','entity-binding.mjs','planner.mjs'])
     module_source = re.sub(r'^import .*?;\s*$', '', module_source, flags=re.M)
     module_source = module_source.replace('export {normalize};', '').replace('export ', '')
     module_source = module_source.replace('crypto.randomUUID()', 'String(++globalThis.__testId)')

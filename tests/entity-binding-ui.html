@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>整段经历绑定回归测试</title><style>body{font:15px/1.6 sans-serif;margin:24px;max-width:1000px}input{min-height:26px;margin:7px}.education-item{padding:10px;border:1px solid #ccd;margin:8px}button{padding:10px}pre{white-space:pre-wrap;background:#eef5f0;padding:14px}</style>
+<h1>整段经历绑定回归测试</h1><p>仅虚构资料、本地 DOM。不是安装后 MV3 或真实招聘网站验收。</p><button id="run">运行四项回归</button><pre id="results">尚未运行</pre><main id="fixture"></main>
+<script src="../extension/engine.js"></script><script type="module">
+import {makePlan} from '../extension/core/planner.mjs';
+import {entityGroups} from '../extension/core/entity-binding.mjs';
+const facts=[['硕士甲',['测试甲大学','计算机','2024-09']],['本科乙',['测试乙大学','通信','2020-09']]].flatMap(([entity,values])=>['学校','专业','开始月份'].map((label,i)=>({id:entity+'-'+i,label,value:values[i],entity,section:'教育经历',confirmed:true,source:'虚构夹具'})));
+const markup='<section data-section="教育经历"><h2>教育经历</h2>'+['one','two'].map(id=>'<div class="education-item" id="'+id+'"><label>学校<input class="school"></label><label>专业<input class="major"></label><label>开始月份<input type="month" class="start"></label></div>').join('')+'</section>';
+const check=(condition,message)=>{if(!condition)throw Error(message);};
+document.querySelector('#run').onclick=async()=>{
+ const button=document.querySelector('#run'),out=document.querySelector('#results');button.disabled=true;out.textContent='运行中…';const results=[];
+ const cases=[['空白两段经历绑定与独立回读',null],['经历块重排后旧计划失效',()=>document.querySelector('section').append(document.querySelector('#one'))],['新增字段后旧计划失效',()=>document.querySelector('#one').insertAdjacentHTML('beforeend','<label>学位<input></label>')],['替换字段节点后旧计划失效',()=>document.querySelector('#one .major').replaceWith(document.querySelector('#one .major').cloneNode())]];
+ for(const [name,change] of cases){
+  document.querySelector('#fixture').innerHTML=markup;
+  try{
+   const s=await __resumeFillEngine.scan(),groups=entityGroups(s,facts);check(groups.length===2&&groups.every(g=>g.bindable),'记录块识别不正确');
+   const bindings=Object.fromEntries(groups.map((g,i)=>[g.id,i?'硕士甲':'本科乙'])),p=makePlan(s,{facts},{},bindings);check(p.entries.every(e=>e.status==='ready'),'空白记录未完整匹配');
+   if(change)change();else{const located=__resumeFillEngine.locate({snapshotId:s.id,url:s.url,fieldId:s.fields[0].id});check(located.located&&document.querySelector('#one .school').value==='','定位改变了表单值');}const report=await __resumeFillEngine.apply(p);
+   if(change){check(report.results.some(r=>r.status==='stale'),'旧计划未拒绝');check(document.querySelector('#one .school').value==='','旧记录被写入');}
+   else{check(report.results.every(r=>r.status==='verified'),'回读失败');check(document.querySelector('#one .school').value==='测试乙大学'&&document.querySelector('#two .major').value==='计算机','独立读回不符');const fresh=await __resumeFillEngine.scan();check(fresh.fields[0].groupId!==s.fields[0].groupId,'新扫描复用了旧绑定标识');}
+   results.push({name,status:'passed'});
+  }catch(error){results.push({name,status:'failed',error:error.message});}
+  out.textContent=JSON.stringify({scope:'本地虚构 DOM，不是官网验收',cases:results},null,2);
+ }
+ button.disabled=false;
+};
+</script></html>

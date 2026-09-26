@@ -7,7 +7,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default=ROOT/'test-results/performance-guards.json');args=p.parse_args();args.output.parent.mkdir(parents=True,exist_ok=True)
-modules='\n'.join((ROOT/'extension/core'/f).read_text() for f in ['performance.mjs','semantics.mjs','planner.mjs'])
+modules='\n'.join((ROOT/'extension/core'/f).read_text(encoding='utf-8') for f in ['performance.mjs','semantics.mjs','entity-binding.mjs','planner.mjs'])
 modules=re.sub(r'^import .*?;\s*$', '', modules, flags=re.M).replace('export {normalize};','').replace('export ','').replace('crypto.randomUUID()',"'test-'+String(++globalThis.__testId)")
 modules='globalThis.__testId=0;\n'+modules+'\nglobalThis.__testMakePlan=makePlan;'
 results=[]

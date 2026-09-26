@@ -1,4 +1,5 @@
 import {makePlan} from './planner.mjs';
+import {entityGroups,factMatchesBinding} from './entity-binding.mjs';
 import {PLAN_TTL, selectedFacts, sensitive, redactSnapshot} from './workspace-policy.mjs';
 /** One explicit user task. Private values stay in the trusted worker until selected for a write. */
 export class WorkspaceRun {
@@ -15,7 +16,7 @@ export class WorkspaceRun {
       const observed = await this.broker.scan(request.tabId, request.includeFrames === true);
       if (epoch !== this.epoch || !this.vault.unlocked || this.vault.read().revision !== profile.revision) throw Error('扫描被取消或资料已修改');
       this.job = {...observed, id: crypto.randomUUID(), owner, tabId: request.tabId, revision: profile.revision,
-        facts, expiresAt: this.clock() + PLAN_TTL, frames: observed.frames.map(f => ({...f, mappings: {}}))};
+        facts, expiresAt: this.clock() + PLAN_TTL, frames: observed.frames.map(f => ({...f, mappings: {}, entityBindings: {}}))};
       return this.preview();
     } finally { this.busy = false; }
   }
@@ -27,9 +28,12 @@ export class WorkspaceRun {
     return j;
   }
   preview() {
-    const j = this.job, entries = [];
+    const j = this.job, entries = [], groups = [];
     for (const f of j.frames) {
-      f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings);
+      f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings, f.entityBindings);
+      groups.push(...entityGroups(f.snapshot,j.facts,f.entityBindings).map(g=>({...g,id:`${f.frameId}:${g.id}`,
+        frameId:f.frameId,fieldIds:g.fieldIds.map(id=>`${f.frameId}:${id}`),bindable:g.bindable&&f.frameId===0,
+        reason:f.frameId===0?g.reason:'嵌入文档仅扫描，请单独打开后绑定'})));
       // The retained executor has no parent-frame hit test. Never send values there.
       if(f.frameId!==0)f.plan.entries=f.plan.entries.map(e=>{
         const {value,factId,source,...entry}=e;
@@ -38,17 +42,33 @@ export class WorkspaceRun {
       for (const e of f.plan.entries) entries.push({...e, id: `${f.frameId}:${e.fieldId}`, frameId: f.frameId,
         origin: new URL(f.snapshot.url).origin, sensitive: sensitive(e.label), required: !!e.required});
     }
-    return {id: j.id, expiresAt: j.expiresAt, origin: new URL(j.url).origin, entries,
+    return {id: j.id, expiresAt: j.expiresAt, origin: new URL(j.url).origin, entries, groups,
       frames: j.frames.map(f => ({frameId: f.frameId, fields: f.snapshot.fields.length, coverage: f.snapshot.coverage})),
-      skipped: j.skipped, includeFrames: j.includeFrames, capabilities:{locate:false,embeddedWrite:false}};
+      skipped: j.skipped, includeFrames: j.includeFrames, capabilities:{locate:true,embeddedWrite:false}};
   }
   remap(owner, {planId, id, factId}) {
     if (this.busy) throw Error('请等待当前操作');
     const j = this.current(owner, planId), f = j.frames.find(f => f.snapshot.fields.some(e => `${f.frameId}:${e.id}` === id));
     if (!f || factId && !j.facts.some(x => x.id === factId)) throw Error('字段或资料不属于当前选择');
     const fieldId = id.slice(id.indexOf(':') + 1);
+    const field=f.snapshot.fields.find(e=>e.id===fieldId),entity=f.entityBindings?.[field.groupId];
+    if(factId&&entity&&!factMatchesBinding(j.facts.find(x=>x.id===factId),field,entity))throw Error('该资料不属于已绑定的经历和分区');
     if (factId) f.mappings[fieldId] = factId; else delete f.mappings[fieldId];
     j.id = crypto.randomUUID(); return this.preview();
+  }
+  bindEntity(owner,{planId,groupId,entity}) {
+    if(this.busy)throw Error('请等待当前操作');
+    const j=this.current(owner,planId);
+    if(typeof groupId!=='string'||typeof entity!=='string')throw Error('经历绑定格式无效');
+    const f=j.frames.find(frame=>frame.frameId===0&&entityGroups(frame.snapshot,j.facts,frame.entityBindings)
+      .some(g=>`${frame.frameId}:${g.id}`===groupId));
+    if(!f)throw Error('经历区块不属于本次主文档');
+    const id=groupId.slice(groupId.indexOf(':')+1),group=entityGroups(f.snapshot,j.facts,f.entityBindings).find(g=>g.id===id);
+    if(!group.bindable||entity&&!group.candidates.some(c=>c.entity===entity))throw Error('请选择本次同分区的真实经历');
+    f.entityBindings||={};
+    if(entity)f.entityBindings[id]=entity;else delete f.entityBindings[id];
+    for(const fieldId of group.fieldIds)delete f.mappings[fieldId];
+    j.id=crypto.randomUUID();return this.preview();
   }
   async locate(owner, {planId, id}) {
     if (this.busy) throw Error('请等待当前操作');
@@ -102,6 +122,7 @@ export class WorkspaceRun {
     if ((await this.broker.tab(j.tabId)).url !== j.url) throw Error('页面已变化');
     this.current(owner, planId);
     const facts = selectedFacts({facts: j.facts}, factIds);
-    return {facts, mappings:Object.fromEntries(Object.entries(j.frames[0].mappings).filter(([,id])=>factIds.includes(id))), snapshot: {...redactSnapshot(j.frames[0].snapshot), owner: String(j.tabId)}, consent: true};
+    const frame=j.frames[0],boundMappings=Object.fromEntries(frame.plan.entries.filter(e=>e.status==='ready'&&frame.entityBindings?.[e.groupId]).map(e=>[e.fieldId,e.factId]));
+    return {facts, mappings:Object.fromEntries(Object.entries({...boundMappings,...frame.mappings}).filter(([,id])=>factIds.includes(id))), snapshot: {...redactSnapshot(frame.snapshot), owner: String(j.tabId)}, consent: true};
   }
 }
