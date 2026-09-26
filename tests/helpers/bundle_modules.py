@@ -21,6 +21,15 @@ def bundle(entry):
         source=imp.sub('',source)
         exported=re.findall(r'\bexport\s+(?:async\s+)?(?:function|class|const|let)\s+(\w+)',source)
         source=re.sub(r'\bexport\s+(?=(?:async\s+)?(?:function|class|const|let)\b)','',source)
+        named=re.findall(r'\bexport\s*\{([^}]+)\}\s*;?',source)
+        for group in named:
+            for name in group.split(','):
+                name=name.strip()
+                if not re.fullmatch(r'[A-Za-z_$][\w$]*',name):raise ValueError('Unsupported named test export: '+name)
+                exported.append(name)
+        source=re.sub(r'\bexport\s*\{[^}]+\}\s*;?','',source)
+        exported=list(dict.fromkeys(exported))
+
         if re.search(r'^\s*(?:import|export)\s',source,re.M):raise ValueError('Unsupported test bundle syntax: '+key)
         modules.append(f'M[{json.dumps(key)}]=await(async()=>{{\n'+ '\n'.join(bindings)+'\n'+source+'\nreturn {'+','.join(exported)+'};\n})();')
         return key

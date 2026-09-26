@@ -12,7 +12,7 @@ const chrome={storage:{local:store(local),session:store(session)},runtime:{id:'a
   if(command.files)return [{frameId:0,documentId:'doc'}];
   const [action,arg]=command.args||[];
   if(action==='scan'){
-    const fields=scenario==='education'?['one','two'].flatMap(group=>[{id:group+'-school',label:'学校',section:'教育经历',groupId:group,groupLabel:'教育经历',type:'text',value:values[group+'-school']||''},{id:group+'-major',label:'专业',section:'教育经历',groupId:group,groupLabel:'教育经历',type:'text',value:values[group+'-major']||''}]):[{id:'f',label:'姓名',section:'基本信息',type:'text',value:values.f||'',required:true},{id:'e',label:'邮箱',type:'email',value:values.e||''},{id:'s',label:'性别',type:'text',value:values.s||''}];
+    const fields=scenario==='scale'?Array.from({length:240},(_,i)=>({id:'scale-'+i,label:'测试字段'+i,section:'基本信息',type:'text',value:values['scale-'+i]||'',required:i%2===0})):scenario==='education'?['one','two'].flatMap(group=>[{id:group+'-school',label:'学校',section:'教育经历',groupId:group,groupLabel:'教育经历',type:'text',value:values[group+'-school']||''},{id:group+'-major',label:'专业',section:'教育经历',groupId:group,groupLabel:'教育经历',type:'text',value:values[group+'-major']||''}]):[{id:'f',label:'姓名',section:'基本信息',type:'text',value:values.f||'',required:true},{id:'e',label:'邮箱',type:'email',value:values.e||''},{id:'s',label:'性别',type:'text',value:values.s||''}];
     return [{frameId:0,documentId:'doc',result:{id:crypto.randomUUID(),url,coverage:{fields:fields.length},fields}}];
   }
   if(action==='locate'){calls.push({action,argument:arg});return [{frameId:0,documentId:'doc',result:{located:true}}];}
@@ -27,7 +27,7 @@ for await(const line of readline.createInterface({input:process.stdin})){
  try{
   input=JSON.parse(line);let data;
   if(input.type==='inspect')data={storage:local,calls,values};
-  else if(input.type==='set-scenario'){scenario=input.scenario==='education'?'education':'basic';for(const k in values)delete values[k];data={ok:true};}
+  else if(input.type==='set-scenario'){scenario=['education','scale'].includes(input.scenario)?input.scenario:'basic';for(const k in values)delete values[k];data={ok:true};}
   else if(input.type==='reset-page'){for(const k in values)delete values[k];data={ok:true};}
   else data=await workspace.request(input,sender);
   console.log(JSON.stringify({data}));

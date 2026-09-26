@@ -11,7 +11,7 @@ async function api(route,data,options={}){
  timeout.addEventListener('abort',abort,{once:true});options.signal?.addEventListener('abort',abort,{once:true});
  if(options.signal?.aborted)abort();
  try{
- let r;try{r=await fetch(API+route,{method:data===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),signal:controller.signal});}catch{throw Error('未连上本机服务：请在Codex重新连接resume_fill MCP，再点连接。');}
+ let r;try{r=await fetch(API+route,{redirect:'error',cache:'no-store',method:data===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),signal:controller.signal});}catch{throw Error('未连上本机服务：请在Codex重新连接resume_fill MCP，再点连接。');}
  const body=await r.json().catch(()=>({}));
  if(!r.ok){if(r.status===401)throw Error('配对码不正确，请重新复制本机 bridge-token.txt 的完整内容。');if(r.status===403)throw Error('来源校验被旧版桥接拒绝：请在Codex重新连接resume_fill MCP，加载更新后再连接。');throw Error(body.error||'本机服务错误（'+r.status+'）');}
  return body;

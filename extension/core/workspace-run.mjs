@@ -98,7 +98,7 @@ export class WorkspaceRun {
           // stop()/expiry may have happened while tabs.get() was pending.
           if(epoch!==this.epoch||!this.vault.unlocked||this.clock()>=j.expiresAt){results.push(...ids.map(id=>({id,status:'cancelled'})));halt=true;continue;}
           // Only the chosen entries, never the full profile or skipped values, cross into the page.
-          const r = (await this.broker.invoke(j.tabId, {frameId:f.frameId,documentId:f.documentId}, 'apply', {...f.plan, entries})).result;
+          const r = (await this.broker.invoke(j.tabId, {frameId:f.frameId,documentId:f.documentId}, 'apply', {...f.plan, expiresAt:j.expiresAt, entries})).result;
           const known = new Set(['verified','invalid','stale','manual','needs-user','cancelled','not-attempted','preserve']);
           if (!Array.isArray(r.results) || new Set(r.results.map(x => x.fieldId)).size !== r.results.length ||
             r.results.some(x => !entries.some(e => e.fieldId === x.fieldId) || !known.has(x.status))) throw Error('回读不符合所选范围');

@@ -60,15 +60,16 @@ with sync_playwright() as pw:
     def preview():
         scan();require(page.locator('#fillSelected').is_disabled(),'missing review gate')
         require('UI_SYNTHETIC_PERSON' not in page.locator('#entries').inner_text(),'values unmasked by default')
+        page.locator('.coverage-details summary').click()
         require('未计算' in page.locator('#coverage').inner_text(),'omissions misleadingly shown as zero')
-        require(page.locator('.field-card button').count()==3,'locate missing for scanned fields')
-        page.locator('.field-card button').first.click();page.wait_for_function("document.getElementById('notice').textContent.includes('已在目标网页高亮')")
+        require(page.locator('.field-card button[aria-label^="定位 " ]').count()==3,'locate missing for scanned fields')
+        page.locator('.field-card button').first.click();page.wait_for_function("document.getElementById('notice').textContent.includes('已在网页高亮')")
         data=rpc({'type':'inspect'})['data'];require(any(c.get('action')=='locate' for c in data['calls']),'locate did not reach document broker');require(data['values']=={},'locate changed field values')
         require(page.locator('.field-card input:checked').count()==2,'sensitive field auto-selected')
     case('preview-masks-values-sensitive-opt-in-and-honest-coverage',preview)
     def reveal_map():
         page.locator('#reveal').check();require('UI_SYNTHETIC_PERSON' in page.locator('#entries').inner_text(),'reveal failed')
-        name=page.locator('select[aria-label="姓名 资料映射"]');name.select_option('');page.wait_for_function("document.getElementById('notice').textContent.includes('映射已更新')")
+        page.locator('button[aria-label="姓名 资料映射"]').click();require(page.locator('#mappingDialog').is_visible(),'lazy mapping dialog missing');require('UI_SYNTHETIC_PERSON' not in page.locator('#mappingChoices').inner_text(),'candidate value not masked');page.locator('#mappingChoices button').first.click();page.wait_for_function("document.getElementById('notice').textContent.includes('映射已更新')")
         require(page.locator('#fillSelected').is_disabled(),'mapping did not invalidate review')
     case('explicit-reveal-remapping-requires-fresh-review',reveal_map)
     def write():
@@ -144,6 +145,26 @@ with sync_playwright() as pw:
         page.evaluate('window.__releaseFill()');page.wait_for_function("document.getElementById('result').textContent.includes('回读通过 4')")
         data=rpc({'type':'inspect'})['data'];require(data['values']=={'one-school':'学校乙','one-major':'通信','two-school':'学校甲','two-major':'计算机'},'records mixed or wrong fields written')
     case('bind-two-empty-records-once-each-and-verify-correspondence',group_bindings)
+    def large_form_review():
+        # Seed synthetic data through the real worker; this is not an import-parser test.
+        current=rpc({'type':'workspace-read'})['data']
+        facts=[{'id':'scale-'+str(i),'label':'测试字段'+str(i),'value':'SYNTHETIC-VALUE-'+str(i),'section':'基本信息','source':'synthetic scale fixture','confirmed':True} for i in range(240)]
+        rpc({'type':'workspace-save','revision':current['revision'],'facts':facts});rpc({'type':'set-scenario','scenario':'scale'})
+        page.locator('#lock').click();page.wait_for_function("!document.getElementById('gate').hidden")
+        page.locator('#password').fill('synthetic workspace passphrase');page.locator('#unlock').click();page.wait_for_function("document.getElementById('gate').hidden")
+        select_view('profile');require(page.locator('#factList .fact').count()==60,'profile DOM not bounded');page.locator('#factNext').click();require(page.locator('#factList').inner_text().startswith('测试字段60'),'profile paging incorrect')
+        scan(30);require('240' in page.locator('#reviewRange').inner_text(),'truncated data mistaken for pagination');require('210' in page.locator('#selectedCount').inner_text(),'hidden selection not disclosed')
+        require(page.locator('#entries select').count()==0,'eager per-field profile selectors')
+        # Remove one field on page one, navigate, and show selected subset without resetting it.
+        page.locator('.field-card input[type=checkbox]').first.uncheck();page.locator('#reviewNext').click();require(page.locator('.field-card').first.get_attribute('data-id')=='0:scale-30','review next page incorrect')
+        page.locator('#fieldSearch').fill('测试字段0');require(page.locator('.field-card').count()==1,'search did not combine with page reset');require(not page.locator('.field-card input').is_checked(),'search reset selection')
+        page.locator('#fieldSearch').fill('SYNTHETIC-VALUE');require(page.locator('.field-card').count()==0,'private values searched while hidden');page.locator('#fieldSearch').fill('')
+        page.locator('button[aria-label="测试字段0 资料映射"]').click();require(page.locator('#mappingChoices button').count()==40,'mapping dialog not bounded');require('SYNTHETIC-VALUE' not in page.locator('#mappingChoices').inner_text(),'chooser exposes values without opt-in')
+        page.locator('#mappingSearch').fill('测试字段239');require(page.locator('#mappingChoices button').count()==1,'mapping search missing');page.locator('#closeMapping').click();require(page.locator('#mappingChoices button').count()==0,'closed chooser retained contents')
+        page.locator('#selectNone').click();require(page.locator('#fillSelected').is_disabled(),'empty global selection executable');page.locator('#filter').select_option('selected');require(page.locator('.field-card').count()==0,'selected filter incorrect')
+        page.locator('#filter').select_option('all');responsive_capture('workspace-scaled-review-0.6.0')
+        require(page.evaluate('document.querySelectorAll("#entries *").length')<650,'review node budget regressed')
+    case('240-fields-bounded-review-search-selection-and-lazy-mapping',large_form_review)
     report={'scope':'real Chromium HTML/CSS/JS; real Node worker/vault/controller; mocked Chrome IPC, page executor and MCP bridge; stateful synthetic workflow','browser':browser.version,'passed':sum(r['status']=='passed' for r in results),'failed':sum(r['status']=='failed' for r in results),'cases':results}
     # Stop the mock IPC before closing its binding target; runtime teardown is covered separately.
     page.evaluate("async()=>{await chrome.runtime.sendMessage({type:'workspace-lock'});chrome.runtime.sendMessage=async()=>({data:{locked:true}})}")
