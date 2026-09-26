@@ -16,7 +16,7 @@ async function api(route, data, {signal, timeout = 10000} = {}) {
   if (signal?.aborted) abort();
   const timer = setTimeout(abort, timeout);
   try {
-    const r = await fetch(API + route, {method: data === undefined ? 'GET' : 'POST', headers: {Authorization: 'Bearer ' + bridgeToken, 'Content-Type': 'application/json'}, body: data === undefined ? undefined : JSON.stringify(data), signal: controller.signal});
+    const r = await fetch(API + route, {redirect:'error',cache:'no-store',method: data === undefined ? 'GET' : 'POST', headers: {Authorization: 'Bearer ' + bridgeToken, 'Content-Type': 'application/json'}, body: data === undefined ? undefined : JSON.stringify(data), signal: controller.signal});
     const p = await r.json().catch(() => ({}));
     if (!r.ok) throw Error(p.error || (r.status === 401 ? '配对码错误，请重新配对' : '连接失败 ' + r.status));
     return p;

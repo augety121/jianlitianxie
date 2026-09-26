@@ -2,9 +2,11 @@ import {parseImport, planImport, mergeImport, MAX_PROFILE_BYTES, normalizeFact} 
 import {MAX_BACKUP_BYTES} from './core/vault.mjs';
 import {secret, summaryOnly} from './core/workspace-policy.mjs';
 import {scope} from './core/semantics.mjs';
+import {reviewPage, mappingCandidates} from './core/review-model.mjs';
 const $ = id => document.getElementById(id), tabId = Number(new URLSearchParams(location.search).get('tab'));
 let state = {exists:false,unlocked:false,mode:'local'}, profile = {facts:[],revision:0}, chosenFacts = new Set();
 let plan = null, chosenFields = new Set(), pendingImport = [], lastReport = null, busy = false, edited = null;
+let factPage = 0, reviewIndex = 0, mappingEntry = null, mappingPlanId = '', mappingPage = 0;
 const names = {ready:'可填写',missing:'待映射',manual:'人工处理',preserve:'保留已有'};
 const resultNames = {verified:'回读通过',invalid:'网站校验未通过',stale:'页面已变化',manual:'需要人工处理','needs-user':'请检查实际内容',cancelled:'已取消','not-attempted':'尚未尝试',preserve:'保留已有'};
 async function send(type, extra = {}) {
@@ -16,7 +18,8 @@ function notify(message, error = false) { $('notice').textContent = message; $('
 function node(tag, text, className) { const n = document.createElement(tag); if (text != null) n.textContent = text; if (className) n.className = className; return n; }
 function view(name) {
   document.querySelectorAll('[data-section]').forEach(n => n.hidden = n.dataset.section !== name);
-  document.querySelectorAll('[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === name));
+  document.querySelectorAll('[data-view]').forEach(n => {n.classList.toggle('active', n.dataset.view === name); n.setAttribute('aria-current', n.dataset.view === name ? 'page' : 'false');});
+  $('viewTitle').textContent = {fill:'填写工作台',profile:'我的资料',security:'安全中心'}[name] || '工作台';
 }
 function usable(f) { return f.confirmed === true && !f.conflict && !secret(f.label); }
 function controls() {
@@ -26,10 +29,13 @@ function controls() {
   document.querySelectorAll('#groupBindings select, #groupBindings button').forEach(n => n.disabled = !ready || !plan);
   $('fillSelected').disabled = !ready || !plan || !chosenFields.size || !$('reviewed').checked;
   $('stop').disabled = !busy; $('lock').disabled = !state.unlocked && !state.sharedUntil;
-  $('selectedCount').textContent = `已选 ${chosenFields.size} 项`;
+  const shown = [...document.querySelectorAll('.field-card')].filter(n=>chosenFields.has(n.dataset.id)).length;
+  $('selectedCount').textContent = `已选 ${chosenFields.size} 项` + (chosenFields.size > shown ? ` · 含未显示的 ${chosenFields.size-shown} 项` : '');
+  $('entries').setAttribute('aria-busy', String(busy));
   $('modeBadge').textContent = state.mode === 'local' ? '本地处理 · 无模型调用' : 'MCP 模式 · 授权共享';
 }
 function clearPlan() {
+  closeMapping(); reviewIndex=0; $('reviewPager').hidden=true; $('fieldSearch').value=''; $('sectionFilter').replaceChildren(new Option('全部分区',''));
   plan = null; chosenFields.clear(); $('entries').replaceChildren(); $('empty').hidden = false;
   $('readyCount').textContent = '—'; $('pendingCount').textContent = '—'; $('coverage').hidden = true;
   $('reviewed').checked = false; $('shareConsent').checked = false; $('groupBindings').replaceChildren(); controls();
@@ -40,12 +46,13 @@ function clearPrivate() {
   $('importText').value = ''; $('importFile').value = ''; $('factSearch').value=''; $('importEntity').value='';
   $('pairToken').value='';$('pairStatus').textContent='';
   $('restorePassword').value=''; $('newPassword').value=''; $('newPasswordAgain').value='';
-  $('factForm').reset(); $('editor').close(); $('factCount').textContent='—'; $('profileSummary').textContent='资料库已锁定';
+  $('factPager').hidden=true; factPage=0; $('factForm').reset(); $('editor').close(); $('factCount').textContent='—'; $('profileSummary').textContent='资料库已锁定';
   $('reveal').checked=false; $('result').textContent=''; $('target').textContent=''; $('coverage').textContent=''; lastReport=null;
 }
 async function status() {
-  const next = await send('status'); state = next;
-  if (!state.unlocked) clearPrivate();
+  const wasUnlocked=state.unlocked, next = await send('status'); state = next;
+  // Polling a locked workbench must not erase a backup password the user is typing.
+  if (!state.unlocked && (wasUnlocked || profile.facts.length || plan)) clearPrivate();
   $('gate').hidden = state.unlocked;
   $('gateTitle').textContent = state.exists ? '解锁你的资料库' : '创建只属于你的资料库';
   $('unlock').textContent = state.exists ? '解锁资料库' : '创建加密资料库';
@@ -56,7 +63,7 @@ async function status() {
   controls(); return state;
 }
 function updateProfile(next) {
-  profile = next;
+  profile = next; factPage=0;
   chosenFacts = new Set([...chosenFacts].filter(id => profile.facts.some(f => f.id === id)));
   if (!chosenFacts.size) chosenFacts = new Set(profile.facts.filter(usable).map(f => f.id));
   $('factCount').textContent = profile.facts.filter(usable).length;
@@ -72,7 +79,12 @@ function on(id, fn) {
 async function discard() { clearPlan(); await send('stop'); }
 function renderFacts() {
   const q = $('factSearch').value.trim().toLocaleLowerCase(); $('factList').replaceChildren();
-  for (const f of profile.facts.filter(f => [f.label,f.section,f.entity].join(' ').toLocaleLowerCase().includes(q))) {
+  const filtered=profile.facts.filter(f => [f.label,f.section,f.entity].join(' ').toLocaleLowerCase().includes(q));
+  const pages=Math.max(1,Math.ceil(filtered.length/60));factPage=Math.min(factPage,pages-1);
+  $('factPager').hidden=!state.unlocked;$('factRange').textContent=`${filtered.length} 条 · 第 ${factPage+1} / ${pages} 页`;
+  $('factPrev').disabled=factPage===0;$('factNext').disabled=factPage===pages-1;
+  $('profileSummary').textContent=`${profile.facts.length} 条资料 · 已选 ${chosenFacts.size} 条（含未显示条目）`;
+  for (const f of filtered.slice(factPage*60,(factPage+1)*60)) {
     const card = node('article', null, 'fact'), label = node('label', null, 'check'), check = document.createElement('input');
     check.type = 'checkbox'; check.checked = chosenFacts.has(f.id); check.disabled = busy || secret(f.label);
     check.addEventListener('change', async () => {
@@ -98,7 +110,11 @@ async function saveFacts(facts) {
   notify('资料已加密保存。之前的预览已失效，请使用新资料重新扫描。');
 }
 function showPlan(next) {
-  plan=next; chosenFields=new Set(next.entries.filter(e=>e.status==='ready'&&!e.sensitive).map(e=>e.id));
+  closeMapping(); plan=next; reviewIndex=0;
+  const priorSection=$('sectionFilter').value; $('sectionFilter').replaceChildren(new Option('全部分区',''));
+  for(const section of new Set(next.entries.map(e=>e.section||'未分区'))) $('sectionFilter').append(new Option(section,section));
+  if([...$('sectionFilter').options].some(o=>o.value===priorSection))$('sectionFilter').value=priorSection;
+  chosenFields=new Set(next.entries.filter(e=>e.status==='ready'&&!e.sensitive).map(e=>e.id));
   $('reviewed').checked=false; $('shareConsent').checked=false; $('empty').hidden=true; $('target').textContent=next.origin;
   $('readyCount').textContent=next.entries.filter(e=>e.status==='ready').length;
   $('pendingCount').textContent=next.entries.filter(e=>['manual','missing'].includes(e.status)).length;
@@ -131,36 +147,85 @@ function renderGroups() {
     box.append(label);
   }
 }
+function closeMapping() {
+  mappingEntry=null; mappingPlanId=''; mappingPage=0;
+  $('mappingDialog').close(); $('mappingChoices').replaceChildren(); $('mappingSearch').value=''; $('mappingReveal').checked=false;
+}
+function openMapping(entry) {
+  if(busy||!plan||entry.status==='preserve')return;
+  mappingEntry=entry;mappingPlanId=plan.id;mappingPage=0;
+  $('mappingTitle').textContent='选择资料 · '+entry.label;
+  $('mappingContext').textContent=[entry.section,entry.reason].filter(Boolean).join(' · ');
+  $('mappingSearch').value='';$('mappingReveal').checked=false;renderMapping();$('mappingDialog').showModal();$('mappingSearch').focus();
+}
+function renderMapping() {
+  const box=$('mappingChoices');box.replaceChildren();if(!mappingEntry||!plan||plan.id!==mappingPlanId)return closeMapping();
+  const group=plan.groups?.find(g=>g.fieldIds.includes(mappingEntry.id));
+  const candidates=mappingCandidates(mappingEntry,profile.facts.filter(f=>chosenFacts.has(f.id)&&usable(f)),$('mappingSearch').value,group?.entity||'');
+  const pages=Math.max(1,Math.ceil(candidates.length/40));mappingPage=Math.min(mappingPage,pages-1);
+  $('mappingCount').textContent=`${candidates.length} 条可选资料 · 第 ${mappingPage+1} / ${pages} 页`;
+  $('mappingPrev').disabled=mappingPage===0;$('mappingNext').disabled=mappingPage===pages-1;
+  for(const {fact:f,exact} of candidates.slice(mappingPage*40,(mappingPage+1)*40)){
+    const row=node('button',null,'mapping-choice');row.type='button';
+    row.append(node('strong',[f.entity||f.section,f.label].filter(Boolean).join(' / ')),node('span',exact?'同义字段匹配':'手动映射：字段名不同，请特别核对','choice-hint'));
+    if($('mappingReveal').checked)row.append(node('p',f.value,'choice-value'));
+    row.onclick=async event=>{
+      if(!event.isTrusted||busy||!plan||plan.id!==mappingPlanId)return;
+      const request={planId:mappingPlanId,id:mappingEntry.id,factId:f.id};
+      if(!exact&&!confirm(`网页字段“${mappingEntry.label}”与资料“${f.label}”不同。确认两者含义一致？`))return;
+      busy=true;box.querySelectorAll('button').forEach(b=>b.disabled=true);controls();
+      try{showPlan(await send('remap',request));notify('资料映射已更新，请重新核对后授权。');}
+      catch(e){notify(e.message,true);closeMapping();}finally{busy=false;renderEntries();controls();}
+    };box.append(row);
+  }
+  if(!candidates.length)box.append(node('p','没有符合条件的已核实资料。检查本次资料选择、经历绑定，或在资料中补充字段别名。','muted'));
+}
 function renderEntries() {
-  $('entries').replaceChildren(); if(!plan)return;
-  const filter=$('filter').value;
-  for(const e of plan.entries.filter(e=>filter==='all'||filter==='required'&&e.required&&e.status!=='preserve'||filter==='missing'&&['missing','manual'].includes(e.status)||e.status===filter)) {
-    const card=node('article',null,'field-card'),top=node('div',null,'field-top'),label=node('label',null,'check'),check=document.createElement('input');
+  const box=$('entries');box.replaceChildren(); if(!plan)return;
+  const page=reviewPage(plan.entries,{status:$('filter').value,section:$('sectionFilter').value,query:$('fieldSearch').value,page:reviewIndex,selected:[...chosenFields]});
+  reviewIndex=page.page;
+  $('reviewPager').hidden=false;$('reviewRange').textContent=`${page.total} 项 · 第 ${page.page+1} / ${page.pages} 页`;
+  $('reviewPrev').disabled=page.page===0;$('reviewNext').disabled=page.page===page.pages-1;
+  const fragment=document.createDocumentFragment();
+  for(const e of page.rows) {
+    const card=node('article',null,'field-card');card.dataset.id=e.id;
+    const top=node('div',null,'field-top'),label=node('label',null,'check'),check=document.createElement('input');
     check.type='checkbox';check.checked=chosenFields.has(e.id);check.disabled=e.status!=='ready'||busy;
     check.onchange=()=>{check.checked?chosenFields.add(e.id):chosenFields.delete(e.id);$('reviewed').checked=false;controls();};
     label.append(check,node('span',e.label+(e.required?' *':'')));
     const badge=node('span',names[e.status]||e.status,'state');badge.dataset.status=e.status;top.append(label,badge);
-    const meta=node('p',[e.frameId?'嵌入文档 '+e.frameId:'主文档',e.section,e.sensitive?'敏感项：需单独勾选':''].filter(Boolean).join(' · '),'field-meta');
-    const content=e.status==='ready'?($('reveal').checked?(Array.isArray(e.value)?e.value.join('、'):String(e.value)):'••••••  内容已隐藏，可在上方勾选显示'):e.status==='preserve'?'网页已有内容，保持原样':e.reason;
+    const meta=node('p',[e.frameId?'嵌入文档 '+e.frameId:'主文档',e.section,e.sensitive?'敏感项：请单独核对':''].filter(Boolean).join(' · '),'field-meta');
+    const content=e.status==='ready'?($('reveal').checked?(Array.isArray(e.value)?e.value.join('、'):String(e.value)):'••••••  待填内容已隐藏'):e.status==='preserve'?'网页已有内容，保持原样':e.reason;
     const value=node('div',content,'field-value'),actions=node('div',null,'field-actions');
-    const locate=node('button','定位到网页','secondary');locate.disabled=busy;locate.onclick=async()=>{try{await send('locate',{planId:plan.id,id:e.id});notify('已在目标网页高亮这个字段；没有点击或更改内容。');}catch(error){notify(error.message,true);}};
-    if(plan.capabilities?.locate!==false)actions.append(locate);
-    if(e.frameId===0&&e.status!=='preserve'&&e.kind!=='file'){
-      const select=document.createElement('select');select.setAttribute('aria-label',e.label+' 资料映射');select.disabled=busy;
-      const defaultOption=node('option','自动匹配 / 选择准确来源');defaultOption.value='';select.append(defaultOption);
-      const bound=plan.groups?.find(g=>g.entity&&g.fieldIds.includes(e.id));
-      for(const f of profile.facts.filter(f=>chosenFacts.has(f.id)&&usable(f)&&(!bound||f.entity===bound.entity&&scope(f.section)===bound.scope)&&(!scope(e.section)||!scope(f.section)||scope(e.section)===scope(f.section)||scope(e.section)==='personal'&&scope(f.section)==='language'))){const o=node('option',[f.section,f.entity,f.label].filter(Boolean).join(' / ')+($('reveal').checked?' · '+f.value.slice(0,35):''));o.value=f.id;o.selected=e.factId===f.id;select.append(o);}
-      select.onchange=async()=>{try{showPlan(await send('remap',{planId:plan.id,id:e.id,factId:select.value}));notify('映射已更新，请重新核对本次选择。');}catch(error){notify(error.message,true);}};actions.append(select);
+    if(plan.capabilities?.locate&&e.frameId===0){
+      const locate=node('button','定位','secondary');locate.disabled=busy;locate.setAttribute('aria-label','定位 '+e.label);
+      locate.onclick=async()=>{try{await send('locate',{planId:plan.id,id:e.id});notify('已在网页高亮字段，请核对它所属的经历。');}catch(error){notify(error.message,true);}};actions.append(locate);
     }
-    card.append(top,meta,value,actions);$('entries').append(card);
+    if(e.frameId===0&&e.status!=='preserve'&&e.kind!=='file'){
+      const map=node('button',e.factId?'更换资料':'选择资料','text-button');map.disabled=busy;map.setAttribute('aria-label',e.label+' 资料映射');map.onclick=()=>openMapping(e);actions.append(map);
+    }
+    const detail=node('div',null,'field-detail');detail.append(value,actions);
+    card.append(top,meta,detail);fragment.append(card);
   }
+  if(!page.total)fragment.append(node('div','没有符合当前筛选条件的项目。筛选不会改变已选字段。','filter-empty'));
+  box.append(fragment); controls();
 }
 async function download(value,name) {
   const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));
   const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>view(button.dataset.view));
-$('factSearch').oninput=renderFacts;$('filter').onchange=renderEntries;$('reveal').onchange=renderEntries;$('reviewed').onchange=controls;
+$('factSearch').oninput=()=>{factPage=0;renderFacts();};
+on('factPrev',()=>{factPage--;renderFacts();});on('factNext',()=>{factPage++;renderFacts();});
+for(const id of ['filter','sectionFilter'])$(id).onchange=()=>{reviewIndex=0;renderEntries();};
+$('fieldSearch').oninput=()=>{reviewIndex=0;renderEntries();};
+$('reveal').onchange=renderEntries;$('reviewed').onchange=controls;
+on('reviewPrev',()=>{reviewIndex--;renderEntries();});on('reviewNext',()=>{reviewIndex++;renderEntries();});
+on('closeMapping',closeMapping);$('mappingDialog').addEventListener('cancel',closeMapping);
+$('mappingSearch').oninput=()=>{mappingPage=0;renderMapping();};$('mappingReveal').onchange=renderMapping;
+on('mappingPrev',()=>{mappingPage--;renderMapping();});on('mappingNext',()=>{mappingPage++;renderMapping();});
+on('mappingAuto',async()=>{if(!plan||!mappingEntry||busy)return;showPlan(await send('remap',{planId:mappingPlanId,id:mappingEntry.id,factId:''}));});
+
 on('add',()=>openEditor());on('closeEditor',()=>{$('editor').close();$('factForm').reset();edited=null;});
 $('factForm').onsubmit=async event=>{
   event.preventDefault();if(!event.isTrusted||busy)return;
@@ -255,7 +320,7 @@ on('pairBridge',async()=>{
 });
 on('revoke',async()=>{await send('revoke');await status();notify('已撤销后续读取授权；已经进入 Codex 上下文或网站的数据不能因此收回。');});
 on('legacy',async()=>{if(!confirm('原 MCP 模式使用旧本机明文主档，与新加密库分开；扫描授权后相关资料会进入 Codex。继续？'))return;await send('legacy',{tabId});await status();notify('已打开原 MCP 模式，新资料库已锁定。');});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){$('reveal').checked=false;renderEntries();}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){$('reveal').checked=false;$('mappingReveal').checked=false;renderEntries();renderMapping();}});
 window.addEventListener('pagehide',()=>{send('lock').catch(()=>{});});
 await status().then(()=>notify('工作台就绪。先解锁或创建资料库；原 MCP 模式可从右侧主动打开。')).catch(e=>notify(e.message,true));
 setInterval(()=>status().catch(()=>{state.unlocked=false;clearPrivate();notify('后台连接已中断，请重新打开工作台。',true);}),20000);

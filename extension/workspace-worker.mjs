@@ -6,7 +6,7 @@ import {trustedWorkspace, secureTarget} from './core/workspace-policy.mjs';
 export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
   const storageReady = Promise.all([chrome.storage.local.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'}), chrome.storage.session.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'})]);
   const vault = new VaultSession(chrome.storage.local), broker = new FrameBroker(chrome), run = new WorkspaceRun(vault, broker);
-  let sharedTab = null, sharedUntil = 0, grantId = null, epoch = 0, pendingShare = null;
+  let sharedTab = null, sharedUntil = 0, grantId = null, epoch = 0, pendingShare = null, sharing = false;
   const restored = chrome.storage.session.get('resumeMcpGrant').then(s=>{const g=s.resumeMcpGrant;if(g){sharedTab=g.tabId;sharedUntil=g.expiresAt;grantId=g.id;}});
   const remember = () => chrome.storage.session.set({resumeMcpGrant:sharedTab===null?null:{tabId:sharedTab,expiresAt:sharedUntil,id:grantId}});
   const mode = async () => (await chrome.storage.local.get('resumeMode')).resumeMode || 'local';
@@ -49,7 +49,7 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
       return {...s, mode: await mode(), sharedUntil, busy: run.busy};
     }
     if (m.type === 'workspace-pair') {
-      if (pendingShare || sharedTab !== null || run.busy || legacyBusy()) throw Error('请先撤销授权并停止当前任务，再更改配对');
+      if (sharing || pendingShare || sharedTab !== null || run.busy || legacyBusy()) throw Error('请先撤销授权并停止当前任务，再更改配对');
       if (typeof pair !== 'function') throw Error('配对功能未初始化，请重新加载扩展');
       return pair(m.token);
     }
@@ -70,8 +70,10 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
       return {mode: 'mcp'};
     }
     if (m.type === 'workspace-share') {
-      if (pendingShare || run.busy || legacyBusy()) throw Error('另一项任务尚未结束');
-      await attached(m.tabId); const started=epoch;
+      if (sharing || pendingShare || run.busy || legacyBusy()) throw Error('另一项任务尚未结束');
+      sharing=true; const started=epoch;
+      try {
+      await attached(m.tabId);
       const data=await run.forMCP(owner(sender),m);
       if(started!==epoch || !vault.unlocked) throw Error('分享已取消');
       if(data.snapshot.owner!==String(m.tabId)) throw Error('不属于当前目标标签页');
@@ -94,6 +96,7 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
       await inject(m.tabId);
       await chrome.scripting.executeScript({target:{tabId:m.tabId},func:()=>globalThis.__resumeWidget?.open()});
       return {expiresAt:sharedUntil,count:data.facts.length};
+      } finally { sharing=false; }
     }
     if (await mode() !== 'local') throw Error('当前是 MCP 模式，请先切换本地模式');
     if (m.type === 'workspace-scan') { await attached(m.tabId); return run.scan(owner(sender), m); }
