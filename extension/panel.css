@@ -3,3 +3,5 @@
 #profileSearch{width:100%;margin:14px 0}#profileList{max-height:500px;overflow:auto}.profile-fact{padding:12px 0;border-bottom:1px solid #e5ede7;overflow-wrap:anywhere}.profile-fact strong{font-size:12px}.profile-fact p{white-space:pre-wrap;font-size:12px}.profile-fact small{font-size:10px;color:#91a093}
 
 #profileSearch{width:100%;margin:14px 0}#profileList{max-height:500px;overflow:auto}.profile-fact{padding:12px 0;border-bottom:1px solid #e5ede7;overflow-wrap:anywhere}.profile-fact strong{font-size:12px}.profile-fact p{white-space:pre-wrap;font-size:12px}.profile-fact small{font-size:10px;color:#91a093}
+
+.actions{flex-wrap:wrap;align-items:center}#cancelFill{border:1px solid #cfdfd7}
