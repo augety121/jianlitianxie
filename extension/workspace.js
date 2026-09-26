@@ -22,6 +22,8 @@ function usable(f) { return f.confirmed === true && !f.conflict && !secret(f.lab
 function controls() {
   const ready = state.unlocked && state.mode === 'local' && !busy;
   document.querySelectorAll('[data-unlocked]').forEach(n => n.disabled = !ready);
+  // Groups are created while scanning is busy; keep them in the same lifecycle as the plan.
+  document.querySelectorAll('#groupBindings select, #groupBindings button').forEach(n => n.disabled = !ready || !plan);
   $('fillSelected').disabled = !ready || !plan || !chosenFields.size || !$('reviewed').checked;
   $('stop').disabled = !busy; $('lock').disabled = !state.unlocked && !state.sharedUntil;
   $('selectedCount').textContent = `已选 ${chosenFields.size} 项`;
