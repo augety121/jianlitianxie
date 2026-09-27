@@ -23,6 +23,6 @@
     "test:jev": "python tests/jev-execution-browser.py",
     "bench:jev": "python tests/jev-local-bench.py",
     "test:page-mv3": "python tests/page-entry-mv3.py",
-    "test:oneclick": "python tests/oneclick-browser.py"
+    "test:oneclick": "python tests/oneclick-browser.py && python tests/picker-layout.py"
   }
 }
