@@ -15,7 +15,8 @@ function render(){
   const record=document.createElement('small');record.textContent=[f.section,f.entity,f.exact?'字段名匹配':'手动指定'].filter(Boolean).join(' / ');button.append(title,record);
   button.onclick=e=>{if(!e.isTrusted||busy||done)return;selected=f.id;$('value').textContent=f.value;$('preview').hidden=false;render();};$('choices').append(button);
  }
- $('more').textContent=facts.length>40?`共 ${facts.length} 项，显示前40项；请搜索缩小范围。`:facts.length?`${facts.length} 条可选择资料`:'没有可用资料。请取消返回，手动填写此项或在“我的资料”补充。';
+ $('apply').hidden=$('search').hidden=done;document.querySelector('label[for=search]').hidden=done;document.querySelector('.note').hidden=done;
+ $('more').textContent=done?'':facts.length>40?`共 ${facts.length} 项，显示前40项；请搜索缩小范围。`:facts.length?`${facts.length} 条可选择资料`:'没有可用资料。请取消返回，手动填写此项或在“我的资料”补充。';
  $('apply').disabled=busy||done||!selected;$('search').disabled=busy||done;
 }
 $('search').oninput=render;

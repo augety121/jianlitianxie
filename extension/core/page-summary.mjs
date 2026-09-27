@@ -13,7 +13,8 @@ const reasons={
 export function pageSummary(plan) {
   const counts={ready:0,missing:0,manual:0,preserve:0};
   for(const e of plan.entries)if(Object.hasOwn(counts,e.status))counts[e.status]++;
-  const eligible=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group').slice(0,QUICK_LIMIT);
+  const ordinary=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group');
+  const eligible=ordinary.slice(0,QUICK_LIMIT);
   const exceptional=plan.entries.filter(e=>['missing','manual'].includes(e.status)||e.status==='ready'&&sensitive(e.label));
   const problems=exceptional.slice(0,60).map(e=>{
     const code=e.status==='ready'?'sensitive-review':Object.hasOwn(reasons,e.reasonCode)?e.reasonCode:'no-label-match';
@@ -23,7 +24,7 @@ export function pageSummary(plan) {
   return {id:plan.id,expiresAt:plan.expiresAt,counts,total:plan.entries.length,
     quick:eligible.map(e=>({id:e.id,label:String(e.label).slice(0,160),section:String(e.section||'').slice(0,100)})),
     problems,problemMore:Math.max(0,exceptional.length-problems.length),
-    more:Math.max(0,counts.ready-eligible.length),
+    more:Math.max(0,ordinary.length-eligible.length),
     message:counts.ready===0 ? (counts.missing||counts.manual ? `本次没有可自动补全的空白项。已保留 ${counts.preserve} 项，以下项目需要补充资料或本人处理。` : '本页可识别的字段已有内容，不需要重复填写。') : !eligible.length ? '剩余敏感项需单独确认；请在下方选择这一项的资料。' : `已找到 ${eligible.length} 个可直接补全的普通空白项。`};
 }
 export function planExplanation(plan) {

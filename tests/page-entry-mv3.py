@@ -94,18 +94,19 @@ try:
   step('same-origin-navigation-reattaches-and-zero-ready-is-explained-not-retried',no_match)
   def pick_one():
    with context.expect_page() as opened:click('补填这项')
-   picker=opened.value;expect(picker.locator('#field')).to_have_text('未知字段0',timeout=10000)
+   picker=opened.value;picker.set_viewport_size({'width':470,'height':650});expect(picker.locator('#field')).to_have_text('未知字段0',timeout=10000)
    require(picker.url.startswith(origin+'/quick-pick.html'),'not a trusted extension picker')
    secret_ticket=picker.url.split('ticket=')[1]
    rejected=worker.evaluate("""async a=>(await chrome.scripting.executeScript({target:{tabId:a.tab},func:async ticket=>chrome.runtime.sendMessage({type:'local-picker-read',ticket}),args:[a.ticket]}))[0].result""",{'tab':tab,'ticket':secret_ticket})
    require(bool(rejected.get('error')) and 'data' not in rejected,'webpage read picker facts')
    picker.locator('.choice').filter(has_text='姓名').click();expect(picker.locator('#value')).to_have_text(NAME)
    require(target.locator('input').nth(13).input_value()=='','selection itself wrote')
+   picker.screenshot(path=str(ROOT/'test-results/single-field-picker-installed.png'))
    picker.locator('#apply').click();expect(picker.locator('#notice')).to_contain_text('回读通过',timeout=10000)
    require(target.locator('input').nth(13).input_value()==NAME,'chosen field not filled')
    require(all(target.locator('input').nth(i).input_value()=='' for i in range(14,19)),'other unmatched fields changed')
    require(target.locator('input').first.input_value()=='测试内容','existing value changed')
-   picker.screenshot(path=str(ROOT/'test-results/single-field-picker-installed.png'))
+   expect(picker.locator('#apply')).to_be_hidden();expect(picker.locator('#more')).to_have_text('')
    picker.locator('#close').click();wait_text('这项资料已填写并回读通过')
   step('trusted-small-picker-fills-one-ambiguous-field-without-management-page',pick_one)
   def logs():
