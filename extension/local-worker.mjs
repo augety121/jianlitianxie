@@ -4,6 +4,7 @@ import {readLocalImport} from './core/local-import.mjs';
 import {FrameBroker} from './core/frame-broker.mjs';
 import {WorkspaceRun} from './core/workspace-run.mjs';
 import {trustedWorkspace, secret, secureTarget} from './core/workspace-policy.mjs';
+import {pageSummary} from './core/page-summary.mjs';
 import {LocalReceipts, receiptReason, exportReceipts} from './core/local-receipts.mjs';
 
 export const LOCAL_PROFILE_KEY='resumePlainLocalV1';
@@ -36,7 +37,16 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
   async function open(tab){
     await ready;secureTarget(tab.url);
     await chrome.storage.session.set({['workspace-target-'+tab.id]:new URL(tab.url).origin});
-    return chrome.tabs.create({url:chrome.runtime.getURL('local.html')+'?tab='+tab.id});
+    const url=chrome.runtime.getURL('local.html')+'?tab='+tab.id,key='local-manager-'+tab.id;
+    const known=(await chrome.storage.session.get(key))[key];
+    if(Number.isSafeInteger(known)){
+      try{const manager=await chrome.tabs.get(known);
+        if(manager.url?.split('&')[0]===url)return await chrome.tabs.update(known,{active:true,url:url+'&refresh='+Date.now()});
+      }catch{}
+    }
+    const created=await chrome.tabs.create({url});
+    if(Number.isSafeInteger(created?.id))await chrome.storage.session.set({[key]:created.id});
+    return created;
   }
   function draft(own,parsed){
     preview={id:crypto.randomUUID(),owner:own,revision:profile.revision,expires:Date.now()+600000,facts:parsed.facts};
@@ -47,20 +57,20 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
   function record(stage,start,data,error,sourceEntries=[]){
     const entries=data?.entries||[],outcomes=data?.results||entries;
     const order=new Map(sourceEntries.map((e,i)=>[e.id,i+1]));
-    const fields=outcomes.map((e,i)=>({index:order.get(e.id)||i+1,status:e.status}));
+    const fields=outcomes.map((e,i)=>({index:order.get(e.id)||i+1,status:e.status,code:e.reasonCode}));
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
     logs.add({stage,ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
-  async function request(m,sender){
-    if(!trustedWorkspace(sender,chrome.runtime,'local.html'))throw Error('只有本地填写页可以访问资料');
-    const own=owner(sender),type=m.type;
+  async function perform(m,own){
+    const type=m.type;
     if(type==='local-stop') {epoch++;preview=null;const result=await run.stop();logs.add({stage:'stop',ok:true,reason:'none',ms:0,total:0});return result;}
     if(type==='local-state'){
       await ready;if(!active)await refresh();
       const old=(await storage.get('resumeVaultV1')).resumeVaultV1;
       let target='';try{target=new URL((await attached(m.tabId)).url).origin;}catch{}
-      return {target,profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
+      let targetTitle='';try{targetTitle=String((await attached(m.tabId)).title||'').slice(0,160);}catch{}
+      return {target,targetTitle,profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
     }
     if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data),enabled:data.enabled};}
     if(type==='local-log-settings'){await ready;await logs.settings(m.enabled,m.clear===true);return {ok:true};}
@@ -70,6 +80,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     const alive=()=>{if(generation!==epoch)throw Error('操作已取消，请重新扫描');};
     try {
       await ready;await refresh();alive();
+      if(type==='local-return'){await attached(m.tabId);alive();await attachButton(m.tabId);await chrome.tabs.update(m.tabId,{active:true});return {returned:true};}
       if(type==='local-preview'){stage='preview';data=draft(own,readLocalImport(m.text));return data;}
       if(type==='local-encrypted-preview'){
         stage='preview';
@@ -118,6 +129,69 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     } catch(error){if(stage)record(stage,start,null,error,sourceEntries);stage=null;throw error;}
     finally{if(stage)record(stage,start,data,null,sourceEntries);active=false;}
   }
+  async function request(m,sender){
+    if(!trustedWorkspace(sender,chrome.runtime,'local.html'))throw Error('只有本地填写页可以访问资料');
+    return perform(m,owner(sender));
+  }
+  async function attachButton(tabId){
+    await attached(tabId);
+    await chrome.scripting.executeScript({target:{tabId},files:['page-assistant.js']});
+  }
+  async function launch(tab){
+    await ready;secureTarget(tab.url);
+    await chrome.storage.session.set({['workspace-target-'+tab.id]:new URL(tab.url).origin});
+    await attachButton(tab.id);
+    await refresh();
+    if(!accepted||!profile.facts.length)return open(tab);
+    return {attached:true};
+  }
+  async function reattach(tab){
+    if(await mode()!=='local')return;
+    const grant=(await chrome.storage.session.get('workspace-target-'+tab.id))['workspace-target-'+tab.id];
+    if(grant===new URL(tab.url).origin)await attachButton(tab.id);
+  }
+  async function pageRequest(m,sender){
+    // Content script capabilities are NOT the trusted management-page capabilities.
+    if(sender.id!==chrome.runtime.id||sender.frameId!==0||!Number.isSafeInteger(sender.tab?.id)||
+       typeof sender.documentId!=='string'||!sender.documentId||
+       sender.documentLifecycle&&sender.documentLifecycle!=='active')throw Error('页面身份无效');
+    secureTarget(sender.url);
+    const tabId=sender.tab.id,tab=await attached(tabId);
+    if(tab.url!==sender.url)throw Error('页面已经变化，请在当前申请页重新点击插件');
+    const own='page:'+sender.documentId;
+    const checkDocument=()=>{
+      const j=run.current(own,m.planId);
+      if(j.tabId!==tabId||j.url!==sender.url||j.frames[0]?.documentId!==sender.documentId)throw Error('目标文档已变化，请重新扫描');
+      return j;
+    };
+    if(m.type==='page-local-manage'){
+      await open(tab);return {opened:true};
+    }
+    if(m.type==='page-local-status'){
+      await ready;if(!active)await refresh();
+      return {hasProfile:accepted&&profile.facts.length>0,mode:await mode(),busy:active};
+    }
+    if(m.type==='page-local-scan'){
+      const p=await perform({type:'local-scan',tabId},own);
+      if(run.job?.frames[0]?.documentId!==sender.documentId||run.job?.url!==sender.url){await run.stop();throw Error('扫描时文档改变，请重扫');}
+      return pageSummary(p);
+    }
+    if(m.type==='page-local-fill'){
+      if(m.reviewed!==true)throw Error('请本人点击确认填写');
+      checkDocument();
+      const approved=pageSummary(run.preview()).quick.map(e=>e.id);
+      if(!approved.length)throw Error('没有可安全直接填写的普通字段，请打开工作台处理');
+      const result=await perform({type:'local-fill',planId:m.planId,ids:approved,reviewed:true},own);
+      const counts={};for(const r of result.results)counts[r.status]=(counts[r.status]||0)+1;
+      return {counts,submitted:false};
+    }
+    if(m.type==='page-local-stop'){
+      const j=run.running||run.job;
+      if(j&&(j.owner!==own||j.tabId!==tabId))throw Error('另一个工作台正在操作，未停止其他任务');
+      return perform({type:'local-stop'},own);
+    }
+    throw Error('页面入口不允许读取或修改完整资料');
+  }
   async function navigated(id){if(run.job?.tabId===id||run.running?.tabId===id){epoch++;await run.stop();}}
-  return {request,open,navigated,get busy(){return active||run.busy;}};
+  return {request,pageRequest,open,launch,reattach,navigated,get busy(){return active||run.busy;}};
 }

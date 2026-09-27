@@ -2,6 +2,7 @@ import {normalizeFact, normalizeProfile, parseImport, MAX_PROFILE_BYTES} from '.
 import {secret} from './workspace-policy.mjs';
 
 const sections = new Set(['基本信息','教育经历','教育背景','工作经历','实习经历','项目经历','专业技能','语言能力','获奖经历','证书','论文','家庭信息']);
+const sectionTitle=s=>s.replace(/^(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/, '').trim();
 const cleanLabel = s => s.trim().replace(/^\*\*([^*]+)\*\*$/, '$1').replace(/[:：]$/, '').trim();
 const cells = s => s.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(v => v.trim().replace(/\\\|/g, '|'));
 /** Explicit key/value and two-column Markdown tables only. No AI, rendering or guessing. */
@@ -38,7 +39,8 @@ export function readLocalImport(input) {
     if (fence) { skipped.push({line:i+1,text:line}); continue; }
     const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
     if (heading) {
-      const title = heading[2].trim(), parts = title.split(/\s*[|｜]\s*/);
+      const title = sectionTitle(heading[2]), parts = title.split(/\s*[|｜]\s*/);
+      if(['个人信息','个人基本信息','联系方式'].includes(parts[0]))parts[0]='基本信息';
       table = false;
       if (sections.has(parts[0])) { section=parts[0];entity=parts.slice(1).join(' | '); }
       else if (heading[1].length >= 3 && section !== '基本信息') entity=title;
@@ -48,9 +50,9 @@ export function readLocalImport(input) {
     if (sections.has(line)) {section=line;entity='';table=false;continue;}
     if (line.startsWith('|')) {
       const row = cells(line);
-      if (row.length===2 && /^(字段|属性|项目|field)$/i.test(row[0]) && /^(内容|值|value)$/i.test(row[1])) {table=true;continue;}
+      if (row.length===2 && /^(字段|属性|项目|名称|信息项|field)$/i.test(cleanLabel(row[0])) && /^(内容|值|信息|填写内容|个人信息|value)$/i.test(cleanLabel(row[1]))) {table=true;continue;}
       if (table && row.length===2 && row.every(c=>/^:?-{3,}:?$/.test(c))) continue;
-      if (table && row.length===2 && row[0] && row[1]) add(row[0],row[1],section,entity,i+1);
+      if (table && row.length===2 && row[0] && row[1]) add(row[0],row[1].replace(/^\*\*([^*]+)\*\*$/, '$1'),section,entity,i+1);
       else skipped.push({line:i+1,text:line});
       continue;
     }

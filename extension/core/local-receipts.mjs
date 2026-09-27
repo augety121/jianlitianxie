@@ -3,13 +3,14 @@ import {numericMetrics} from './performance.mjs';
 const KEY='resumeLocalReceiptsV1', FLAG='resumeLocalReceiptsEnabled';
 const stages=new Set(['preview','import','scan','fill','bind','map','stop','erase']);
 const statuses=new Set(['ready','missing','manual','preserve','verified','invalid','stale','needs-user','cancelled','not-attempted']);
+const codes=new Set(['restricted-control','record-unbound','ambiguous-source','date-precision','no-label-match']);
 const reasons=new Set(['none','check-input','target-changed','permission','busy','interrupted','review-required']);
 const int=(v,max)=>Number.isSafeInteger(v)&&v>=0?Math.min(v,max):0;
 function safe(r) {
   if(!r || !stages.has(r.stage))return null;
   return {seq:int(r.seq,1e9),at:int(r.at,9e15),stage:r.stage,ok:r.ok===true,
     reason:reasons.has(r.reason)?r.reason:'check-input',ms:int(r.ms,3600000),total:int(r.total,20000),
-    fields:(Array.isArray(r.fields)?r.fields:[]).slice(0,300).filter(x=>statuses.has(x?.status)).map(x=>({index:int(x.index,20000),status:x.status})),
+    fields:(Array.isArray(r.fields)?r.fields:[]).slice(0,300).filter(x=>statuses.has(x?.status)).map(x=>({index:int(x.index,20000),status:x.status,...(codes.has(x.code)?{code:x.code}:{})})),
     omitted:int(r.omitted,20000),performance:{scan:numericMetrics(r.performance?.scan),match:numericMetrics(r.performance?.match),apply:numericMetrics(r.performance?.apply)}};
 }
 export function receiptReason(error) {

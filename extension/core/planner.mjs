@@ -12,20 +12,20 @@ export function makePlan(snapshot,profile,mappings={},entityBindings={}){
  const entries=snapshot.fields.map(original=>{
   const f={...original};if(Array.isArray(f.type)&&/\bx-combocheck\b/.test(f.control?.classes||''))f.type='custom-select';
   const row={fieldId:f.id,label:f.label,section:f.section,groupId:f.groupId,kind:f.type,oldValue:f.value,required:f.required,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
-  if(restricted(f))return {...row,status:'manual',reason:'附件须选择文件；声明、密码和提交由本人操作'};
+  if(restricted(f))return {...row,status:'manual',reasonCode:'restricted-control',reason:'附件须选择文件；声明、密码和提交由本人操作'};
   if(f.value!==''&&f.value!==false&&f.value!=null&&(!Array.isArray(f.value)||f.value.length))return {...row,status:'preserve',reason:'已有内容保留；请在网页修正后重新扫描'};
   if((f.multiple||f.type==='repeat-group')&&!mappings[f.id])return {...row,status:'manual',reason:'请明确指定本次多选资料或经历条数'};
-  let candidates=index.candidates(f);
+  let candidates=index.candidates(f),needsBinding=false,dateRejected=false;
   const bound=groups.get(f.groupId);
   if(mappings[f.id])candidates=index.byId(mappings[f.id]);
   if(bound?.entity){
-   if(!bound.valid)return {...row,status:'missing',reason:bound.reason};
+   if(!bound.valid)return {...row,status:'missing',reasonCode:'record-unbound',reason:bound.reason};
    candidates=candidates.filter(a=>factMatchesBinding(a,f,bound.entity));
-  }else if(!mappings[f.id]){const anchored=candidates.filter(a=>entityMatches(a,f));if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(semanticLabel(f.label,f.section))>1)candidates=[];}
+  }else if(!mappings[f.id]){const anchored=candidates.filter(a=>entityMatches(a,f));if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(semanticLabel(f.label,f.section))>1){needsBinding=candidates.length>0;candidates=[];}}
   const targetPrecision=f.type==='month'||f.datePrecision==='month'&&f.type==='date-picker'?'month':['date','date-picker'].includes(f.type)?'day':null;
-  if(targetPrecision)candidates=candidates.filter(a=>dateValue(a.value,targetPrecision)).map(a=>({...a,value:dateValue(a.value,targetPrecision)}));
+  if(targetPrecision){const before=candidates.length;candidates=candidates.filter(a=>dateValue(a.value,targetPrecision)).map(a=>({...a,value:dateValue(a.value,targetPrecision)}));dateRejected=before>0&&!candidates.length;}
   candidates=candidates.filter((a,i,all)=>all.findIndex(b=>b.value===a.value&&b.entity===a.entity)===i);
-  if(candidates.length!==1)return {...row,status:'missing',candidateIds:candidates.map(a=>a.id),reason:candidates.length?'多个来源不一致，请指定资料':'未找到唯一资料或缺少经历锚点，请核对分区'};
+  if(candidates.length!==1)return {...row,status:'missing',reasonCode:candidates.length?'ambiguous-source':dateRejected?'date-precision':needsBinding?'record-unbound':'no-label-match',candidateIds:candidates.map(a=>a.id),reason:candidates.length?'多个来源不一致，请指定资料':dateRejected?'资料没有所需日期精度，不补造日期':needsBinding?'请先选择这段教育、工作或项目记录对应的经历':'资料中没有相同字段或别名（或分区不同），点击选资料核对；不要重复导入相同文件'};
   const fact=candidates[0];let value=String(fact.value);
   if(f.type==='repeat-group'){
    const count=Number(value);if(!Number.isInteger(count)||count<1||count>20)return {...row,status:'missing',reason:'经历总条数须为1至20'};
