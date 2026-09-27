@@ -17,7 +17,8 @@ function controls(){
   $('selectedCount').textContent=plan?`本次选择 ${selected.size} 项`:'导入一次，之后直接扫描填写';
   for(const id of ['previewImport','commitImport','eraseProfile','importOld','advanced','readOld'])$(id).disabled=busy;
   $('commitImport').disabled=busy||!preview||!importIds.size;
-  document.querySelectorAll('.field input,.field button,.group select,.fact button').forEach(n=>{if(busy)n.disabled=true;});
+  document.querySelectorAll('.field input,.field button,.fact button').forEach(n=>{if(busy)n.disabled=true;});
+  document.querySelectorAll('.group select').forEach(n=>n.disabled=busy);
 }
 function clearPlan(){plan=null;selected.clear();$('entries').replaceChildren();$('review').hidden=true;$('groups').replaceChildren();controls();}
 function setProfile(p){profile=p;$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}

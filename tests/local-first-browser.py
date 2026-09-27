@@ -65,6 +65,17 @@ with sync_playwright() as p:
   def log_toggle():
    page.locator('[data-view=logs]').click();expect(page.locator('.log').first).to_be_visible();page.locator('#autoLogs').uncheck();page.locator('#clearLogs').click();expect(page.locator('.log')).to_have_count(0);page.locator('[data-view=fill]').click();page.locator('#scan').click();expect(page.locator('.field')).to_have_count(3);page.locator('[data-view=logs]').click();expect(page.locator('.log')).to_have_count(0)
   step('automatic-logs-can-be-disabled-and-cleared',log_toggle)
+  def records():
+   rpc({'type':'scenario','scenario':'education'});rpc({'type':'reset-page'})
+   page.locator('[data-view=profile]').click()
+   payload={'facts':[{'label':label,'value':value,'section':'教育经历','entity':entity} for entity,school,major in [('MASTER_RECORD','FICTIONAL_MASTER_SCHOOL','AI'),('BACHELOR_RECORD','FICTIONAL_BACHELOR_SCHOOL','Engineering')] for label,value in [('学校',school),('专业',major)]]}
+   page.locator('#importFile').set_input_files({'name':'records.json','mimeType':'application/json','buffer':json.dumps(payload).encode()})
+   expect(page.locator('.import-row')).to_have_count(4);page.locator('#commitImport').click();expect(page.locator('.group select')).to_have_count(2)
+   page.locator('.group select').nth(0).select_option('BACHELOR_RECORD');expect(page.locator('.field input:checked')).to_have_count(2)
+   page.locator('.group select').nth(1).select_option('MASTER_RECORD');expect(page.locator('.field input:checked')).to_have_count(4)
+   page.locator('#fillSelected').click();expect(page.locator('#result')).to_contain_text('回读通过 4')
+   values=rpc({'type':'inspect'})['data']['values'];require(values['aschool']=='FICTIONAL_BACHELOR_SCHOOL' and values['bschool']=='FICTIONAL_MASTER_SCHOOL','record binding followed import order instead of explicit choice')
+  step('JSON-import-and-explicit-whole-record-binding-keep-two-degrees-separate',records)
   def erase():
    page.locator('[data-view=profile]').click();page.locator('#eraseProfile').click();expect(page.locator('#savedCount')).to_have_text('0');page.close();rpc({'type':'restart'});load();expect(page.locator('#savedCount')).to_have_text('0')
   step('explicit-delete-persists-without-touching-encrypted-mode',erase)
