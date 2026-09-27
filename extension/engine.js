@@ -1,6 +1,6 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.6.0') return;
+ if(globalThis.__resumeFillEngine?.version==='0.8.1') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot;
  let busy=false,generation=0;
@@ -11,6 +11,7 @@
  const prohibited=e=>/^(password|file|hidden|submit|button|reset|image|checkbox)$/.test(e.type)||/验证码|密码|同意|承诺|声明|签名|授权|captcha|consent|signature/i.test(fieldLabel(e));
  // Scan-local caches are thrown away BEFORE any await or page write.
  let scanMemo=null,queryRoots=null,activeMetrics=null;
+ let shapeCache=null;
  const guards=new Map(),abortWaits=new Set();let highlightNode=null,highlightTimer;
  function clearHighlight(){clearTimeout(highlightTimer);highlightNode?.remove();highlightNode=null;}
  const tick=(key,n=1)=>{if(activeMetrics)activeMetrics[key]=(activeMetrics[key]||0)+n;};
@@ -32,7 +33,40 @@
   ...(e.matches('.x-radio-group,[role=radiogroup]')?[...e.querySelectorAll('.x-radio,[role=radio]')].map(r=>[text(r.querySelector('.radio-text')||r),r.getAttribute('aria-disabled'),r.classList.contains('disabled')]):[])]);
  function recordNode(e){if(!e)return null;const p=container(e);return p?.matches('[data-entity],.resume-item,.education-item,.project-item,.experience-item,.fx-subform-row,fieldset,section,[data-section],tr')?p:null;}
  function recordShape(e){const p=recordNode(e);if(!p)return null;return memo('recordShapes',p,()=>({node:p,parent:p.parentNode,index:[...p.parentNode.children].indexOf(p),fields:[...p.querySelectorAll(controlsSelector)]}));}
- function recordUnchanged(record){if(!record)return true;const p=record.node;if(!p.isConnected||p.parentNode!==record.parent||[...p.parentNode.children].indexOf(p)!==record.index)return false;const fields=[...p.querySelectorAll(controlsSelector)];return fields.length===record.fields.length&&fields.every((f,i)=>f===record.fields[i]);}
+ /** Cache only structural membership, never labels, values, geometry or permissions.
+  * takeRecords() drains synchronous mutations before every lookup (including own writes).
+  * Any relevant child/class/role/contenteditable change invalidates the affected record.
+  * Lifetime is a single apply invocation; observers are always disconnected in finally.
+  */
+ function beginShapeCache(){
+  const records=[...new Set([...guards.values()].map(g=>g.record).filter(Boolean))];
+  if(!records.length)return null;
+  const cache=new Map();
+  const invalidate=mutations=>{
+   if(mutations.length>128){cache.clear();tick('recordInvalidations',records.length);return;}
+   for(const mutation of mutations){
+    const target=mutation.target;
+    for(const record of records)if(cache.has(record)&&(target===record.parent||record.node.contains(target)||target.contains?.(record.node))){cache.delete(record);tick('recordInvalidations');}
+   }
+  };
+  const observer=new MutationObserver(invalidate);
+  const roots=new Set([document,...records.map(r=>r.node.getRootNode())]);
+  for(const root of roots)observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['role','contenteditable','class']});
+  tick('observersCreated');
+  return {cache,flush:()=>invalidate(observer.takeRecords()),close:()=>{observer.disconnect();cache.clear();tick('observersClosed');}};
+ }
+ function recordUnchanged(record){
+  if(!record)return true;tick('recordShapeReads');
+  const p=record.node;
+  // These checks remain live, even when the descendant list is reused.
+  if(!p.isConnected||p.parentNode!==record.parent||[...p.parentNode.children].indexOf(p)!==record.index)return false;
+  shapeCache?.flush();
+  if(shapeCache?.cache.has(record)){tick('recordShapeCacheHits');return shapeCache.cache.get(record);}
+  tick('recordShapeQueries');
+  const fields=[...p.querySelectorAll(controlsSelector)];
+  const valid=fields.length===record.fields.length&&fields.every((f,i)=>f===record.fields[i]);
+  shapeCache?.cache.set(record,valid);return valid;
+ }
  function captureGuard(e){const form=e.form||e.closest('form');return {root:e.getRootNode(),label:fieldLabel(e),section:section(e),record:recordShape(e),binding:e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'',radios:radioGroups.get(e)?.slice(),form,formState:formState(form),controlState:controlState(e),anchors:anchorRecords(e)};}
  function guardUnchanged(e,id){
   const g=guards.get(id);if(!g||fieldLabel(e)!==g.label||section(e)!==g.section||!recordUnchanged(g.record)||g.binding&&(e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'')!==g.binding||e.getRootNode()!==g.root||(e.form||e.closest('form'))!==g.form||formState(g.form)!==g.formState||controlState(e)!==g.controlState)return false;
@@ -115,6 +149,16 @@
  }
  const uuid=()=>{if(crypto.randomUUID)return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;return [...b].map((x,i)=>([4,6,8,10].includes(i)?'-':'')+x.toString(16).padStart(2,'0')).join('');};
  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+ async function yieldToPage(){
+  if(typeof globalThis.scheduler?.yield==='function'){tick('schedulerYields');await globalThis.scheduler.yield();}
+  else {tick('timerYields');await wait(0);}
+ }
+ function valueMatches(e,p){
+  const value=val(e);
+  if(Array.isArray(p.value))return Array.isArray(value)&&JSON.stringify([...value].sort())===JSON.stringify([...p.value].sort());
+  const actual=String(value),expected=String(p.value);
+  return /date|month/.test(p.kind)?actual.replace(/[/.]/g,'-')===expected:actual===expected;
+ }
  const visible=e=>{
   if(!e||!e.getClientRects().length||['hidden','collapse'].includes(getComputedStyle(e).visibility))return false;
   const closed=e.closest('details:not([open])');if(closed&&!closed.querySelector('summary')?.contains(e))return false;
@@ -147,16 +191,27 @@
   return field.querySelector('.subform-head .subform-row')?.children[index]?.querySelector('.subform-title');
  }
  function labelRaw(e){
-  const sh=subHead(e);if(sh)return (sh.getAttribute('title')||labelText(sh)).replace(/^[*\s]+|[：:*\s]+$/g,'');
+  const clean=s=>s.replace(/^[*\s]+|[：:*\s]+$/g,'');
+  const sh=subHead(e);if(sh)return clean(sh.getAttribute('title')||labelText(sh));
+  // Resolve the first available source only, preserving the previous precedence.
+  // Most ATS fields have a real label: do not also query wrappers/tables for them.
+  const native=e.labels?.length?[...e.labels].map(labelText).join(' '):'';
+  if(native)return clean(native);
+  const direct=e.getAttribute('aria-label');if(direct)return clean(direct);
   const named=e.getAttribute('aria-labelledby'),root=e.getRootNode();
   const aria=named?named.split(' ').map(id=>text(root.getElementById?.(id))).join(' '):'';
+  if(aria)return clean(aria);
   const wrap=e.closest(wrappers),explicit=labelText(wrap?.querySelector('label,.ant-form-item-label,.el-form-item__label,.form-item__label,.layui-form-label,.field-name'));
+  if(explicit)return clean(explicit);
   let table='';const cell=e.closest('td');if(cell){const row=cell.parentElement;const cells=[...row.children];const index=cells.indexOf(cell);const previous=cells[index-1];if(previous&&!previous.querySelector('input,select,textarea'))table=labelText(previous);if(!table){const head=e.closest('table')?.querySelector('thead tr');table=labelText(head?.children[index]);}}
+  if(table)return clean(table);
   const preceding=e.previousElementSibling;const sibling=preceding?.matches('label,.label,.field-label')?labelText(preceding):'';
+  if(sibling)return clean(sibling);
   const hint=(e.placeholder||'').replace(/^(请输入|请选择|请填写)\s*/,'');
   const placeholder=/^(选择|输入|搜索|select|enter|search)/i.test(hint)?'':hint;
+  if(placeholder)return clean(placeholder);
   const autocomplete={name:'姓名','given-name':'名字','family-name':'姓氏',email:'邮箱',tel:'手机号码','tel-national':'手机号码',bday:'出生日期','address-line1':'详细地址'}[(e.autocomplete||'').split(/\s+/).at(-1)]||'';
-  return ((e.labels?.length?[...e.labels].map(labelText).join(' '):'')||e.getAttribute('aria-label')||aria||explicit||table||sibling||placeholder||autocomplete||e.name||e.id||'未标注字段').replace(/^[*\s]+|[：:*\s]+$/g,'');
+  return clean(autocomplete||e.name||e.id||'未标注字段');
  }
  function containerRaw(e){if(e.closest('.fx-subform-row'))return e.closest('.fx-subform-row');if(e.closest('td')&&e.closest('table')?.querySelector('thead'))return e.closest('tr');return e.closest('[data-entity],.resume-item,.education-item,.project-item,.experience-item,fieldset,section,[data-section]')||e.closest('table')||e.closest('form');}
  function sectionRaw(e){if(e.closest('.fx-subform-row'))return text(e.closest('.fx-field')?.querySelector('.field-name'));const parent=container(e),outer=parent?.parentElement?.closest('section,[data-section],fieldset');const own=parent?.getAttribute('data-section')||text(parent?.querySelector('legend,h2,h3,h4,caption'))||text(e.closest('table')?.querySelector('caption'));const inherited=outer?.getAttribute('data-section')||text(outer?.querySelector(':scope > legend,:scope > h2,:scope > h3,:scope > h4'));const typed=parent?.matches('.education-item')?'教育经历':parent?.matches('.project-item')?'项目经历':parent?.matches('.experience-item')?'工作经历':'';const group=parent?.getAttribute('data-section')||inherited||typed||own;return [group,own&&own!==group?own:'',parent?.getAttribute('data-entity')].filter(Boolean).join(' ');}
@@ -238,7 +293,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.6.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};return lastSnapshot;
+  lastSnapshot={engineVersion:'0.8.1',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -251,6 +306,9 @@
   if(!lastSnapshot||plan.snapshotId!==lastSnapshot.id||plan.url!==location.href)throw Error('页面或扫描已变化，请重新扫描');
   if(plan.expiresAt!==undefined&&(!Number.isFinite(plan.expiresAt)||Date.now()>=plan.expiresAt))throw Error('填写授权已过期，请重新扫描');
   const alive=()=>token===generation&&plan.url===location.href&&(plan.expiresAt===undefined||Date.now()<plan.expiresAt);
+  if(!Array.isArray(plan.entries)||plan.entries.length>1000||new Set(plan.entries.map(p=>p.fieldId)).size!==plan.entries.length)throw Error('字段计划重复或超过上限，请重新扫描');
+  const byId=new Map(plan.entries.map(p=>[p.fieldId,p]));
+  shapeCache=beginShapeCache();
   const results=[];let halted=false,sinceYield=performance.now(),writeBatch=0;
   for(const p of plan.entries.filter(x=>x.status==='ready')){
    if(halted){results.push({fieldId:p.fieldId,status:'not-attempted',reason:'前一操作结果不确定，已停止；不会自动重试'});continue;}
@@ -314,17 +372,27 @@
      const option=radioGroups.get(e)?.find(x=>x.value===p.value&&!x.matches(':disabled'));if(!option||!option.isConnected||!visible(option))throw Error('单选项不匹配');beginWrite();activate(option);
     }else if(e.isContentEditable){beginWrite();e.textContent=p.value;e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:p.value}));}
     else {if(e.tagName==='SELECT'&&![...e.options].some(o=>o.value===String(p.value)&&!o.disabled&&!o.parentElement?.disabled))throw Error('候选选项已变化');let inputValue=p.value;if(p.kind==='date-picker'){const fmt=e.placeholder||'';if(/yyyy\/mm\/dd/i.test(fmt))inputValue=inputValue.replaceAll('-','/');else if(/yyyy\.mm\.dd/i.test(fmt))inputValue=inputValue.replaceAll('-','.');}const proto=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;beginWrite();Object.getOwnPropertyDescriptor(proto,'value').set.call(e,inputValue);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));e.dispatchEvent(new Event('blur',{bubbles:true}));}
+    // Native synchronous rejection must not be hidden until the entire batch is filled.
+    if(!/custom|picker/.test(p.kind)&&(!valueMatches(e,p)||e.validity&&!e.validity.valid)){
+     results.push({fieldId:p.fieldId,status:e.validity&&!e.validity.valid?'invalid':'needs-user',reason:'网站同步拒绝输入，已停止后续填写'});
+     halted=true;tick('uncertainStops');continue;
+    }
     results.push({fieldId:p.fieldId,status:'written'});
-    if(++writeBatch>=8||performance.now()-sinceYield>=8||/select|radio|picker/.test(p.kind)){tick('yieldCount');await wait(0);writeBatch=0;sinceYield=performance.now();}
+    if(++writeBatch>=8||performance.now()-sinceYield>=8||/select|radio|picker/.test(p.kind)){tick('yieldCount');await yieldToPage();writeBatch=0;sinceYield=performance.now();}
    }catch(error) {results.push({fieldId:p.fieldId,status:'needs-user',reason:String(error.message).slice(0,160)});if(writeStarted){halted=true;tick('uncertainStops');}}
   }
-  if(results.some(r=>r.status==='written')){const start=performance.now();await wait(500);tick('waitMs',performance.now()-start);}
+  if(results.some(r=>r.status==='written')){const start=performance.now();await wait(500);tick('verificationWaitMs',performance.now()-start);tick('waitMs',performance.now()-start);}
+  const readbackStart=performance.now();
   for(const r of results)if(r.status==='written'){
-   const p=plan.entries.find(x=>x.fieldId===r.fieldId),e=refs.get(r.fieldId);
-   const value=val(e),actual=String(value),expected=String(p.value);const equal=Array.isArray(p.value)?Array.isArray(value)&&JSON.stringify([...value].sort())===JSON.stringify([...p.value].sort()):/date|month/.test(p.kind)?actual.replace(/[/.]/g,'-')===expected:actual===expected;
-   r.status=e?.isConnected&&plan.url===location.href&&container(e)===contexts.get(r.fieldId)&&equal?'verified':'needs-user';if(r.status==='needs-user')r.reason='控件未保留目标值，需核对控件格式或选中状态';
+   const p=byId.get(r.fieldId),e=refs.get(r.fieldId);
+   tick('readbackChecks');
+   // A retained value is not success when it now belongs to a renamed/reordered record.
+   const validTarget=e?.isConnected&&plan.url===location.href&&container(e)===contexts.get(r.fieldId)&&guardUnchanged(e,r.fieldId);
+   r.status=validTarget&&valueMatches(e,p)?'verified':'needs-user';
+   if(r.status==='needs-user')r.reason='目标位置、语义或回读值已变化，请核对；不会自动重试';
    if(e?.validity&&!e.validity.valid)r.status='invalid';
   }
+  tick('readbackMs',performance.now()-readbackStart);
   return {snapshotId:plan.snapshotId,results,submitted:false,saved:false};
  }
  async function upload(request){
@@ -355,10 +423,10 @@
  }
  async function apply(plan){
   if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=generation,start=performance.now();activeMetrics={};
-  try{const report=await applyUnsafe(plan,token);report.performance={...activeMetrics,durationMs:performance.now()-start};return report;}
-  finally{activeMetrics=null;busy=false;lastSnapshot=null;}
+  try{const report=await applyUnsafe(plan,token);shapeCache?.close();shapeCache=null;report.performance={...activeMetrics,durationMs:performance.now()-start};return report;}
+  finally{shapeCache?.close();shapeCache=null;activeMetrics=null;busy=false;lastSnapshot=null;}
  }
  function cancel(){generation++;lastSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.6.0',scan,localScan,apply,upload,locate,cancel};
+ globalThis.__resumeFillEngine={version:'0.8.1',scan,localScan,apply,upload,locate,cancel};
 })();

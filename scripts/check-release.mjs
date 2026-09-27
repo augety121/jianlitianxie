@@ -34,6 +34,10 @@ for(const p of scripts){
 const manifest=JSON.parse(await fs.readFile(path.join(root,'extension/manifest.json'),'utf8'));
 const pkg=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
 if(manifest.version!==pkg.version||manifest.manifest_version!==3)throw Error('Release version mismatch');
+const readme=await fs.readFile(path.join(root,'README.md'),'utf8');
+if(!readme.startsWith('# 简历填写助手 '+pkg.version+'\n'))throw Error('README version mismatch');
+const localPage=await fs.readFile(path.join(root,'extension/local.html'),'utf8');
+if(!localPage.includes('本地速填 '+pkg.version)||manifest.options_ui.page!=='local.html')throw Error('Local entry version mismatch');
 if([...manifest.permissions].sort().join(',')!=='activeTab,scripting,storage')throw Error('Unexpected permission expansion');
 if(manifest.host_permissions.join(',')!=='http://127.0.0.1:19327/*')throw Error('Unexpected mandatory host access');
 if(/unsafe-eval|unsafe-inline/.test(manifest.content_security_policy.extension_pages))throw Error('Unsafe extension CSP');

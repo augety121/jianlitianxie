@@ -1,3 +1,4 @@
+import {createLocalWorkflow} from '../extension/local-worker.mjs';
 import {verifyBridgePairing} from '../extension/core/bridge-pairing.mjs';
 import {withDeadline} from '../extension/core/execution-deadline.mjs';
 import test from 'node:test';
@@ -20,8 +21,8 @@ async function harness(fetcher) {
   if(route==='/begin' && body.url!==plan.url)return {ok:false,json:async()=>({error:'计划不属于当前页面'})};
   return {ok:true,json:async()=>route==='/begin'?{ok:true,plan}:{ok:true}};
  };
- const source=(await fs.readFile('extension/background.js','utf8')).replace("import {createWorkspace} from './workspace-worker.mjs';",'').replace("import {withDeadline} from './core/execution-deadline.mjs';",'').replace("import {verifyBridgePairing} from './core/bridge-pairing.mjs';",'');
- vm.runInNewContext(source,{createWorkspace,withDeadline,verifyBridgePairing,chrome,URL,Set,Map,console,AbortController,setTimeout,clearTimeout,fetch});
+ const source=(await fs.readFile('extension/background.js','utf8')).replace("import {createWorkspace} from './workspace-worker.mjs';",'').replace("import {createLocalWorkflow} from './local-worker.mjs';",'').replace("import {withDeadline} from './core/execution-deadline.mjs';",'').replace("import {verifyBridgePairing} from './core/bridge-pairing.mjs';",'');
+ vm.runInNewContext(source,{createLocalWorkflow,createWorkspace,withDeadline,verifyBridgePairing,chrome,URL,Set,Map,console,AbortController,setTimeout,clearTimeout,fetch});
  const call=(m,url='https://jobs.test/apply',id='own-extension',frameId=0)=>new Promise(resolve=>{const handled=listener(m,{id,frameId,tab:{id:77},url},resolve);if(!handled)resolve(null);});
  return {call,executed,routes,get opened(){return opened;},local};
 }

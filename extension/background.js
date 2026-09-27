@@ -1,3 +1,4 @@
+import {createLocalWorkflow} from './local-worker.mjs';
 import {verifyBridgePairing} from './core/bridge-pairing.mjs';
 import {withDeadline} from './core/execution-deadline.mjs';
 import {createWorkspace} from './workspace-worker.mjs';
@@ -32,20 +33,22 @@ async function engine(tabId, action, arg) {
   if (!r?.length || r[0].result === undefined) throw Error('网页未返回执行结果，请核对已填写内容，不要自动重试');
   return r[0].result;
 }
-const workspace = createWorkspace(chrome, {api, inject, pair: async token => {const status = await verifyBridgePairing(token); await chrome.storage.local.set({bridgeToken:token}); return status;}, legacyBusy: () => runs.size > 0});
+let local;
+const workspace = createWorkspace(chrome, {api, inject, externalBusy:()=>!!local?.busy, pair: async token => {const status = await verifyBridgePairing(token); await chrome.storage.local.set({bridgeToken:token}); return status;}, legacyBusy: () => runs.size > 0});
+local=createLocalWorkflow(chrome,{externalBusy:()=>runs.size>0||workspace.busy,mode:async()=>await workspace.allowsLegacy()?'mcp':'local',switchLocal:()=>workspace.useLocal(),openAdvanced:async tabId=>{if(Number.isSafeInteger(tabId)&&tabId>0){await workspace.open(await chrome.tabs.get(tabId));}else await chrome.tabs.create({url:chrome.runtime.getURL('workspace.html')});}});
 chrome.action.onClicked.addListener(async tab => {
   if (!tab.id || !/^https?:/.test(tab.url || '')) return;
-  try { await workspace.open(tab); }
+  try { await local.open(tab); }
   catch (e) { console.warn('Unable to attach resume assistant:', e.message); }
 });
 chrome.tabs.onUpdated.addListener((id, change, tab) => {
-  if (change.status === 'loading') { waits.get(id)?.abort(); waits.delete(id); workspace.navigated(id).catch(()=>{}); }
+  if (change.status === 'loading') { waits.get(id)?.abort(); waits.delete(id); workspace.navigated(id).catch(()=>{}); local.navigated(id).catch(()=>{}); }
   if (change.status !== 'complete' || !tab.url) return;
   chrome.storage.session.get('attach-' + id).then(s => {
     if (s['attach-' + id] === new URL(tab.url).origin) return workspace.allowsLegacy().then(allowed=>allowed&&inject(id));
   }).catch(() => {});
 });
-chrome.tabs.onRemoved?.addListener(id => { waits.get(id)?.abort(); waits.delete(id); runs.delete(id); workspace.navigated(id).catch(()=>{}); });
+chrome.tabs.onRemoved?.addListener(id => { waits.get(id)?.abort(); waits.delete(id); runs.delete(id); workspace.navigated(id).catch(()=>{}); local.navigated(id).catch(()=>{}); });
 // Upgrade only already-authorized registrations; do not request new host access.
 chrome.runtime.onInstalled?.addListener(async () => {
   try {
@@ -56,6 +59,7 @@ chrome.runtime.onInstalled?.addListener(async () => {
   } catch { console.warn('请从目标网页点击工具栏图标重新打开助手'); }
 });
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
+  if(typeof m?.type==='string'&&m.type.startsWith('local-')){local.request(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if (typeof m?.type === 'string' && m.type.startsWith('workspace-')) {
     workspace.request(m, sender).then(data=>reply({data})).catch(e=>reply({error:e.message})); return true;
   }
