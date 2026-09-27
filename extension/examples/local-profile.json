@@ -1,0 +1,14 @@
+{
+  "facts": [
+    {"label":"姓名","value":"示例用户","section":"基本信息"},
+    {"label":"邮箱","value":"candidate@example.invalid","section":"基本信息"},
+    {"label":"学校","value":"示例大学","section":"教育经历","entity":"示例本科经历"},
+    {"label":"专业","value":"电子信息工程","section":"教育经历","entity":"示例本科经历"},
+    {"label":"学历","value":"本科","section":"教育经历","entity":"示例本科经历"},
+    {"label":"入学时间","value":"2020-09","section":"教育经历","entity":"示例本科经历"},
+    {"label":"毕业时间","value":"2024-06","section":"教育经历","entity":"示例本科经历"},
+    {"label":"项目名称","value":"图像检索演示","section":"项目经历","entity":"示例检索项目"},
+    {"label":"项目职责","value":"测试与界面开发","section":"项目经历","entity":"示例检索项目"},
+    {"label":"项目描述","value":"仅供填写流程演示，请替换成自己的真实资料。","section":"项目经历","entity":"示例检索项目"}
+  ]
+}

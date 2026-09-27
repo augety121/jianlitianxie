@@ -3,7 +3,7 @@ import {FrameBroker} from './core/frame-broker.mjs';
 import {WorkspaceRun} from './core/workspace-run.mjs';
 import {trustedWorkspace, secureTarget} from './core/workspace-policy.mjs';
 /** No web-page sender can call these routes, even if it guesses the message names. */
-export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
+export function createWorkspace(chrome, {api, inject, pair, legacyBusy, externalBusy=()=>false}) {
   const storageReady = Promise.all([chrome.storage.local.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'}), chrome.storage.session.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'})]);
   const vault = new VaultSession(chrome.storage.local), broker = new FrameBroker(chrome), run = new WorkspaceRun(vault, broker);
   let sharedTab = null, sharedUntil = 0, grantId = null, epoch = 0, pendingShare = null, sharing = false;
@@ -14,6 +14,7 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
   async function revoke() {
     epoch++; await restored;
     if (pendingShare) await pendingShare.catch(()=>{});
+    if(sharedTab!==null&&sharedUntil>0&&Date.now()>=sharedUntil){sharedTab=null;sharedUntil=0;grantId=null;await remember();}
     if (sharedTab !== null) {
       const tabId=sharedTab, id=grantId;
       // A positive receipt is required. Connection failure is not reported as successful revocation.
@@ -23,7 +24,7 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
     }
   }
   async function useLocal() {
-    if (legacyBusy()) throw Error('旧 MCP 正在填写，请先停止并等待回读');
+    if (legacyBusy()||run.busy||sharing) throw Error('旧任务正在执行，请先停止并等待回读');
     await revoke(); await chrome.storage.local.set({resumeMode: 'local'});
   }
   async function open(tab) {
@@ -42,6 +43,7 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
     await storageReady; await restored;
     const isMain = trustedWorkspace(sender, chrome.runtime);
     if (!isMain && !(m.type === 'workspace-legacy' && trustedWorkspace(sender, chrome.runtime, 'panel.html'))) throw Error('只有扩展工作台可以操作资料库');
+    if(externalBusy()&&!['workspace-status','workspace-lock','workspace-revoke','workspace-stop'].includes(m.type))throw Error('本地速填正在操作，请先等待或停止');
     if (m.type === 'workspace-status') {
       const s = await vault.status();
       if (!s.unlocked && run.job) await run.stop();
@@ -99,7 +101,7 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
       } finally { sharing=false; }
     }
     if (await mode() !== 'local') throw Error('当前是 MCP 模式，请先切换本地模式');
-    if (m.type === 'workspace-scan') { await attached(m.tabId); return run.scan(owner(sender), m); }
+    if (m.type === 'workspace-scan') { await attached(m.tabId); if(externalBusy())throw Error('本地速填正在操作');return run.scan(owner(sender), m); }
     if (m.type === 'workspace-bind-entity') return run.bindEntity(owner(sender), m);
     if (m.type === 'workspace-remap') return run.remap(owner(sender), m);
     if (m.type === 'workspace-locate') return run.locate(owner(sender), m);
@@ -119,5 +121,5 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy}) {
     if (run.job?.tabId === tabId || run.running?.tabId === tabId) await run.stop();
     if (sharedTab === tabId) await revoke();
   }
-  return {request, open, navigated, allowsLegacy: async () => (await mode()) === 'mcp'};
+  return {request, open, navigated, useLocal, get busy(){return run.busy||sharing;}, allowsLegacy: async () => (await mode()) === 'mcp'};
 }

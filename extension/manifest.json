@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "简历填写 · 本地资料与 MCP",
-  "version": "0.6.0",
-  "description": "本地加密资料、同源嵌入表单扫描、逐项映射与授权填写；MCP 可选，默认不上传，不自动提交。",
+  "name": "简历填写 · 本地速填",
+  "version": "0.8.0",
+  "description": "MD/JSON导入、免口令本地保存、扫描后核对填写及自动脱敏日志；加密库与MCP为可选高级模式。",
   "permissions": [
     "activeTab",
     "scripting",
@@ -20,7 +20,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "打开简历填写助手",
+    "default_title": "本地扫描与填写",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -41,7 +41,7 @@
     "webNavigation"
   ],
   "options_ui": {
-    "page": "workspace.html",
+    "page": "local.html",
     "open_in_tab": true
   }
 }

@@ -44,7 +44,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility
+        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -99,11 +99,14 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: Installed extension and local-only MCP fixture
-        run: npm run test:mv3
+        run: npm run test:mv3 && npm run test:local-mv3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: installed-mv3-verification
-          path: test-results/workspace-mv3.json
+          path: |
+            test-results/workspace-mv3.json
+            test-results/local-first-mv3.json
+            test-results/local-first-installed.png
           if-no-files-found: error
           retention-days: 14
