@@ -38,12 +38,13 @@ const workspace = createWorkspace(chrome, {api, inject, externalBusy:()=>!!local
 local=createLocalWorkflow(chrome,{externalBusy:()=>runs.size>0||workspace.busy,mode:async()=>await workspace.allowsLegacy()?'mcp':'local',switchLocal:()=>workspace.useLocal(),openAdvanced:async tabId=>{if(Number.isSafeInteger(tabId)&&tabId>0){await workspace.open(await chrome.tabs.get(tabId));}else await chrome.tabs.create({url:chrome.runtime.getURL('workspace.html')});}});
 chrome.action.onClicked.addListener(async tab => {
   if (!tab.id || !/^https?:/.test(tab.url || '')) return;
-  try { await local.open(tab); }
+  try { await local.launch(tab); }
   catch (e) { console.warn('Unable to attach resume assistant:', e.message); }
 });
 chrome.tabs.onUpdated.addListener((id, change, tab) => {
   if (change.status === 'loading') { waits.get(id)?.abort(); waits.delete(id); workspace.navigated(id).catch(()=>{}); local.navigated(id).catch(()=>{}); }
-  if (change.status !== 'complete' || !tab.url) return;
+  if (change.status !== 'complete' || !/^https?:/.test(tab.url||'')) return;
+  local.reattach({...tab,id}).catch(()=>{});
   chrome.storage.session.get('attach-' + id).then(s => {
     if (s['attach-' + id] === new URL(tab.url).origin) return workspace.allowsLegacy().then(allowed=>allowed&&inject(id));
   }).catch(() => {});
@@ -59,6 +60,8 @@ chrome.runtime.onInstalled?.addListener(async () => {
   } catch { console.warn('请从目标网页点击工具栏图标重新打开助手'); }
 });
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
+  if(typeof m?.type==='string'&&m.type.startsWith('page-local-')){local.pageRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
+  if(typeof m?.type==='string'&&m.type.startsWith('local-picker-')){local.pickerRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if(typeof m?.type==='string'&&m.type.startsWith('local-')){local.request(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if (typeof m?.type === 'string' && m.type.startsWith('workspace-')) {
     workspace.request(m, sender).then(data=>reply({data})).catch(e=>reply({error:e.message})); return true;

@@ -51,6 +51,18 @@ with sync_playwright() as p:
    page.close();rpc({'type':'restart'});load();expect(page.locator('#savedCount')).to_have_text('3');expect(page.locator('.field')).to_have_count(3)
    require(page.locator('input[type=password]:visible').count()==0,'asked for password after reopen');require(page.locator('.field input:checked').count()==0,'existing values overwritten or sensitive auto-selected')
   step('reopen-after-worker-reconstruction-restores-profile-no-password',reopen)
+  def duplicate_navigation():
+   page.locator('[data-view=profile]').click()
+   page.locator('#importFile').set_input_files({'name':'same.md','mimeType':'text/markdown','buffer':'## 一、基本信息\n| 字段 | 信息 |\n| --- | --- |\n| 姓名 | LOCAL_UI_PERSON |\n| 邮箱 | local@example.invalid |\n| 性别 | 测试选项 |'.encode()})
+   expect(page.locator('#importNextMessage')).to_contain_text('已保存');require(page.locator('#commitImport').is_disabled(),'duplicates should not be rewritten');require(page.locator('#continueSaved').is_enabled(),'all-duplicate import has no next action')
+   page.locator('#continueSaved').click();expect(page.locator('[data-section=fill]')).to_be_visible();expect(page.locator('.field')).to_have_count(3)
+  step('all-duplicate-MD-import-has-visible-route-back-to-filling',duplicate_navigation)
+  def zero_match():
+   rpc({'type':'scenario','scenario':'unmatched'});page.locator('#scan').click();expect(page.locator('.field')).to_have_count(20)
+   expect(page.locator('#matchAdvice')).to_contain_text('6 项未唯一匹配，1 项需人工处理，13 项已有内容');require(page.locator('#fillSelected').is_disabled(),'zero-match plan executable')
+   expect(page.locator('#returnTarget')).to_be_enabled()
+   rpc({'type':'scenario','scenario':'basic'});rpc({'type':'reset-page'})
+  step('reported-20-field-zero-match-shape-has-clear-explanation-and-return-action',zero_match)
   def mapping():
    rpc({'type':'reset-page'});page.locator('#scan').click();expect(page.locator('.field')).to_have_count(3);page.locator('[aria-label="姓名 资料映射"]').click();expect(page.locator('#mappingDialog')).to_be_visible();page.locator('#mappingChoices button').first.click();expect(page.locator('#mappingDialog')).to_be_hidden()
    require(page.locator('#fillSelected').is_enabled(),'mapping leaves unusable workflow')

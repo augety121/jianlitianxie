@@ -1,6 +1,6 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.8.1') return;
+ if(globalThis.__resumeFillEngine?.version==='0.8.3') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot;
  let busy=false,generation=0;
@@ -11,7 +11,7 @@
  const prohibited=e=>/^(password|file|hidden|submit|button|reset|image|checkbox)$/.test(e.type)||/验证码|密码|同意|承诺|声明|签名|授权|captcha|consent|signature/i.test(fieldLabel(e));
  // Scan-local caches are thrown away BEFORE any await or page write.
  let scanMemo=null,queryRoots=null,activeMetrics=null;
- let shapeCache=null;
+ let shapeCache=null,layoutCache=null;
  const guards=new Map(),abortWaits=new Set();let highlightNode=null,highlightTimer;
  function clearHighlight(){clearTimeout(highlightTimer);highlightNode?.remove();highlightNode=null;}
  const tick=(key,n=1)=>{if(activeMetrics)activeMetrics[key]=(activeMetrics[key]||0)+n;};
@@ -31,7 +31,7 @@
   ...(e.tagName==='SELECT'?[...e.options].map(o=>[o.value,o.label,o.disabled,!!o.parentElement?.disabled]):[]),
   ...(e.type==='radio'?(radioGroups.get(e)||[]).map(r=>[r.value,label(r),r.disabled,r.name]):[]),
   ...(e.matches('.x-radio-group,[role=radiogroup]')?[...e.querySelectorAll('.x-radio,[role=radio]')].map(r=>[text(r.querySelector('.radio-text')||r),r.getAttribute('aria-disabled'),r.classList.contains('disabled')]):[])]);
- function recordNode(e){if(!e)return null;const p=container(e);return p?.matches('[data-entity],.resume-item,.education-item,.project-item,.experience-item,.fx-subform-row,fieldset,section,[data-section],tr')?p:null;}
+ function recordNode(e){if(!e)return null;const p=container(e);return p&&(p.matches('[data-entity],.resume-item,.education-item,.project-item,.experience-item,.fx-subform-row,fieldset,section,[data-section],tr')||!e.closest(recordSelector)&&layoutRegion(e)?.node===p)?p:null;}
  function recordShape(e){const p=recordNode(e);if(!p)return null;return memo('recordShapes',p,()=>({node:p,parent:p.parentNode,index:[...p.parentNode.children].indexOf(p),fields:[...p.querySelectorAll(controlsSelector)]}));}
  /** Cache only structural membership, never labels, values, geometry or permissions.
   * takeRecords() drains synchronous mutations before every lookup (including own writes).
@@ -64,7 +64,7 @@
   if(shapeCache?.cache.has(record)){tick('recordShapeCacheHits');return shapeCache.cache.get(record);}
   tick('recordShapeQueries');
   const fields=[...p.querySelectorAll(controlsSelector)];
-  const valid=fields.length===record.fields.length&&fields.every((f,i)=>f===record.fields[i]);
+  const valid=fields.length===record.fields.length&&fields.every((f,i)=>f!==undefined&&f===record.fields[i]);
   shapeCache?.cache.set(record,valid);return valid;
  }
  function captureGuard(e){const form=e.form||e.closest('form');return {root:e.getRootNode(),label:fieldLabel(e),section:section(e),record:recordShape(e),binding:e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'',radios:radioGroups.get(e)?.slice(),form,formState:formState(form),controlState:controlState(e),anchors:anchorRecords(e)};}
@@ -199,7 +199,7 @@
   if(native)return clean(native);
   const direct=e.getAttribute('aria-label');if(direct)return clean(direct);
   const named=e.getAttribute('aria-labelledby'),root=e.getRootNode();
-  const aria=named?named.split(' ').map(id=>text(root.getElementById?.(id))).join(' '):'';
+  const aria=named?named.split(' ').map(id=>text(root.getElementById(id))).join(' '):'';
   if(aria)return clean(aria);
   const wrap=e.closest(wrappers),explicit=labelText(wrap?.querySelector('label,.ant-form-item-label,.el-form-item__label,.form-item__label,.layui-form-label,.field-name'));
   if(explicit)return clean(explicit);
@@ -213,8 +213,69 @@
   const autocomplete={name:'姓名','given-name':'名字','family-name':'姓氏',email:'邮箱',tel:'手机号码','tel-national':'手机号码',bday:'出生日期','address-line1':'详细地址'}[(e.autocomplete||'').split(/\s+/).at(-1)]||'';
   return clean(autocomplete||e.name||e.id||'未标注字段');
  }
- function containerRaw(e){if(e.closest('.fx-subform-row'))return e.closest('.fx-subform-row');if(e.closest('td')&&e.closest('table')?.querySelector('thead'))return e.closest('tr');return e.closest('[data-entity],.resume-item,.education-item,.project-item,.experience-item,fieldset,section,[data-section]')||e.closest('table')||e.closest('form');}
- function sectionRaw(e){if(e.closest('.fx-subform-row'))return text(e.closest('.fx-field')?.querySelector('.field-name'));const parent=container(e),outer=parent?.parentElement?.closest('section,[data-section],fieldset');const own=parent?.getAttribute('data-section')||text(parent?.querySelector('legend,h2,h3,h4,caption'))||text(e.closest('table')?.querySelector('caption'));const inherited=outer?.getAttribute('data-section')||text(outer?.querySelector(':scope > legend,:scope > h2,:scope > h3,:scope > h4'));const typed=parent?.matches('.education-item')?'教育经历':parent?.matches('.project-item')?'项目经历':parent?.matches('.experience-item')?'工作经历':'';const group=parent?.getAttribute('data-section')||inherited||typed||own;return [group,own&&own!==group?own:'',parent?.getAttribute('data-entity')].filter(Boolean).join(' ');}
+ // Many ATS pages use plain div columns, not semantic section/fieldset elements.
+ // Recognize only an explicit, short section title in a nearby shallow sibling area.
+ // Never use a navigation item or one of several competing titles as a field scope.
+ const recordSelector='[data-entity],.resume-item,.education-item,.project-item,.experience-item,fieldset,section,[data-section]';
+ const sectionNames=/^(?:个人基本信息|个人信息|基本信息|求职意向|教育经历|教育背景|教育经验|学习经历|实习经历|工作经历|工作经验|项目经历|项目经验|培训经历|证书|资格证书|奖励荣誉|获奖经历|自我评价|紧急联系人|家庭信息|家庭成员|Education|Work Experience|Projects|Personal Information)$/i;
+ function layoutName(node){
+  const value=(node?.textContent||'').trim();if(!value||value.length>60)return '';
+  const clean=value.replace(/^\s*(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/,'').replace(/[\s*：:]/g,' ').replace(/\s*(?:必填|选填|required)\s*$/i,'').trim();
+  return sectionNames.test(clean)?clean:'';
+ }
+ function layoutTitle(node){
+  // Cheap lexical rejection comes before style/layout queries. Accepted headings
+  // always have their current text, visibility and navigation ancestry checked.
+  const name=layoutName(node);
+  return name&&!node.closest('nav,aside,a,button,label,[role=navigation]')&&visible(node)&&!node.querySelector(controlsSelector)?name:'';
+ }
+ function layoutCandidates(parent){
+  return [...parent.children].slice(0,80).flatMap(c=>[c,...[...c.children].slice(0,30)]).filter(n=>layoutName(n));
+ }
+ /** Keep candidate NODE lists, not current title/visibility/role decisions. New or
+  * changed text and child membership invalidate them before every synchronous read.
+  * Includes hidden/navigation titles as candidates: those exclusions are always live.
+  * Lifetime: one scan or apply, never persisted, always disconnected in finally.
+  */
+ function beginLayoutCache(){
+  const cache=new Map(),observed=new Set();
+  const invalidate=records=>{
+   if(records.length>128){cache.clear();return;}
+   for(const r of records)for(const p of cache.keys())if(p===r.target||p.contains(r.target))cache.delete(p);
+  };
+  const observer=new MutationObserver(invalidate);tick('observersCreated');
+  return {read(parent){
+   invalidate(observer.takeRecords());
+   if(!observed.has(parent)){observed.add(parent);observer.observe(parent,{subtree:true,childList:true,characterData:true});}
+   if(!cache.has(parent))cache.set(parent,layoutCandidates(parent));
+   return cache.get(parent);
+  },close(){observer.disconnect();cache.clear();observed.clear();tick('observersClosed');}};
+ }
+ function layoutRegion(e){
+  return memo('layoutRegions',e,()=>{
+   for(let p=e.parentElement,depth=0;p&&p!==document.body&&p!==document.documentElement&&depth<9;p=p.parentElement,depth++){
+    const headings=memo('layoutHeadings',p,()=>{
+     const nodes=layoutCache?layoutCache.read(p):layoutCandidates(p);
+     // Keep innermost title: a title wrapper and its h2 describe the same heading.
+     const named=nodes.map(node=>({node,name:layoutTitle(node)})).filter(x=>x.name);
+     return named.filter(x=>!named.some(y=>x!==y&&x.node.contains(y.node)));
+    });
+    if(headings.length===1){const h=headings[0];if(h.node.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING)return {node:p,name:h.name};}
+    if(headings.length>1)return null;
+    if(p.matches(recordSelector))break;
+   }
+   return null;
+  });
+ }
+ function containerRaw(e){
+  if(e.closest('.fx-subform-row'))return e.closest('.fx-subform-row');
+  if(e.closest('td')&&e.closest('table')?.querySelector('thead'))return e.closest('tr');
+  const explicit=e.closest(recordSelector);
+  // Preserve established explicit record boundaries; layout inference is fallback only.
+  if(explicit)return explicit;
+  return layoutRegion(e)?.node||e.closest('table')||e.closest('form');
+ }
+ function sectionRaw(e){const inferred=e.closest(recordSelector)?null:layoutRegion(e);if(inferred&&inferred.node===container(e))return inferred.name;if(e.closest('.fx-subform-row'))return text(e.closest('.fx-field')?.querySelector('.field-name'));const parent=container(e);if(parent?.tagName==='FORM'&&parent.querySelectorAll('legend,h2,h3,h4,caption').length>1)return '';const outer=parent?.parentElement?.closest('section,[data-section],fieldset');const own=parent?.getAttribute('data-section')||text(parent?.querySelector('legend,h2,h3,h4,caption'))||text(e.closest('table')?.querySelector('caption'));const inherited=outer?.getAttribute('data-section')||text(outer?.querySelector(':scope > legend,:scope > h2,:scope > h3,:scope > h4'));const typed=parent?.matches('.education-item')?'教育经历':parent?.matches('.project-item')?'项目经历':parent?.matches('.experience-item')?'工作经历':'';const group=parent?.getAttribute('data-section')||inherited||typed||own;return [group,own&&own!==group?own:'',parent?.getAttribute('data-entity')].filter(Boolean).join(' ');}
  function anchorsRaw(e){const p=container(e);if(!p)return [];return [...p.querySelectorAll('input,select')].filter(x=>/学校|院校|项目名称|公司|单位名称|证书名称|与本人关系/.test(label(x))).map(x=>x.tagName==='SELECT'?text(x.selectedOptions[0]):x.value).filter(Boolean).slice(0,12);}
  function kind(e){
   if(e.matches('.x-radio-group,[role=radiogroup]'))return 'custom-radio';if(e.matches('.x-combo,.x-combocheck'))return 'custom-select';if(e.type==='file')return 'file';if(e.type==='radio')return 'radio-group';if(e.type==='month')return 'month';if(e.type==='date')return 'date';
@@ -293,7 +354,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.8.1',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};return lastSnapshot;
+  lastSnapshot={engineVersion:'0.8.3',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -417,16 +478,16 @@
  }
  async function scan(){
   if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=++generation;
-  const start=performance.now();activeMetrics={};
-  try{const snapshot=await scanUnsafe(token);if(token!==generation){lastSnapshot=null;throw Error('扫描已取消');}snapshot.performance={...activeMetrics,durationMs:performance.now()-start,fieldCount:snapshot.fields.length};return snapshot;}
-  finally{scanMemo=null;activeMetrics=null;busy=false;}
+  const start=performance.now();activeMetrics={};layoutCache=beginLayoutCache();
+  try{const snapshot=await scanUnsafe(token);if(token!==generation){lastSnapshot=null;throw Error('扫描已取消');}layoutCache?.close();layoutCache=null;snapshot.performance={...activeMetrics,durationMs:performance.now()-start,fieldCount:snapshot.fields.length};return snapshot;}
+  finally{layoutCache?.close();layoutCache=null;scanMemo=null;activeMetrics=null;busy=false;}
  }
  async function apply(plan){
-  if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=generation,start=performance.now();activeMetrics={};
-  try{const report=await applyUnsafe(plan,token);shapeCache?.close();shapeCache=null;report.performance={...activeMetrics,durationMs:performance.now()-start};return report;}
-  finally{shapeCache?.close();shapeCache=null;activeMetrics=null;busy=false;lastSnapshot=null;}
+  if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=generation,start=performance.now();activeMetrics={};layoutCache=beginLayoutCache();
+  try{const report=await applyUnsafe(plan,token);shapeCache?.close();shapeCache=null;layoutCache?.close();layoutCache=null;report.performance={...activeMetrics,durationMs:performance.now()-start};return report;}
+  finally{shapeCache?.close();shapeCache=null;layoutCache?.close();layoutCache=null;activeMetrics=null;busy=false;lastSnapshot=null;}
  }
  function cancel(){generation++;lastSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.8.1',scan,localScan,apply,upload,locate,cancel};
+ globalThis.__resumeFillEngine={version:'0.8.3',scan,localScan,apply,upload,locate,cancel};
 })();

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "简历填写 · 本地速填",
-  "version": "0.8.1",
+  "version": "0.8.3",
   "description": "MD/JSON导入、免口令本地保存、扫描后核对填写及自动脱敏日志；加密库与MCP为可选高级模式。",
   "permissions": [
     "activeTab",
