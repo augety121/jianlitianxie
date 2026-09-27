@@ -21,7 +21,7 @@ with sync_playwright() as p:
   global page
   page=ctx.new_page();page.set_default_timeout(7000);page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept())
   page.expose_function('__localHost',rpc);page.set_content(html);page.add_style_tag(path=str(ROOT/'extension/local.css'))
-  page.evaluate("window.URLSearchParams=class extends URLSearchParams { get(k){return k==='tab'?'11':super.get(k)} };window.chrome={runtime:{sendMessage:m=>__localHost(m),getManifest:()=>({version:'0.8.0'})}}")
+  page.evaluate("window.URLSearchParams=class extends URLSearchParams { get(k){return k==='tab'?'11':super.get(k)} };window.chrome={runtime:{sendMessage:m=>__localHost(m),getManifest:()=>({version:'0.8.1'})}}")
   page.add_script_tag(content=bundle(ROOT/'extension/local.js'))
   expect(page.locator('#notice')).not_to_contain_text('正在读取本浏览器')
  def step(name,fn):

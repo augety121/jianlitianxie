@@ -60,7 +60,7 @@ function renderMapping(){
 async function scan(){
   if(!tabId){notice('先在要填写的申请页面点击浏览器工具栏插件图标。');return;}
   clearPlan();$('result').hidden=true;notice('正在本地扫描并匹配，不调用模型…');
-  const g=generation,p=await send('scan',{tabId});if(disposed||g!==generation)return;showPlan(p);notice(`扫描到 ${p.entries.length} 个字段。请检查缺项和经历位置，再点击“已核对，填写”。`);
+  const g=generation,p=await send('scan',{tabId});if(disposed||g!==generation)return;showPlan(p);notice(timingText(p.performance)+'。'+`扫描到 ${p.entries.length} 个字段。请检查缺项和经历位置，再点击“已核对，填写”。`);
 }
 function renderFacts(){
   const q=$('profileSearch').value.trim().toLowerCase(),facts=profile.facts.filter(f=>[f.label,f.entity,f.section].join(' ').toLowerCase().includes(q)),pages=Math.max(1,Math.ceil(facts.length/40));factPage=Math.min(factPage,pages-1);$('facts').replaceChildren();
@@ -83,7 +83,7 @@ async function readFile(){
 }
 async function refreshLogs(){const data=await send('logs');if(disposed)return;exportData={...data,productVersion:chrome.runtime.getManifest().version};$('autoLogs').checked=data.enabled;$('logs').replaceChildren();
   if(!data.records.length)$('logs').append(el('p','还没有操作记录。导入、扫描和填写时会自动记录。','help'));
-  for(const r of [...data.records].reverse()){const row=el('div',null,'log'),info=el('div');const abnormal=r.fields.some(f=>!['verified','preserve','ready'].includes(f.status));info.append(el('b',`${stageNames[r.stage]} · ${r.ok?(abnormal?'有待处理项':'完成'):'未完成'}`,(!r.ok||abnormal)?'bad':''),el('small',`${r.ms} 毫秒 · ${r.total} 项 · 日志 ${r.seq}`));if(r.reason!=='none')info.append(el('small',reasonNames[r.reason]));const details=el('details');details.append(el('summary','结果详情'),el('pre',r.fields.map(f=>`#${f.index} ${statusNames[f.status]||f.status}`).join('\n')+(r.omitted?`\n另有 ${r.omitted} 项未记录详情`:'')));row.append(info,details);$('logs').append(row);}
+  for(const r of [...data.records].reverse()){const row=el('div',null,'log'),info=el('div');const abnormal=r.fields.some(f=>!['verified','preserve','ready'].includes(f.status));info.append(el('b',`${stageNames[r.stage]} · ${r.ok?(abnormal?'有待处理项':'完成'):'未完成'}`,(!r.ok||abnormal)?'bad':''),el('small',`${r.ms} 毫秒 · ${r.total} 项 · 日志 ${r.seq}`));const timing=timingText(r.performance);if(timing)info.append(el('small',timing));if(r.reason!=='none')info.append(el('small',reasonNames[r.reason]));const details=el('details');details.append(el('summary','结果详情'),el('pre',r.fields.map(f=>`#${f.index} ${statusNames[f.status]||f.status}`).join('\n')+(r.omitted?`\n另有 ${r.omitted} 项未记录详情`:'')));row.append(info,details);$('logs').append(row);}
   if(data.dropped)$('logs').prepend(el('p',`${data.dropped} 条日志未能写入；不要据此重复填写。`,'help'));
 }
 function download(value){const {enabled,...report}=value;const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='local-fill-diagnostics.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
@@ -93,7 +93,7 @@ click('goImport',()=>view('profile'));click('goLogs',async()=>{view('logs');awai
 click('scan',()=>task(scan));click('previewImport',()=>task(async()=>{clearImport();const g=++fileGeneration,d=await send('preview',{text:$('importText').value});if(g===fileGeneration&&!disposed)showImport(d);}));
 $('importFile').onchange=()=>readFile().catch(e=>notice(e.message,true));
 click('commitImport',()=>task(async()=>{const g=++generation,p=await send('commit',{previewId:preview.id,ids:[...importIds],reviewed:true,acceptPlaintext:true});if(disposed||g!==generation)return;setProfile(p);clearImport();$('importText').value='';$('importFile').value='';$('fileState').textContent='资料已保存；不会在关闭时删除。';clearPlan();if(tabId&&state.mode!=='mcp'){view('fill');await scan();}else notice('已经保存到本浏览器。到申请页点击插件图标即可扫描。');}));
-click('fillSelected',()=>task(async()=>{const g=++generation,requested=plan,labels=new Map(plan.entries.map((e,i)=>[e.id,`#${i+1} ${e.label}`]));try{const r=await send('fill',{planId:plan.id,ids:[...selected],reviewed:true});if(disposed||g!==generation)return;$('result').hidden=false;$('result').textContent=`回读通过 ${r.results.filter(x=>x.status==='verified').length} 项；未提交。\n`+r.results.filter(x=>x.status!=='verified').map(x=>`${labels.get(x.id)}：${statusNames[x.status]}`).join('\n');notice('填写结束。问题日志已自动记录；请核对网页内容后自行提交。');}catch(e){notice(e.message+'；未自动重试，请先检查网页已填内容。',true);}finally{if(g===generation)clearPlan();}}));
+click('fillSelected',()=>task(async()=>{const g=++generation,requested=plan,labels=new Map(plan.entries.map((e,i)=>[e.id,`#${i+1} ${e.label}`]));try{const r=await send('fill',{planId:plan.id,ids:[...selected],reviewed:true});if(disposed||g!==generation)return;$('result').hidden=false;$('result').textContent=`回读通过 ${r.results.filter(x=>x.status==='verified').length} 项；未提交。\n`+timingText({apply:r.performance})+'\n'+r.results.filter(x=>x.status!=='verified').map(x=>`${labels.get(x.id)}：${statusNames[x.status]}`).join('\n');notice('填写结束。问题日志已自动记录；请核对网页内容后自行提交。');}catch(e){notice(e.message+'；未自动重试，请先检查网页已填内容。',true);}finally{if(g===generation)clearPlan();}}));
 click('stop',async()=>{generation++;fileGeneration++;const r=await send('stop');clearPlan();clearImport();notice(r.state==='stopping'?'已请求停止，等待执行结束。已填入的内容不会撤销。':'已停止；本地资料仍然保留。');});
 click('switchLocal',()=>task(async()=>{await send('switch');await refresh();notice('已切回本地模式。不需要模型、配对或口令。');}));
 click('advanced',()=>task(async()=>{await send('advanced',{tabId});notice('已打开高级模式；免口令资料不会自动共享给MCP。');}));
@@ -108,3 +108,12 @@ click('clearLogs',async()=>{await send('log-settings',{enabled:$('autoLogs').che
 document.addEventListener('visibilitychange',()=>{if(document.hidden){$('showValues').checked=false;renderEntries();}});
 window.addEventListener('pagehide',()=>{disposed=true;generation++;fileGeneration++;chrome.runtime.sendMessage({type:'local-stop'}).catch(()=>{});});
 await refresh().then(async()=>{if(disposed)return;if(!profile.facts.length){view('profile');notice('欢迎使用本地速填。选择MD或JSON文件，核对后保存即可。');}else if(tabId&&state.mode!=='mcp'){await task(scan);}else notice('本地资料已恢复，无需再次输入口令。请从申请页点击插件图标。');}).catch(e=>notice(e.message,true));
+
+function timingText(phases){
+  if(!phases)return '';
+  const parts=[];
+  for(const [key,label] of [['scan','扫描'],['match','匹配'],['apply','填写及回读']]){
+    const ms=phases[key]?.durationMs;if(Number.isFinite(ms))parts.push(`${label} ${Math.round(ms)} ms`);
+  }
+  return parts.length?'本机执行：'+parts.join(' · '):'';
+}

@@ -4,7 +4,9 @@ const COUNTERS = [
   'labelComputations', 'anchorComputations', 'waitCalls', 'waitProbes',
   'mutationSignals', 'fallbackPolls', 'observersCreated', 'observersClosed',
   'hitTests', 'writesAttempted', 'uncertainStops', 'yieldCount',
-  'fieldCount', 'factCount', 'candidateChecks', 'indexEntries'
+  'fieldCount', 'factCount', 'candidateChecks', 'indexEntries',
+  'recordShapeReads', 'recordShapeQueries', 'recordShapeCacheHits', 'recordInvalidations',
+  'schedulerYields', 'timerYields', 'verificationWaitMs', 'readbackMs', 'readbackChecks'
 ];
 export function numericMetrics(value) {
   const out = {};
@@ -24,4 +26,11 @@ export function performanceSummary(plan, report) {
     match: numericMetrics(plan?.performance?.match),
     apply: numericMetrics(report?.performance)
   };
+}
+
+/** Aggregate only fixed numeric fields, never arbitrary page-supplied metadata. */
+export function sumMetrics(values) {
+  const totals={};
+  for(const value of values)for(const [key,n] of Object.entries(numericMetrics(value)))totals[key]=(totals[key]||0)+n;
+  return numericMetrics(totals);
 }

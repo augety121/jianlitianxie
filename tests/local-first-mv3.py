@@ -53,7 +53,10 @@ try:
   def log_export():
    page.locator('[data-view=logs]').click();expect(page.locator('.log')).to_have_count(4);page.locator('#exportLogs').click();expect(page.locator('#logDialog')).to_be_visible();text=page.locator('#logPreview').text_content();parsed=json.loads(text)
    for private in [NAME,EMAIL,'姓名','邮箱',base,'Bearer']:require(private not in text,'private content in logs')
-   require(any(r['stage']=='fill' and any(f['status']=='verified' for f in r['fields']) for r in parsed['records']),'missing actual fill receipt');page.locator('[data-close=logDialog]').click()
+   require(any(r['stage']=='fill' and any(f['status']=='verified' for f in r['fields']) for r in parsed['records']),'missing actual fill receipt')
+   scan=next(r for r in parsed['records'] if r['stage']=='scan');filled=next(r for r in parsed['records'] if r['stage']=='fill')
+   require(scan['performance']['scan']['durationMs']>=0 and scan['performance']['match']['durationMs']>=0,'real scan/match timings missing')
+   require(filled['performance']['apply']['verificationWaitMs']>=490 and filled['performance']['apply']['readbackChecks']==2,'real readback metrics missing');page.locator('[data-close=logDialog]').click()
   step('automatic-private-content-free-receipts-from-real-fill',log_export)
   def boundaries():
    r=worker.evaluate('''async id=>(await chrome.scripting.executeScript({target:{tabId:id},func:async()=>{let storageReadable=false;try{await chrome.storage.local.get(null);storageReadable=true;}catch{} const answer=await chrome.runtime.sendMessage({type:'local-state'});return {storageReadable,rejected:!!answer.error};}}))[0].result''',tab_id)
@@ -70,6 +73,12 @@ try:
   def screenshot():
    page.locator('[data-view=fill]').click();page.locator('#scan').click();expect(page.locator('.field')).to_have_count(3);page.locator('#showValues').uncheck();page.screenshot(path=str(ROOT/'test-results/local-first-installed.png'),full_page=True)
   step('installed-interface-renders-under-unchanged-CSP',screenshot)
+  def late_label():
+   target.locator('#name').fill('')
+   target.evaluate("()=>{document.querySelector('#name').oninput=()=>setTimeout(()=>document.querySelector('#name').parentElement.firstChild.nodeValue='其他字段',80);}")
+   page.locator('#scan').click();expect(page.locator('.field')).to_have_count(3);page.locator('#fillSelected').click();expect(page.locator('#result')).to_contain_text('回读通过 0')
+   require(target.locator('#name').input_value()==NAME,'fixture must first receive value');require(target.evaluate('submissions')==0,'unexpected submit')
+  step('installed-late-label-change-is-not-reported-as-success',late_label)
   def offline():
    external=[u for u in requests if not u.startswith((base+'/',origin+'/', 'data:','blob:'))]
    require(not external,'unexpected external or MCP request: '+str(external[:3]));require(not errors,str(errors))

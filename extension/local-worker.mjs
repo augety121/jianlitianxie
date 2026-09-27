@@ -50,7 +50,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     const fields=outcomes.map((e,i)=>({index:order.get(e.id)||i+1,status:e.status}));
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
     logs.add({stage,ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
-      fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300)});
+      fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function request(m,sender){
     if(!trustedWorkspace(sender,chrome.runtime,'local.html'))throw Error('只有本地填写页可以访问资料');

@@ -1,6 +1,6 @@
 {
   "name": "jianlitianxie",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -19,6 +19,8 @@
     "test:mv3": "python tests/workspace-mv3.py",
     "test:compatibility": "python tests/compatibility-browser.py",
     "test:local": "python tests/local-first-browser.py",
-    "test:local-mv3": "python tests/local-first-mv3.py"
+    "test:local-mv3": "python tests/local-first-mv3.py",
+    "test:jev": "python tests/jev-execution-browser.py",
+    "bench:jev": "python tests/jev-local-bench.py"
   }
 }

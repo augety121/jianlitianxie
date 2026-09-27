@@ -1,3 +1,4 @@
+import {numericMetrics,sumMetrics} from './performance.mjs';
 import {makePlan} from './planner.mjs';
 import {entityGroups,factMatchesBinding} from './entity-binding.mjs';
 import {PLAN_TTL, selectedFacts, sensitive, redactSnapshot} from './workspace-policy.mjs';
@@ -43,6 +44,7 @@ export class WorkspaceRun {
         origin: new URL(f.snapshot.url).origin, sensitive: sensitive(e.label), required: !!e.required});
     }
     return {id: j.id, expiresAt: j.expiresAt, origin: new URL(j.url).origin, entries, groups,
+      performance:{scan:sumMetrics(j.frames.map(f=>f.plan.performance?.scan)),match:sumMetrics(j.frames.map(f=>f.plan.performance?.match))},
       frames: j.frames.map(f => ({frameId: f.frameId, fields: f.snapshot.fields.length, coverage: f.snapshot.coverage})),
       skipped: j.skipped, includeFrames: j.includeFrames, capabilities:{locate:true,embeddedWrite:false}};
   }
@@ -85,7 +87,7 @@ export class WorkspaceRun {
     if (reviewed !== true || !Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length || ids.some(id => !allowed.has(id))) throw Error('须核对并明确选择当前可填写字段');
     this.busy = true; const epoch = this.epoch, selected = new Set(ids); this.job = null;
     this.running = j;
-    const results = []; let halt = false;
+    const results = [], metrics=[]; let halt = false;
     try {
       for (const f of j.frames) {
         const entries = f.plan.entries.filter(e => selected.has(`${f.frameId}:${e.fieldId}`));
@@ -99,6 +101,7 @@ export class WorkspaceRun {
           if(epoch!==this.epoch||!this.vault.unlocked||this.clock()>=j.expiresAt){results.push(...ids.map(id=>({id,status:'cancelled'})));halt=true;continue;}
           // Only the chosen entries, never the full profile or skipped values, cross into the page.
           const r = (await this.broker.invoke(j.tabId, {frameId:f.frameId,documentId:f.documentId}, 'apply', {...f.plan, expiresAt:j.expiresAt, entries})).result;
+          metrics.push(numericMetrics(r.performance));
           const known = new Set(['verified','invalid','stale','manual','needs-user','cancelled','not-attempted','preserve']);
           if (!Array.isArray(r.results) || new Set(r.results.map(x => x.fieldId)).size !== r.results.length ||
             r.results.some(x => !entries.some(e => e.fieldId === x.fieldId) || !known.has(x.status))) throw Error('回读不符合所选范围');
@@ -107,7 +110,7 @@ export class WorkspaceRun {
           if (r.results.some(x => x.status !== 'verified' && x.status !== 'preserve') || r.results.length !== entries.length) halt = true;
         } catch { halt = true; results.push(...ids.map(id => ({id, status: 'needs-user'}))); }
       }
-      return {results, submitted: false, saved: false};
+      return {results, performance:sumMetrics(metrics), submitted: false, saved: false};
     } finally { this.running = null; this.busy = false; }
   }
   async stop() {

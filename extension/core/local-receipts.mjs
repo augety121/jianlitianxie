@@ -1,3 +1,4 @@
+import {numericMetrics} from './performance.mjs';
 /** Local-only bounded operation receipts. No URLs, labels, values or raw exceptions. */
 const KEY='resumeLocalReceiptsV1', FLAG='resumeLocalReceiptsEnabled';
 const stages=new Set(['preview','import','scan','fill','bind','map','stop','erase']);
@@ -9,7 +10,7 @@ function safe(r) {
   return {seq:int(r.seq,1e9),at:int(r.at,9e15),stage:r.stage,ok:r.ok===true,
     reason:reasons.has(r.reason)?r.reason:'check-input',ms:int(r.ms,3600000),total:int(r.total,20000),
     fields:(Array.isArray(r.fields)?r.fields:[]).slice(0,300).filter(x=>statuses.has(x?.status)).map(x=>({index:int(x.index,20000),status:x.status})),
-    omitted:int(r.omitted,20000)};
+    omitted:int(r.omitted,20000),performance:{scan:numericMetrics(r.performance?.scan),match:numericMetrics(r.performance?.match),apply:numericMetrics(r.performance?.apply)}};
 }
 export function receiptReason(error) {
   const s=String(error?.message || '');
