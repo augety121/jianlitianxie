@@ -21,9 +21,9 @@ function controls(){
   $('stop').disabled=!busy&&!plan;
   $('selectedCount').textContent=plan?`本次选择 ${selected.size} 项`:'导入一次，之后直接扫描填写';
   for(const id of ['previewImport','commitImport','eraseProfile','importOld','advanced','readOld'])$(id).disabled=busy;
-  $('commitImport').disabled=busy||!preview||!importIds.size;
   document.querySelectorAll('.field input,.field button,.fact button').forEach(n=>{if(busy)n.disabled=true;});
   document.querySelectorAll('.group select').forEach(n=>n.disabled=busy);
+  $('commitImport').disabled=busy||!preview||!importIds.size;
 }
 function clearPlan(){plan=null;selected.clear();$('entries').replaceChildren();$('review').hidden=true;$('groups').replaceChildren();controls();}
 function setProfile(p){profile=p;$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}
@@ -99,7 +99,7 @@ async function refreshLogs(){const data=await send('logs');if(disposed)return;ex
 function download(value){const {enabled,...report}=value;const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='local-fill-diagnostics.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view(b.dataset.view);if(b.dataset.view==='logs')refreshLogs().catch(e=>notice(e.message,true));});
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{$(b.dataset.close).close();if(b.dataset.close==='oldDialog')$('oldPassword').value='';if(b.dataset.close==='editDialog')$('editForm').reset();if(b.dataset.close==='mappingDialog'){$('mappingChoices').replaceChildren();mapping=null;}});
-click('returnTarget',()=>task(async()=>{await send('return',{tabId});notice('已回到申请页。点击右下角“扫描本页”，再确认填写；复杂项可返回工作台。');}));
+click('returnTarget',()=>task(async()=>{await send('return',{tabId});notice('已回到申请页。点击右下角“填写简历”即可扫描并填写；复杂项可返回工作台。');}));
 click('showFill',()=>task(async()=>{view('fill');if(profile.facts.length)await scan();}));
 click('continueSaved',()=>task(async()=>{view('fill');await scan();}));
 click('goImport',()=>view('profile'));click('goLogs',async()=>{view('logs');await refreshLogs();});

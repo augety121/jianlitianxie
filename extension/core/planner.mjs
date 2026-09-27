@@ -21,7 +21,7 @@ export function makePlan(snapshot,profile,mappings={},entityBindings={}){
   if(bound?.entity){
    if(!bound.valid)return {...row,status:'missing',reasonCode:'record-unbound',reason:bound.reason};
    candidates=candidates.filter(a=>factMatchesBinding(a,f,bound.entity));
-  }else if(!mappings[f.id]){const anchored=candidates.filter(a=>entityMatches(a,f));if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(semanticLabel(f.label,f.section))>1){needsBinding=candidates.length>0;candidates=[];}}
+  }else if(!mappings[f.id]){const named=candidates.filter(a=>entityMatches(a,f)),anchored=named.length?named:index.anchored(f,candidates);if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(semanticLabel(f.label,f.section))>1){needsBinding=candidates.length>0;candidates=[];}}
   const targetPrecision=f.type==='month'||f.datePrecision==='month'&&f.type==='date-picker'?'month':['date','date-picker'].includes(f.type)?'day':null;
   if(targetPrecision){const before=candidates.length;candidates=candidates.filter(a=>dateValue(a.value,targetPrecision)).map(a=>({...a,value:dateValue(a.value,targetPrecision)}));dateRejected=before>0&&!candidates.length;}
   candidates=candidates.filter((a,i,all)=>all.findIndex(b=>b.value===a.value&&b.entity===a.entity)===i);

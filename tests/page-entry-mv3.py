@@ -71,26 +71,43 @@ try:
   def click(name):
    b=button(name);box=cdp.send('DOM.getBoxModel',{'backendNodeId':b['backendNodeId']})['model']['border'];target.mouse.click((box[0]+box[4])/2,(box[1]+box[5])/2)
   def scan():
-   wait_text('点击“扫描本页”');click('扫描本页');wait_text('确认填写上面 2 项')
+   wait_text('无需先点扫描');click('仅检查缺项');wait_text('可填 3')
    visible=text(assistant());require(NAME not in visible and EMAIL not in visible,'page UI received private values before authorization')
    require(target.locator('#name').input_value()=='','scan wrote data')
   step('actual-mouse-scan-produces-ordinary-field-list-without-profile-values',scan)
   def untrusted_click():
-   b=button('确认填写上面 2 项');obj=cdp.send('DOM.resolveNode',{'backendNodeId':b['backendNodeId']})['object']['objectId']
+   b=button('填写简历');obj=cdp.send('DOM.resolveNode',{'backendNodeId':b['backendNodeId']})['object']['objectId']
    cdp.send('Runtime.callFunctionOn',{'objectId':obj,'functionDeclaration':'function(){this.click()}'});target.wait_for_timeout(150)
    require(target.locator('#name').input_value()=='','synthetic DOM click triggered fill')
   step('synthetic-DOM-click-cannot-authorize-filling',untrusted_click)
   def fill():
-   click('确认填写上面 2 项');wait_text('回读通过 2 项')
+   click('填写简历');wait_text('回读通过 2 项')
    require(target.locator('#name').input_value()==NAME,'name value missing');require(target.locator('#email').input_value()==EMAIL,'email value missing')
    require(target.locator('#gender').input_value()=='' and target.locator('#secret').input_value()=='','unselected sensitive data written');require(target.evaluate('submitted')==0,'form submitted')
    target.screenshot(path=str(ROOT/'test-results/page-entry-installed.png'))
   step('actual-in-page-confirmation-fills-correct-fields-once-without-submit',fill)
   def no_match():
-   target.goto(base+'/unmatched');expect(target.locator('#resume-local-assistant')).to_be_visible();wait_text('点击“扫描本页”');click('扫描本页');wait_text('未匹配 6')
-   t=text(assistant());require('保留 13' in t and '人工 1' in t and '没有可直接填写' in t,'zero-match reason hidden')
+   target.goto(base+'/unmatched');expect(target.locator('#resume-local-assistant')).to_be_visible();wait_text('无需先点扫描');click('填写简历');wait_text('待匹配 6')
+   t=text(assistant());require('保留 13' in t and '人工 1' in t and '没有可自动补全' in t,'zero-match reason hidden')
    require(target.evaluate('submitted')==0,'zero-match submitted')
+   b=button('填写简历');require('disabled' not in b.get('attributes',[]),'zero matches hid or disabled main action')
   step('same-origin-navigation-reattaches-and-zero-ready-is-explained-not-retried',no_match)
+  def pick_one():
+   with context.expect_page() as opened:click('补填这项')
+   picker=opened.value;expect(picker.locator('#field')).to_have_text('未知字段0',timeout=10000)
+   require(picker.url.startswith(origin+'/quick-pick.html'),'not a trusted extension picker')
+   secret_ticket=picker.url.split('ticket=')[1]
+   rejected=worker.evaluate("""async a=>(await chrome.scripting.executeScript({target:{tabId:a.tab},func:async ticket=>chrome.runtime.sendMessage({type:'local-picker-read',ticket}),args:[a.ticket]}))[0].result""",{'tab':tab,'ticket':secret_ticket})
+   require(bool(rejected.get('error')) and 'data' not in rejected,'webpage read picker facts')
+   picker.locator('.choice').filter(has_text='姓名').click();expect(picker.locator('#value')).to_have_text(NAME)
+   require(target.locator('input').nth(13).input_value()=='','selection itself wrote')
+   picker.locator('#apply').click();expect(picker.locator('#notice')).to_contain_text('回读通过',timeout=10000)
+   require(target.locator('input').nth(13).input_value()==NAME,'chosen field not filled')
+   require(all(target.locator('input').nth(i).input_value()=='' for i in range(14,19)),'other unmatched fields changed')
+   require(target.locator('input').first.input_value()=='测试内容','existing value changed')
+   picker.screenshot(path=str(ROOT/'test-results/single-field-picker-installed.png'))
+   picker.locator('#close').click();wait_text('这项资料已填写并回读通过')
+  step('trusted-small-picker-fills-one-ambiguous-field-without-management-page',pick_one)
   def logs():
    data=worker.evaluate('()=>chrome.storage.local.get("resumeLocalReceiptsV1")');raw=json.dumps(data,ensure_ascii=False)
    require(NAME not in raw and EMAIL not in raw and base not in raw,'private data in receipts')

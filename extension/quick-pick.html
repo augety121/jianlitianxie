@@ -1,0 +1,7 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>补填这一项 · 本地简历速填</title><link rel="stylesheet" href="quick-pick.css"></head><body>
+<header><span>只补这一项 · 不跳转管理页</span><h1 id="field">正在读取字段…</h1><p id="scope"></p></header>
+<main><p id="notice" role="status" aria-live="polite">候选资料只显示在扩展自身小窗里。</p><label for="search">选一条正确的本地资料</label><input id="search" type="search" placeholder="搜索资料名称、学校或项目经历"><div id="choices" role="list"></div><p id="more"></p>
+<section id="preview" hidden><span>将填写以下内容</span><p id="value"></p></section>
+<p class="note">点“确认填入这一项”才发送所选内容给招聘网页。已有内容不覆盖，不自动提交。</p></main>
+<footer><button id="apply" disabled>确认填入这一项</button><button id="close" class="secondary">取消并返回简历</button></footer>
+<script type="module" src="quick-pick.mjs"></script></body></html>

@@ -44,7 +44,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev
+        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -110,6 +110,7 @@ jobs:
             test-results/local-first-installed.png
             test-results/page-entry-mv3.json
             test-results/page-entry-installed.png
+            test-results/single-field-picker-installed.png
           if-no-files-found: error
           retention-days: 14
 

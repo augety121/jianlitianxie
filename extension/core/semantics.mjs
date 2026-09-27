@@ -9,8 +9,8 @@ const groups=[
  ['开始月份','开始年月','开始时间','入学时间','入学日期','项目开始时间','start date','start month','from date'],
  ['结束月份','预计结束月份','结束年月','结束时间','毕业时间','毕业日期','项目结束时间','end date','end month','to date'],
  ['预计毕业月份','预计毕业日期','预计毕业时间'],['入党月份','入党时间','入党日期'],
- ['公司名称','单位名称','实习单位','company name','employer'],['职位名称','岗位名称','担任职务','job title','position title'],['部门名称','所在部门'],
- ['岗位职责','实习内容','工作内容','工作职责','responsibilities','job responsibilities'],['项目描述','项目介绍','项目简介','project description'],
+ ['公司名称','企业名称','单位名称','实习单位','company name','employer'],['职位名称','岗位名称','担任职务','job title','position title'],['部门名称','所在部门'],
+ ['岗位职责','实习内容','工作内容','工作描述','工作职责','responsibilities','job responsibilities'],['项目描述','项目介绍','项目简介','project description'],
  ['兴趣爱好','个人爱好','爱好'],['特长','技能特长'],['证书名称','资格证书名称','certificate name','certification name'],
  ['获得日期','获得月份','获得时间','取得时间','获证日期'],['获奖名称','获奖项','奖项名称','award name'],['获奖时间','获奖日期'],
  ['获奖级别','奖励级别'],['紧急联系人','紧急联系人姓名'],['紧急联系人电话','紧急联系电话'],
@@ -31,7 +31,7 @@ export function semanticLabel(label,section=''){
  return aliases.get(s)||s;
 }
 export function scope(s=''){
- for(const [key,re] of [['contact',/紧急联系|emergency contact/i],['family',/家庭|亲属|家属|family members|relatives/i],['education',/教育|学历|本科|硕士|研究生|博士|education|academic/i],['work',/实习|工作经历|employment|work experience/i],['project',/项目|project/i],['certificate',/资格|证书|certificates|certifications/i],['award',/获奖|奖励|奖惩|awards|honors/i],['language',/语言|外语|languages/i],['personal',/基本|个人|personal|basic information/i]])if(re.test(s))return key;
+ for(const [key,re] of [['contact',/紧急联系|emergency contact/i],['family',/家庭|亲属|家属|family members|relatives/i],['education',/教育|学历|本科|硕士|研究生|博士|education|academic/i],['work',/实习|工作经历|employment|work experience/i],['project',/项目|project/i],['certificate',/资格|证书|certificates|certifications/i],['award',/获奖|奖励|奖惩|荣誉|awards|honors/i],['language',/语言|外语|languages/i],['personal',/基本|个人|personal|basic information/i]])if(re.test(s))return key;
  return '';
 }
 export function entityMatches(a,f){const context=normalize([f.entity,f.section,...f.anchors||[]].filter(Boolean).join(' '));return [a.entity,...a.entityAliases||[]].some(e=>e&&!/^\d+$/.test(e)&&context.includes(normalize(e)));}
@@ -54,12 +54,17 @@ export function optionKey(label,value){const k=semanticLabel(label),v=normalize(
 /** Build once per plan, never cache personal facts across revisions or scans. */
 export function createCandidateIndex(facts, url, metrics = {}) {
  const origin = new URL(url || 'https://unknown.invalid').origin;
- const byLabel = new Map(), byId = new Map(), scopes = new WeakMap();
+ const byLabel = new Map(), byId = new Map(), scopes = new WeakMap(), anchorsByScope = new Map();
+ const anchorLabels=new Set(['学校','公司名称','项目名称','证书名称'].map(x=>semanticLabel(x)));
  metrics.indexEntries = 0; metrics.candidateChecks = 0;
  for (const a of facts) {
   if (a.confirmed === false || a.conflict || a.origin && a.origin !== origin) continue;
   if (!byId.has(a.id)) byId.set(a.id, []);
   byId.get(a.id).push(a); scopes.set(a, scope(a.section));
+  const sk=scope(a.section);
+  if(a.entity&&['education','work','project','certificate'].includes(sk)&&anchorLabels.has(semanticLabel(a.label,a.section))){
+   const k=sk+'|'+normalize(a.value);if(!anchorsByScope.has(k))anchorsByScope.set(k,new Set());anchorsByScope.get(k).add(normalize(a.entity));
+  }
   for (const key of new Set([a.label, ...a.aliases || []].map(l => semanticLabel(l, a.section)))) {
    if (!byLabel.has(key)) byLabel.set(key, []);
    byLabel.get(key).push(a); metrics.indexEntries++;
@@ -67,6 +72,14 @@ export function createCandidateIndex(facts, url, metrics = {}) {
  }
  return {
   byId: id => byId.get(id) || [],
+  anchored(f, candidates) {
+   const fs=scope(f.section);if(!fs)return [];
+   const sets=(f.anchors||[]).map(v=>anchorsByScope.get(fs+'|'+normalize(v))).filter(Boolean);
+   if(!sets.length)return [];
+   const consistent=[...sets[0]].filter(entity=>sets.every(set=>set.has(entity)));
+   // Shared school/employer across records is NOT enough to pick a record.
+   return consistent.length===1?candidates.filter(a=>normalize(a.entity)===consistent[0]&&scopes.get(a)===fs):[];
+  },
   candidates(f) {
    const key = semanticLabel(f.label, f.section), fs = scope(f.section);
    const candidates = byLabel.get(key) || []; metrics.candidateChecks += candidates.length;

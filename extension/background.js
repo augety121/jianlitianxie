@@ -61,6 +61,7 @@ chrome.runtime.onInstalled?.addListener(async () => {
 });
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if(typeof m?.type==='string'&&m.type.startsWith('page-local-')){local.pageRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
+  if(typeof m?.type==='string'&&m.type.startsWith('local-picker-')){local.pickerRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if(typeof m?.type==='string'&&m.type.startsWith('local-')){local.request(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if (typeof m?.type === 'string' && m.type.startsWith('workspace-')) {
     workspace.request(m, sender).then(data=>reply({data})).catch(e=>reply({error:e.message})); return true;
