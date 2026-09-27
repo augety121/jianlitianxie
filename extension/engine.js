@@ -11,7 +11,7 @@
  const prohibited=e=>/^(password|file|hidden|submit|button|reset|image|checkbox)$/.test(e.type)||/验证码|密码|同意|承诺|声明|签名|授权|captcha|consent|signature/i.test(fieldLabel(e));
  // Scan-local caches are thrown away BEFORE any await or page write.
  let scanMemo=null,queryRoots=null,activeMetrics=null;
- let shapeCache=null;
+ let shapeCache=null,layoutCache=null;
  const guards=new Map(),abortWaits=new Set();let highlightNode=null,highlightTimer;
  function clearHighlight(){clearTimeout(highlightTimer);highlightNode?.remove();highlightNode=null;}
  const tick=(key,n=1)=>{if(activeMetrics)activeMetrics[key]=(activeMetrics[key]||0)+n;};
@@ -64,7 +64,7 @@
   if(shapeCache?.cache.has(record)){tick('recordShapeCacheHits');return shapeCache.cache.get(record);}
   tick('recordShapeQueries');
   const fields=[...p.querySelectorAll(controlsSelector)];
-  const valid=fields.length===record.fields.length&&fields.every((f,i)=>f===record.fields[i]);
+  const valid=fields.length===record.fields.length&&fields.every((f,i)=>f!==undefined&&f===record.fields[i]);
   shapeCache?.cache.set(record,valid);return valid;
  }
  function captureGuard(e){const form=e.form||e.closest('form');return {root:e.getRootNode(),label:fieldLabel(e),section:section(e),record:recordShape(e),binding:e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'',radios:radioGroups.get(e)?.slice(),form,formState:formState(form),controlState:controlState(e),anchors:anchorRecords(e)};}
@@ -199,7 +199,7 @@
   if(native)return clean(native);
   const direct=e.getAttribute('aria-label');if(direct)return clean(direct);
   const named=e.getAttribute('aria-labelledby'),root=e.getRootNode();
-  const aria=named?named.split(' ').map(id=>text(root.getElementById?.(id))).join(' '):'';
+  const aria=named?named.split(' ').map(id=>text(root.getElementById(id))).join(' '):'';
   if(aria)return clean(aria);
   const wrap=e.closest(wrappers),explicit=labelText(wrap?.querySelector('label,.ant-form-item-label,.el-form-item__label,.form-item__label,.layui-form-label,.field-name'));
   if(explicit)return clean(explicit);
@@ -218,17 +218,44 @@
  // Never use a navigation item or one of several competing titles as a field scope.
  const recordSelector='[data-entity],.resume-item,.education-item,.project-item,.experience-item,fieldset,section,[data-section]';
  const sectionNames=/^(?:个人基本信息|个人信息|基本信息|求职意向|教育经历|教育背景|教育经验|学习经历|实习经历|工作经历|工作经验|项目经历|项目经验|培训经历|证书|资格证书|奖励荣誉|获奖经历|自我评价|紧急联系人|家庭信息|家庭成员|Education|Work Experience|Projects|Personal Information)$/i;
- function layoutTitle(node){
-  if(!node||node.closest('nav,aside,a,button,label,[role=navigation]')||!visible(node)||node.querySelector(controlsSelector))return '';
-  const value=(node.textContent||'').trim();if(value.length>60)return '';
+ function layoutName(node){
+  const value=(node?.textContent||'').trim();if(!value||value.length>60)return '';
   const clean=value.replace(/^\s*(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/,'').replace(/[\s*：:]/g,' ').replace(/\s*(?:必填|选填|required)\s*$/i,'').trim();
   return sectionNames.test(clean)?clean:'';
+ }
+ function layoutTitle(node){
+  // Cheap lexical rejection comes before style/layout queries. Accepted headings
+  // always have their current text, visibility and navigation ancestry checked.
+  const name=layoutName(node);
+  return name&&!node.closest('nav,aside,a,button,label,[role=navigation]')&&visible(node)&&!node.querySelector(controlsSelector)?name:'';
+ }
+ function layoutCandidates(parent){
+  return [...parent.children].slice(0,80).flatMap(c=>[c,...[...c.children].slice(0,30)]).filter(n=>layoutName(n));
+ }
+ /** Keep candidate NODE lists, not current title/visibility/role decisions. New or
+  * changed text and child membership invalidate them before every synchronous read.
+  * Includes hidden/navigation titles as candidates: those exclusions are always live.
+  * Lifetime: one scan or apply, never persisted, always disconnected in finally.
+  */
+ function beginLayoutCache(){
+  const cache=new Map(),observed=new Set();
+  const invalidate=records=>{
+   if(records.length>128){cache.clear();return;}
+   for(const r of records)for(const p of cache.keys())if(p===r.target||p.contains(r.target))cache.delete(p);
+  };
+  const observer=new MutationObserver(invalidate);tick('observersCreated');
+  return {read(parent){
+   invalidate(observer.takeRecords());
+   if(!observed.has(parent)){observed.add(parent);observer.observe(parent,{subtree:true,childList:true,characterData:true});}
+   if(!cache.has(parent))cache.set(parent,layoutCandidates(parent));
+   return cache.get(parent);
+  },close(){observer.disconnect();cache.clear();observed.clear();tick('observersClosed');}};
  }
  function layoutRegion(e){
   return memo('layoutRegions',e,()=>{
    for(let p=e.parentElement,depth=0;p&&p!==document.body&&p!==document.documentElement&&depth<9;p=p.parentElement,depth++){
     const headings=memo('layoutHeadings',p,()=>{
-     const nodes=[...p.children].slice(0,80).flatMap(c=>[c,...[...c.children].slice(0,30)]);
+     const nodes=layoutCache?layoutCache.read(p):layoutCandidates(p);
      // Keep innermost title: a title wrapper and its h2 describe the same heading.
      const named=nodes.map(node=>({node,name:layoutTitle(node)})).filter(x=>x.name);
      return named.filter(x=>!named.some(y=>x!==y&&x.node.contains(y.node)));
@@ -451,14 +478,14 @@
  }
  async function scan(){
   if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=++generation;
-  const start=performance.now();activeMetrics={};
-  try{const snapshot=await scanUnsafe(token);if(token!==generation){lastSnapshot=null;throw Error('扫描已取消');}snapshot.performance={...activeMetrics,durationMs:performance.now()-start,fieldCount:snapshot.fields.length};return snapshot;}
-  finally{scanMemo=null;activeMetrics=null;busy=false;}
+  const start=performance.now();activeMetrics={};layoutCache=beginLayoutCache();
+  try{const snapshot=await scanUnsafe(token);if(token!==generation){lastSnapshot=null;throw Error('扫描已取消');}layoutCache?.close();layoutCache=null;snapshot.performance={...activeMetrics,durationMs:performance.now()-start,fieldCount:snapshot.fields.length};return snapshot;}
+  finally{layoutCache?.close();layoutCache=null;scanMemo=null;activeMetrics=null;busy=false;}
  }
  async function apply(plan){
-  if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=generation,start=performance.now();activeMetrics={};
-  try{const report=await applyUnsafe(plan,token);shapeCache?.close();shapeCache=null;report.performance={...activeMetrics,durationMs:performance.now()-start};return report;}
-  finally{shapeCache?.close();shapeCache=null;activeMetrics=null;busy=false;lastSnapshot=null;}
+  if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=generation,start=performance.now();activeMetrics={};layoutCache=beginLayoutCache();
+  try{const report=await applyUnsafe(plan,token);shapeCache?.close();shapeCache=null;layoutCache?.close();layoutCache=null;report.performance={...activeMetrics,durationMs:performance.now()-start};return report;}
+  finally{shapeCache?.close();shapeCache=null;layoutCache?.close();layoutCache=null;activeMetrics=null;busy=false;lastSnapshot=null;}
  }
  function cancel(){generation++;lastSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}

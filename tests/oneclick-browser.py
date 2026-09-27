@@ -17,7 +17,7 @@ with sync_playwright() as pw:
  if exe:opts['executable_path']=exe
  browser=pw.chromium.launch(**opts)
  def case(name,markup,fn):
-  if '--layout-only' in sys.argv and len(cases)>=6:return
+  if '--layout-only' in sys.argv and len(cases)>=11:return
   page=browser.new_page(viewport={'width':1280,'height':900});page.set_default_timeout(5000)
   try:
    content='<meta charset="utf-8"><style>body{font:16px system-ui;background:#f5f7fa;padding:32px}form{width:700px;background:white;padding:24px;border-radius:15px}input,textarea{display:block;padding:10px;margin:6px 0 14px}aside{display:none}label{display:block}h2{font-size:21px}</style>'+markup
@@ -51,6 +51,20 @@ with sync_playwright() as pw:
  def bind(page):
   data=make(page,facts);a=next(f for f in data['snapshot']['fields'] if f['label']=='专业');require(bool(a.get('groupId')),'div-based record not bindable')
  case('plain-div-record-produces-a-real-document-group',html,bind)
+ local_markup='<aside id="clock">0</aside><form><div id="record"><h2 id="title">基本信息</h2><div><label>姓名<input id="name"></label><label>邮箱<input id="email"></label></div></div></form>'
+ local_facts=[fact('n','姓名','SYNTHETIC'),fact('e','邮箱','candidate@example.invalid')]
+ def changed_during_write(page,mutation):
+  data=make(page,local_facts)
+  page.evaluate("code=>{document.getElementById('name').addEventListener('change',()=>{new Function(code)()},{once:true})}",mutation)
+  r=page.evaluate('p=>__resumeFillEngine.apply(p)',data['plan']);require(page.locator('#email').input_value()=='','stale layout cache wrote next field');require(any(x['status']=='stale' for x in r['results']),str(r))
+ case('layout-cache-invalidates-synchronous-title-character-change',local_markup,lambda p:changed_during_write(p,"document.getElementById('title').firstChild.data='教育经历'"))
+ case('layout-cache-invalidates-new-competing-title',local_markup,lambda p:changed_during_write(p,"const n=document.createElement('h2');n.textContent='项目经历';document.getElementById('record').append(n)"))
+ case('layout-cache-rechecks-heading-visibility-live',local_markup,lambda p:changed_during_write(p,"document.getElementById('title').hidden=true"))
+ case('layout-cache-rechecks-heading-navigation-role-live',local_markup,lambda p:changed_during_write(p,"document.getElementById('title').setAttribute('role','navigation')"))
+ def unrelated(page):
+  data=make(page,local_facts);page.evaluate("()=>document.getElementById('name').addEventListener('change',()=>document.getElementById('clock').textContent='1',{once:true})")
+  r=page.evaluate('p=>__resumeFillEngine.apply(p)',data['plan']);require(page.locator('#email').input_value()=='candidate@example.invalid',str(r));require(r['performance'].get('observersCreated')==r['performance'].get('observersClosed'),'scope observers leaked')
+ case('layout-cache-allows-unrelated-clock-update-and-closes-observers',local_markup,unrelated)
  basic='<h1>虚构申请表 · 本地填写演示</h1><form><label>姓名<input id="name"></label><label>邮箱<input id="email" type="email"></label><label>性别<input id="gender"></label><label>密码<input id="secret" type="password"></label><button>保存（测试不提交）</button></form>'
  basics=[fact('n','姓名','SYNTHETIC CANDIDATE'),fact('e','邮箱','candidate@example.invalid'),fact('g','性别','示例项')]
  def load_assistant(page,profile=basics):
