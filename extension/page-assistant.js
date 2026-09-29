@@ -60,7 +60,7 @@
     try{await send('locate',{planId:plan.id,id:f.id});collapse();}catch(e){error(e);}
    };actions.append(locate);li.append(actions);problems.append(li);
   }
-  details.hidden=!p.problems?.length;details.open=false;summary.textContent=`已跳过 ${p.problems?.length||0} 项（可选查看）${p.problemMore?'（仅显示前60项）':''}`;
+  details.hidden=!p.problems?.length;details.open=!p.quick.length;summary.textContent=`已跳过 ${p.problems?.length||0} 项（可选查看）${p.problemMore?'（仅显示前60项）':''}`;
   if(p.more)message.textContent+=`\n还有 ${p.more} 项不在本批普通字段内。`;
   // The primary action remains visible/enabled even when automatic matches are zero.
   fill.textContent=p.quick.length?'填写简历':'重新识别并补填';controls();
