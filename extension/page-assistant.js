@@ -5,7 +5,7 @@
 (()=>{
  if(window!==window.top||!/^https?:$/.test(location.protocol))return;
  const previous=globalThis.__resumeLocalAssistant;
- if(previous?.version==='0.10.0'){previous.open();return;}
+ if(previous?.version==='0.10.1'){previous.open();return;}
  previous?.destroy();
  const host=document.createElement('div');host.id='resume-local-assistant';
  host.style.cssText='all:initial!important;position:fixed!important;right:18px!important;bottom:20px!important;z-index:2147483646!important;display:block!important;';
@@ -14,15 +14,16 @@
  const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
  const b=(label,cls)=>{const e=n('button',label,cls);e.type='button';return e;};
  const panel=n('section',null,'panel'),head=n('div',null,'head'),title=n('div');
- title.append(n('strong','本地简历速填'),n('small','资料已在本机 · 不自动提交'));
+ title.append(n('strong','本地简历速填'),n('small','0.10.1 · 资料已在本机 · 不自动提交'));
  const close=b('收起','close');head.append(title,close);
  const body=n('div',null,'body'),message=n('p','点击下方按钮，直接补全这张简历表。','message');
  message.setAttribute('role','status');message.setAttribute('aria-live','polite');
  const fill=b('填写简历','primary'),counts=n('div',null,'counts'),links=n('div',null,'links');
  const remember=b('我补完了，记住内容','subtle');remember.style.width='100%';remember.style.marginTop='10px';
+ const saveExisting=b('读取本页已填内容，核对保存','subtle');saveExisting.style.width='100%';saveExisting.style.marginTop='8px';
  const scan=b('仅检查缺项','subtle'),manage=b('导入 / 核对修正','subtle');links.append(scan,manage);
  const details=n('details'),summary=n('summary','查看待处理项'),problems=n('ul',null,'problem-list');details.append(summary,problems);details.hidden=true;
- body.append(message,fill,n('p','点击即使用已核对的本地资料填写普通空白项；一致内容保留；差异在“核对修正”中确认，敏感项另行确认。','note'),counts,remember,details,links);
+ body.append(message,fill,n('p','点击即使用已核对的本地资料填写普通空白项；一致内容保留；差异在“核对修正”中确认，敏感项另行确认。','note'),counts,remember,saveExisting,details,links);
  panel.append(head,body);
  const pill=n('div',null,'pill'),quick=b('填写简历','run'),stop=b('停止','danger'),expand=b('展开','subtle');
  pill.append(quick,expand,stop);pill.hidden=true;stop.hidden=true;
@@ -40,7 +41,7 @@
  }
  function show(){panel.hidden=false;pill.hidden=true;}
  function collapse(){panel.hidden=true;pill.hidden=false;}
- function controls(){fill.disabled=quick.disabled=scan.disabled=manage.disabled=remember.disabled=busy;stop.hidden=!busy;quick.textContent=busy?'正在填写…':'填写简历';}
+ function controls(){fill.disabled=quick.disabled=scan.disabled=manage.disabled=remember.disabled=saveExisting.disabled=busy;stop.hidden=!busy;quick.textContent=busy?'正在填写…':'填写简历';}
  function clear(){plan=null;problems.replaceChildren();details.hidden=true;counts.textContent='';}
  function error(e){clear();message.textContent=e.message||'本次没有完成，请先检查网页已填内容。';show();}
  function render(p){
@@ -98,6 +99,11 @@
    else{message.textContent='没有检测到本次新增的有效内容。请先点“填写简历”，然后直接在网页补填，完成后再记住。';show();}}
   catch(errorValue){error(errorValue);}finally{busy=false;controls();}
  };
+ saveExisting.onclick=async e=>{
+  if(!validClick(e)||busy)return;busy=true;controls();
+  try{const r=await send('learn-existing');clear();show();message.textContent=r.opened?'已打开本页已填内容的核对窗口。选中正确条目后保存；已有冲突不会覆盖。':'未读取到可保存内容，请导出本次日志检查字段识别。';}
+  catch(err){error(err);}finally{busy=false;controls();}
+ };
  fill.onclick=e=>start(e,true);quick.onclick=e=>start(e,true);scan.onclick=e=>start(e,false);
  manage.onclick=async e=>{if(!validClick(e)||busy)return;try{await send('manage');}catch(e){error(e);}};
  stop.onclick=async e=>{if(!validClick(e))return;generation++;stop.disabled=true;
@@ -109,5 +115,5 @@
  window.addEventListener('popstate',moved);window.addEventListener('hashchange',moved);
  function destroy(){dead=true;generation++;host.remove();window.removeEventListener('popstate',moved);window.removeEventListener('hashchange',moved);}
  function finished(report){clear();message.textContent=report.verified?'这项资料已填写并回读通过。其余空白项可继续点“填写简历”。':'这项未通过回读，请核对网页；未自动重试。';show();}
- globalThis.__resumeLocalAssistant={version:'0.10.0',open,destroy,finished,remembered:n=>{clear();message.textContent=`已记住 ${n} 条补充资料，仅保存在本地。下次点击填写简历会继续使用。`;show();}};open();
+ globalThis.__resumeLocalAssistant={version:'0.10.1',open,destroy,finished,remembered:n=>{clear();message.textContent=`已记住 ${n} 条补充资料，仅保存在本地。下次点击填写简历会继续使用。`;show();}};open();
 })();

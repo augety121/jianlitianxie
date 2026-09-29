@@ -7,7 +7,7 @@ const source=readFileSync(new URL('../extension/engine.js',import.meta.url),'utf
 const raw=source.slice(source.indexOf(' function labelRaw(e){'),source.indexOf(' // Many ATS pages'));
 const label=vm.runInNewContext(raw+';labelRaw',{
  subHead:()=>null,labelText:n=>n?.text||'',text:n=>n?.text||n?.textContent||'',visible:n=>n.visible!==false,
- wrappers:'.form-item',controlsSelector:'input,textarea,select'
+ wrappers:'.form-item',controlsSelector:'input,textarea,select',selectWrap:()=>null,selectedSelector:'.selected-value'
 });
 function input(attrs={},extra={}){return {labels:[],getAttribute:k=>attrs[k]||null,getRootNode:()=>({getElementById:()=>null}),closest:()=>null,...extra};}
 test('standard autocomplete beats example placeholders, formal labels still take precedence',()=>{

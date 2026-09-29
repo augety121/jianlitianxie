@@ -154,6 +154,15 @@ try:
    require(target.locator('#projectB').input_value()=='虚构项目甲' and target.locator('#bodyB').input_value()=='虚构甲的独立描述','existing record was mixed')
    require(target.evaluate('submitted')==0,'record workflow submitted application')
   step('installed-oneclick-resolves-records-before-filling-without-manual-binding',record_flow)
+  def read_existing():
+   with context.expect_page() as opened:click('读取本页已填内容，核对保存')
+   learner=opened.value;expect(learner.locator('.item')).to_have_count(4,timeout=10000)
+   require(learner.url.startswith(origin+'/learn-review.html'),'existing-content review is not trusted')
+   after=worker.evaluate('()=>chrome.storage.local.get("resumePlainLocalV1")')
+   require(len(after['resumePlainLocalV1']['profile']['facts'])==8,'read existing silently changed profile')
+   require(target.locator('#projectA').input_value()=='虚构项目乙' and target.evaluate('submitted')==0,'read existing changed/submitted form')
+   learner.locator('#cancel').click();target.bring_to_front()
+  step('already-filled-page-opens-review-without-clearing-fields-or-silent-save',read_existing)
   def offline():require(not [u for u in requests if not u.startswith((base+'/',origin+'/','data:','blob:'))],'external or MCP request observed')
   step('local-page-workflow-makes-no-observed-external-or-MCP-requests',offline)
   report['scope']='Real installed extension/runtime/storage/scripting/closed Shadow DOM; test CDP inspects elements and sends mouse input; only localhost permission and initial toolbar grant seeded. No real ATS, toolbar click or permission-prompt test.'

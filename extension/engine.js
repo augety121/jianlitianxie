@@ -1,6 +1,6 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.10.0') return;
+ if(globalThis.__resumeFillEngine?.version==='0.10.1') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
  let busy=false,generation=0; const attemptedFields=new Set();
@@ -170,8 +170,21 @@
  };
  function roots(root=document){tick('rootWalks');const out=[root];const nodes=root.querySelectorAll('*');tick('nodesVisited',nodes.length);for(const el of nodes)if(el.shadowRoot)out.push(...roots(el.shadowRoot));return out;}
  const all=selector=>(queryRoots||roots()).flatMap(root=>[...root.querySelectorAll(selector)]);
- const menuSelector='[role=listbox],.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown';
- const optionSelector='[role=option],.ant-select-item-option,.el-select-dropdown__item,.ivu-select-item,.x-combo-dropdown-item';
+ const menuSelector='[role=listbox],.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown,.Select-menu-outer,[class$="-menu"]';
+ const optionSelector='[role=option],.ant-select-item-option,.ant-select-dropdown-menu-item,.el-select-dropdown__item,.ivu-select-item,.x-combo-dropdown-item,.Select-option,[class$="-option"]';
+ const selectWrappers='.ant-select,.el-select,.phoenix-select,.ivu-select,.Select,.react-select__control,[role=combobox]';
+ const selectedSelector='.ant-select-selection-item,.ant-select-selection-selected-value,.el-select__selected-item:not(.is-placeholder),.ivu-select-selected-value,.phoenix-select-selection-selected-value,.Select-value-label,[class*="singleValue"],[class*="single-value"],[class*="selectedValue"]';
+ function selectWrap(e){
+  if(e.tagName==='SELECT')return null;
+  const known=e.closest(selectWrappers.replace(',[role=combobox]',''));if(known)return known;
+  // CSS modules may erase library class names. Require an explicit selected-value
+  // marker and a single input branch, never arbitrary sibling text or a whole row.
+  for(let p=e.parentElement,n=0;p&&n<4;n++,p=p.parentElement){
+   if(p.querySelectorAll('input,textarea,select').length!==1)break;
+   if(p.querySelector(selectedSelector))return p;
+  }
+  return e.closest('[role=combobox]');
+ }
  function ownedMenus(e,selector=menuSelector){
   return [...new Set((e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'').split(/\s+/).filter(Boolean).map(id=>e.getRootNode().getElementById?.(id)||document.getElementById(id)).filter(Boolean)
     .map(x=>x.closest('.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown')||x))].filter(x=>visible(x)&&x.matches(selector));
@@ -223,8 +236,8 @@
  // CSS-module based ATS forms often put a plain div label beside an input wrapper.
  // Stay within a small, single-field branch; do not take a label from a whole form.
  function nearbyLabel(e){
-  let current=e;
-  const valid=n=>{if(!n||n.querySelector?.(controlsSelector)||n.closest?.('nav,aside,button,[role=navigation]'))return '';const t=text(n).replace(/^[*\s]+|[：:*\s]+$/g,'');return t&&t.length<=45&&!/^(请选择|请输入|选填|必填|添加|删除|年|月|日|开始|结束)$/.test(t)?t:'';};
+  let current=selectWrap(e)||e;
+  const valid=n=>{if(!n||n.querySelector?.(controlsSelector)||n.closest?.('nav,aside,button,[role=navigation]')||n.matches?.(selectedSelector))return '';const t=text(n).replace(/^[*\s]+|[：:*\s]+$/g,'');return t&&t.length<=45&&!/^\d+(?:[年月日])?$/.test(t)&&! /^(请选择|请输入|选填|必填|添加|删除|年|月|日|开始|结束)$/.test(t)?t:'';};
   for(let level=0;level<4&&current?.parentElement;level++,current=current.parentElement){
    const sibling=current.previousElementSibling,value=valid(sibling);if(value)return value;
    const parent=current.parentElement;
@@ -236,15 +249,29 @@
   return '';
  }
  function dateComponent(e){
-  const hint=(e.placeholder||e.getAttribute('aria-label')||e.options?.[0]?.textContent||'').trim().replace(/请选择|选择/g,'');
+  const sw=selectWrap(e);
+  const hint=(e.placeholder||e.getAttribute('aria-label')||e.options?.[0]?.textContent||sw?.querySelector('.Select-placeholder,[class*="placeholder"]')?.textContent||'').trim().replace(/请选择|选择/g,'');
   const part=/^(年|yyyy)$/i.test(hint)?'year':/^(月|mm)$/i.test(hint)?'month':/^(日|dd)$/i.test(hint)?'day':'';
-  if(!part)return null;
+  let resolvedPart=part;
+  if(!resolvedPart&&sw){
+   // Filled selects often remove the year/month placeholder. Infer components
+   // only inside an explicitly labelled date row with exactly two/three controls.
+   for(let p=sw.parentElement,n=0;p&&n<4;n++,p=p.parentElement){
+    const inputs=[...p.querySelectorAll('input,select')].filter(x=>x.type!=='hidden');
+    if(inputs.length>3)break;
+    const leaves=[...p.querySelectorAll('*')].filter(x=>!x.children.length&&!x.matches('input,select,option'));
+    if(inputs.length>=2&&leaves.some(x=>/^(开始时间|结束时间|入学时间|毕业时间|获奖时间|获奖日期|获得日期)$/.test(text(x)))){
+     if(inputs.every(x=>x.tagName==='SELECT'||selectWrap(x))){resolvedPart=['year','month','day'][inputs.indexOf(e)];break;}
+    }
+   }
+  }
+  if(!resolvedPart)return null;
   for(let p=e.parentElement,n=0;p&&n<5;n++,p=p.parentElement){
    if(p.querySelectorAll(controlsSelector).length>3)break;
    const nodes=[...p.children].flatMap(c=>[c,...c.children]);
    const names=[...new Set(nodes.filter(c=>!c.querySelector(controlsSelector)&&!c.matches(controlsSelector)).map(c=>text(c).replace(/[*：:\s]/g,'')).filter(t=>/^(开始时间|开始日期|起始时间|结束时间|结束日期|入学时间|入学日期|毕业时间|毕业日期|获奖时间|获奖日期|获得日期)$/.test(t)))];
    if(names.length>1)return null;
-   if(names.length===1)return {label:names[0]+'（'+{year:'年',month:'月',day:'日'}[part]+'）',dateLabel:names[0],datePart:part};
+   if(names.length===1)return {label:names[0]+'（'+{year:'年',month:'月',day:'日'}[resolvedPart]+'）',dateLabel:names[0],datePart:resolvedPart};
   }
   return null;
  }
@@ -265,7 +292,9 @@
   return name&&!node.closest('nav,aside,a,button,label,[role=navigation]')&&visible(node)&&!node.querySelector(controlsSelector)?name:'';
  }
  function layoutCandidates(parent){
-  return [...parent.children].slice(0,80).flatMap(c=>[c,...[...c.children].slice(0,30)]).filter(n=>layoutName(n));
+  let nodes=[...parent.children].slice(0,80),allNodes=[...nodes];
+  for(let depth=0;depth<3;depth++){nodes=nodes.flatMap(n=>[...n.children].slice(0,30));allNodes.push(...nodes);}
+  return allNodes.filter(n=>layoutName(n));
  }
  /** Keep candidate NODE lists, not current title/visibility/role decisions. New or
   * changed text and child membership invalidate them before every synchronous read.
@@ -296,7 +325,13 @@
      return named.filter(x=>!named.some(y=>x!==y&&x.node.contains(y.node)));
     });
     if(headings.length===1){const h=headings[0];if(h.node.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING)return {node:p,name:h.name};}
-    if(headings.length>1)return null;
+    if(headings.length>1){
+     // Flat ATS sections may share one parent. Use the last preceding heading,
+     // never a later section or a navigation label.
+     const preceding=headings.filter(h=>h.node.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING);
+     if(preceding.length)return {node:p,name:preceding.at(-1).name};
+     return null;
+    }
     if(p.matches(recordSelector))break;
    }
    return null;
@@ -321,7 +356,7 @@
    if(fields.length<2)continue;if(fields.length>24)break;
    const names=fields.map(label).filter(n=>n&&n!=='未标注字段'&&!/^(年|月|日|请选择|开始|结束)$/.test(n));
    if(new Set(names).size!==names.length)break;
-   if(names.some(n=>/^(项目名称|学校|学校名称|院校名称|公司名称|企业名称|单位名称)$/.test(n)))candidate=p;
+   if(names.some(n=>/^(项目名称|学校|学校名称|院校名称|公司名称|企业名称|单位名称|奖项名称|获奖名称|证书名称)$/.test(n)))candidate=p;
    if(p===boundary)break;
   }
   return candidate;
@@ -330,9 +365,9 @@
  function anchorsRaw(e){const p=container(e);if(!p)return [];return [...p.querySelectorAll('input,select')].filter(x=>/学校|院校|项目名称|公司|企业名称|单位名称|证书名称|与本人关系/.test(label(x))).map(x=>x.tagName==='SELECT'?text(x.selectedOptions[0]):x.value).filter(Boolean).slice(0,12);}
  function kind(e){
   if(e.matches('.x-radio-group,[role=radiogroup]'))return 'custom-radio';if(e.matches('.x-combo,.x-combocheck'))return 'custom-select';if(e.type==='file')return 'file';if(e.type==='radio')return 'radio-group';if(e.type==='month')return 'month';if(e.type==='date')return 'date';
-  if(dateComponent(e))return e.tagName==='SELECT'?e.type:e.getAttribute('role')==='combobox'||e.closest('.ant-select,.el-select,.phoenix-select,.ivu-select')?'custom-select':e.type||'text';
+  if(dateComponent(e))return e.tagName==='SELECT'?e.type:selectWrap(e)?'custom-select':e.type||'text';
   if(e.closest('.ant-picker,.el-date-editor,.fx-form-datetime')||/日期|年月|时间/.test(label(e))&&/yyyy|年|月|日期/i.test(e.placeholder||''))return 'date-picker';
-  if(e.tagName!=='SELECT'&&(e.getAttribute('role')==='combobox'||e.closest('.ant-select,.el-select,.phoenix-select,.ivu-select')))return 'custom-select';return e.type||e.tagName.toLowerCase();
+  if(selectWrap(e))return 'custom-select';return e.type||e.tagName.toLowerCase();
  }
  function val(e){
   if(!e)return '';
@@ -345,8 +380,8 @@
   if(e.type==='radio'||e.type==='checkbox')return e.checked?e.value:'';
   if(e.tagName==='SELECT'&&e.multiple)return [...e.selectedOptions].map(o=>o.value);
   if(kind(e)==='custom-select'){
-   const wrap=e.closest('.ant-select,.el-select,.phoenix-select,.ivu-select');
-   const selected=wrap?.querySelector('.ant-select-selection-item,.el-select__selected-item:not(.is-placeholder),.ivu-select-selected-value,.phoenix-select-selection-selected-value');
+   const wrap=selectWrap(e);
+   const selected=wrap?.querySelector(selectedSelector);
    return selected?text(selected):e.value||'';
   }
   return e.isContentEditable?e.innerText:e.value??'';
@@ -401,6 +436,11 @@
    }catch{f.options=null;}
   }
   for(const f of fields){const c=dateComponent(refs.get(f.id));if(c){f.dateLabel=c.dateLabel;f.datePart=c.datePart;}}
+  for(const f of fields){const e=refs.get(f.id),wrap=selectWrap(e);f.recognition={
+   controlFamily:e.tagName==='SELECT'?'native-select':wrap?.matches('.ant-select')?'ant':wrap?.matches('.Select')?'react-select':wrap?'marked-select':'native',
+   selectedDisplay:!!wrap?.querySelector(selectedSelector),searchEmpty:wrap?e.value==='':false,
+   datePart:f.datePart||'none'
+  };}
   for(const group of document.querySelectorAll('.fx-field')){
    const rows=group.querySelectorAll('.fx-subform-row');if(!rows.length)continue;
    const buttons=[...group.querySelectorAll('button,a,[role=button],span,div')].filter(x=>visible(x)&&/^(添加|新增|添加一行|新增一行|增加)$/.test(text(x))&&!x.querySelector('button,a,[role=button]'));
@@ -410,7 +450,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.10.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
+  lastSnapshot={engineVersion:'0.10.1',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -448,7 +488,7 @@
     if(p.kind==='custom-radio'){const options=[...e.querySelectorAll('.x-radio,[role=radio]')].filter(r=>text(r.querySelector('.radio-text')||r)===String(p.value)&&!r.classList.contains('disabled')&&r.getAttribute('aria-disabled')!=='true');if(options.length!==1)throw Error('单选候选不唯一');beginWrite();activate(options[0].querySelector('.radio-check-icon')||options[0].querySelector('.x-radio-wrapper')||options[0]);
     }else if(p.kind==='custom-select'){
      const before=new Set(all(menuSelector).filter(visible));
-     const trigger=e.closest('.ant-select')?.querySelector('.ant-select-selector')||e;
+     const trigger=selectWrap(e)?.querySelector('.ant-select-selector,.ant-select-selection,.Select-control')||e;
      if(!(e.getAttribute('aria-expanded')==='true'&&ownedMenus(e).length))activate(trigger);
      const wanted=Array.isArray(p.value)?p.value:[p.value];
      if(!wanted.length||new Set(wanted).size!==wanted.length)throw Error('选项计划无效');
@@ -552,23 +592,33 @@
   if(busy||!captureSnapshot||request?.snapshotId!==captureSnapshot.id||request.url!==location.href)throw Error('页面或采集起点已变化，请先点击填写简历，再补填');
   const fields=[];let omitted=0;
   for(const f of captureSnapshot.fields){
-   if(!empty(f.value)||attemptedFields.has(f.id))continue;
+   if(request.includeExisting!==true&&(!empty(f.value)||attemptedFields.has(f.id)))continue;
    const e=refs.get(f.id);
-   if(!e||!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)||e.multiple||e.readOnly||/custom|picker|repeat/.test(f.type)||
+   if(!e||!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)||e.multiple||e.readOnly&&f.type!=='custom-select'||/picker|repeat/.test(f.type)||
       /^(radio|checkbox|file|password|hidden|button|submit|reset|image)$/.test(e.type)||
       /验证码|密码|口令|密钥|token|captcha|password|api.?key|同意|承诺|声明|签名|授权|consent|signature/i.test(f.label)||
       !f.label||f.label==='未标注字段'||e.autocomplete==='one-time-code')continue;
    const value=val(e);if(empty(value))continue;
    if(!e.isConnected||!visible(e)||ancestorBlocked(e)||e.matches(':disabled')||e.getAttribute('aria-disabled')==='true'||
       container(e)!==contexts.get(f.id)||!guardUnchanged(e,f.id)||e.validity&&!e.validity.valid){omitted++;continue;}
-   const displayed=e.tagName==='SELECT'?e.selectedOptions[0]?.textContent?.trim():String(value);
+   let displayed=e.tagName==='SELECT'?e.selectedOptions[0]?.textContent?.trim():String(value),capturedLabel=f.label;
+   if(f.datePart){
+    if(f.datePart!=='year')continue;
+    const parts=captureSnapshot.fields.filter(x=>x.dateLabel===f.dateLabel&&contexts.get(x.id)===contexts.get(f.id));
+    const month=parts.find(x=>x.datePart==='month'),day=parts.find(x=>x.datePart==='day');
+    if(!month||parts.filter(x=>x.datePart==='year').length!==1){omitted++;continue;}
+    const read=x=>{const node=refs.get(x.id);return node?.tagName==='SELECT'?node.selectedOptions[0]?.textContent:val(node);};
+    const y=Number(String(read(f)).replace(/年$/,'')),m=Number(String(read(month)).replace(/月$/,'')),d=day?Number(String(read(day)).replace(/日$/,'')):null;
+    if(!Number.isInteger(y)||y<1000||y>9999||!Number.isInteger(m)||m<1||m>12||day&&(!Number.isInteger(d)||d<1||d>new Date(y,m,0).getDate())){omitted++;continue;}
+    displayed=`${y}-${String(m).padStart(2,'0')}`+(day?`-${String(d).padStart(2,'0')}`:'');capturedLabel=f.dateLabel;
+   }
    if(!displayed||displayed.length>10000||fields.length>=100){omitted++;continue;}
-   fields.push({id:f.id,label:f.label,section:f.section||'',groupId:f.groupId||'',type:f.type,
+   fields.push({id:f.id,label:capturedLabel,section:f.section||'',groupId:f.groupId||'',type:f.type,
      value:displayed,anchors:anchorsRaw(e)});
   }
   return {snapshotId:captureSnapshot.id,fields,omitted};
  }
  function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.10.0',scan,localScan,apply,upload,locate,capture,cancel};
+ globalThis.__resumeFillEngine={version:'0.10.1',scan,localScan,apply,upload,locate,capture,cancel};
 })();

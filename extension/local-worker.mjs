@@ -1,5 +1,5 @@
 import {learningPreview,mergeLearned} from './core/learn-profile.mjs';
-import {fieldDiagnostic} from './core/match-diagnostics.mjs';
+import {fieldDiagnostic,profileDiagnostic} from './core/match-diagnostics.mjs';
 import {mappingCandidates} from './core/review-model.mjs';
 import {restricted} from './core/planner.mjs';
 import {chooseText} from './core/text-variants.mjs';
@@ -100,7 +100,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const combined={...original,...e,...(stage==='fill'?{reasonCode:undefined}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
+    logs.add({stage,version:'0.10.1',engineVersion:run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
@@ -164,12 +164,12 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         const context=await restoreLearning();alive();
         if(!context||context.owner!==own||context.tabId!==m.tabId||context.url!==m.url||context.documentId!==m.documentId||context.revision!==profile.revision||Date.now()>=context.expires)throw Error('请先点击填写简历，再在网页补填；补完后点记住内容');
         if((await attached(context.tabId)).url!==context.url)throw Error('页面已变化，请重新填写');alive();
-        const capture=(await broker.invoke(context.tabId,{frameId:0,documentId:context.documentId},'capture',{snapshotId:context.snapshotId,url:context.url})).result;alive();
+        const capture=(await broker.invoke(context.tabId,{frameId:0,documentId:context.documentId},'capture',{snapshotId:context.snapshotId,url:context.url,includeExisting:m.includeExisting===true})).result;alive();
         const proposed=learningPreview(capture,profile,new URL(context.url).origin);
         if(!proposed.items.length)return {opened:false,count:0,omitted:proposed.omitted};
         for(const [key,t] of learners)if(t.expires<=Date.now())learners.delete(key);
         if(learners.size>=2)throw Error('请先核对已经打开的保存小窗');
-        const id=crypto.randomUUID(),ticket={...context,id,items:proposed.items,omitted:proposed.omitted,expires:Math.min(context.expires,Date.now()+300000),pickerTab:null,pickerDocument:null,claimed:false};
+        const id=crypto.randomUUID(),ticket={...context,id,includeExisting:m.includeExisting===true,items:proposed.items,omitted:proposed.omitted,expires:Math.min(context.expires,Date.now()+300000),pickerTab:null,pickerDocument:null,claimed:false};
         learners.set(id,ticket);
         try{const win=await chrome.windows.create({url:chrome.runtime.getURL('learn-review.html')+'?ticket='+id,type:'popup',width:570,height:700,focused:true});alive();
           if(!Number.isSafeInteger(win.tabs?.[0]?.id))throw Error('保存窗口未打开，请重新尝试');ticket.pickerTab=win.tabs[0].id;
@@ -182,7 +182,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         if((await attached(t.tabId)).url!==t.url)throw Error('页面已变化，未保存');alive();
         if(type==='local-learn-read')return {items:structuredClone(t.items),origin:new URL(t.url).origin,omitted:t.omitted};
         if(m.reviewed!==true)throw Error('请核对内容并确认保存');
-        const current=(await broker.invoke(t.tabId,{frameId:0,documentId:t.documentId},'capture',{snapshotId:t.snapshotId,url:t.url})).result;alive();
+        const current=(await broker.invoke(t.tabId,{frameId:0,documentId:t.documentId},'capture',{snapshotId:t.snapshotId,url:t.url,includeExisting:t.includeExisting===true})).result;alive();
         if(!Array.isArray(m.selections)||m.selections.some(selected=>{const was=t.items.find(i=>i.id===selected.id),now=current.fields?.find(f=>f.id===selected.id);return !was||!now||was.value!==now.value||was.label!==now.label||was.section!==(now.section||'')||was.groupId!==(now.groupId||'');}))throw Error('网页补充内容已变化，请关闭预览后重新读取');
         const merged=mergeLearned(profile,t.items,m.selections,new URL(t.url).origin,m.reuse===true);alive();t.claimed=true;
         stage='learn';await persist(merged.facts,t.revision,false);data={facts:merged.added.map(id=>({id}))};
@@ -328,6 +328,12 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     }
     if(m.type==='page-local-learn'){
       return perform({type:'local-learn-open',tabId,url:sender.url,documentId:sender.documentId},own);
+    }
+    if(m.type==='page-local-learn-existing'){
+      // A separate explicit action reads the current filled page into a review;
+      // it does not write webpage values or silently modify the local profile.
+      await perform({type:'local-scan',tabId},own);
+      return perform({type:'local-learn-open',includeExisting:true,tabId,url:sender.url,documentId:sender.documentId},own);
     }
     if(m.type==='page-local-pick'){
       checkDocument();

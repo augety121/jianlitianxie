@@ -64,6 +64,13 @@ test('real controller opens a trusted review, saves only after confirmation, and
  const logs=await s.h.api('logs');assert(logs.records.some(x=>x.stage==='learn'));assert(!JSON.stringify(logs).includes('SYNTHETIC LEARNED'));
  s.h.restart();assert.equal((await s.h.api('state')).profile.facts.length,3);
 });
+
+test('explicit read-existing action scans and opens review without requiring a prior fill or writing the page',async()=>{
+ const s=await setup();const result=await s.page('learn-existing');assert(result.opened);
+ assert.equal((await s.h.api('state')).profile.facts.length,2);assert.deepEqual(s.h.values,{});
+ const preview=await s.popup('read');assert.equal(preview.items[0].value,'SYNTHETIC LEARNED');
+ await s.popup('save',{selections:[{id:'h'}],reviewed:true});assert.equal((await s.h.api('state')).profile.facts.length,3);
+});
 test('changed values, new scan, edited profile and navigation invalidate learning approval',async()=>{
  for(const action of ['value','scan','edit','navigate','stop']){
   const s=await setup();await s.page('scan');await s.page('learn');await s.popup('read');

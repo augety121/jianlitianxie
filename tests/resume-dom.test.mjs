@@ -71,3 +71,34 @@ test('explicit split start/end year/month controls use their own date and preser
   assert.deepEqual(Array.from(h.w.document.querySelectorAll('select'),e=>e.value),['y2024','m09','y2027','m07']);
  }finally{h.close();}
 });
+
+test('filled searchable selects expose selected value, not empty search input or numeric label',async()=>{
+ const choice=value=>`<div class="Select"><div class="Select-control"><span class="Select-value-label">${value}</span><div class="Select-input"><input></div></div></div>`;
+ const card=(name,y,m)=>`<div class="card">${field('获奖时间',choice(y)+choice(m))}${field('奖项名称',`<input value="${name}">`)}</div>`;
+ const h=harness(`<form><div><div><div><h3>获奖经历</h3></div></div></div>${card('测试奖甲','2024','5')}${card('测试奖乙','2023','4')}</form>`);
+ try{const s=await h.engine.scan();
+  assert.deepEqual(Array.from(s.fields,f=>f.label),['获奖时间（年）','获奖时间（月）','奖项名称','获奖时间（年）','获奖时间（月）','奖项名称']);
+  assert.deepEqual(Array.from(s.fields,f=>f.value),['2024','5','测试奖甲','2023','4','测试奖乙']);
+  assert(s.fields.every(f=>f.section==='获奖经历'),JSON.stringify(s.fields));
+  assert.equal(new Set(s.fields.map(f=>f.groupId)).size,2);
+  const facts=['甲','乙'].flatMap((entity,i)=>[['获奖名称',`测试奖${entity}`],['获奖时间',i?'2023-04':'2024-05']].map(([label,value])=>({id:entity+label,entity,label,value,section:'获奖经历',confirmed:true})));
+  const {bindings}=resolveRecords(s,facts),p=makePlan(s,{facts},{},bindings,{reviewExisting:true});
+  assert(p.entries.every(e=>e.status==='preserve'&&e.reasonCode==='existing-consistent'),JSON.stringify(p.entries));
+  assert.equal(h.engine.capture({snapshotId:s.id,url:s.url}).fields.length,0);
+  const captured=h.engine.capture({snapshotId:s.id,url:s.url,includeExisting:true});
+  assert.deepEqual(Array.from(captured.fields,f=>[f.label,f.value]),[['获奖时间','2024-05'],['奖项名称','测试奖甲'],['获奖时间','2023-04'],['奖项名称','测试奖乙']]);
+ }finally{h.close();}
+});
+
+test('flat sections and legacy ant selected text keep scopes and existing content',async()=>{
+ const h=harness(`<form><div><h3>个人信息</h3></div>${field('性别','<div class="ant-select"><span class="ant-select-selection-selected-value">测试值</span><input role="combobox"></div>')}<div><h3>项目经历</h3></div><div>${field('项目名称','<input value="示例项目">')}${field('项目描述','<textarea>原有正文</textarea>')}</div></form>`);
+ try{const s=await h.engine.scan();assert.deepEqual(Array.from(s.fields,f=>f.section),['个人信息','项目经历','项目经历']);
+  assert.equal(s.fields[0].label,'性别');assert.equal(s.fields[0].value,'测试值');assert.equal(s.fields[0].type,'custom-select');
+  const p=makePlan(s,{facts:[]},{},{},{reviewExisting:true});assert(p.entries.every(e=>e.status==='preserve'));
+ }finally{h.close();}
+});
+
+test('numeric adjacent text is not accepted as a field label',async()=>{
+ const h=harness('<form><div><span>2022</span><input></div></form>');
+ try{const s=await h.engine.scan();assert.equal(s.fields[0].label,'未标注字段');}finally{h.close();}
+});

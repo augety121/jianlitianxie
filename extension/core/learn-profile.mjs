@@ -3,7 +3,7 @@ import {normalizeFact} from './profile.mjs';
 import {restricted} from './planner.mjs';
 import {secret,sensitive} from './workspace-policy.mjs';
 const records=new Set(['education','work','project','certificate','award','family']);
-const anchors=new Set(['学校','公司名称','项目名称','证书名称'].map(x=>semanticLabel(x)));
+const anchors=new Set(['学校','公司名称','项目名称','证书名称','获奖名称'].map(x=>semanticLabel(x)));
 const sameScope=(a,b)=>scope(a)===scope(b)&& (scope(a)!==''||normalize(a)===normalize(b));
 const sameValue=(a,b)=>String(a).trim()===String(b).trim();
 /** Proposals, not verified facts. Unknown record identities must be supplied by the user. */

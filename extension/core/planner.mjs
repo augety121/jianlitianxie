@@ -12,7 +12,7 @@ export function makePlan(snapshot,profile,mappings={},entityBindings={},options=
  for(const f of snapshot.fields){const k=semanticLabel(f.label,f.section);counts.set(k,(counts.get(k)||0)+1);}
  const entries=snapshot.fields.map(original=>{
   const f={...original};if(Array.isArray(f.type)&&/\bx-combocheck\b/.test(f.control?.classes||''))f.type='custom-select';
-  const row={fieldId:f.id,label:f.label,dateLabel:f.dateLabel,section:f.section,groupId:f.groupId,kind:f.type,oldValue:f.value,required:f.required,optionCount:f.options?.length||0,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
+  const row={fieldId:f.id,label:f.label,dateLabel:f.dateLabel,section:f.section,groupId:f.groupId,kind:f.type,oldValue:f.value,recognition:f.recognition,required:f.required,optionCount:f.options?.length||0,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
   if(restricted(f))return {...row,status:'manual',reasonCode:'restricted-control',reason:'附件须选择文件；声明、密码和提交由本人操作'};
   if(!options.reviewExisting&&f.value!==''&&f.value!==false&&f.value!=null&&(!Array.isArray(f.value)||f.value.length))return {...row,status:'preserve',reason:'已有内容保留；可检查已有内容后逐项核对差异'};
   if((f.multiple||f.type==='repeat-group')&&!mappings[f.id])return {...row,status:'manual',reason:'请明确指定本次多选资料或经历条数'};
