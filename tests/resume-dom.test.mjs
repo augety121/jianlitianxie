@@ -110,3 +110,30 @@ test('new wrapped heading invalidates an old flat-section plan even if the neare
   const r=await h.engine.apply(p);assert.equal(h.w.document.querySelectorAll('input')[1].value,'');assert(r.results.some(x=>x.status==='stale'));
  }finally{h.close();}
 });
+
+
+test('four-part range resolves selected dates, empty dates, checkbox and two distinct captured dates',async()=>{
+ const select=(values,value='')=>`<select>${['',...values].map(x=>`<option value="${x}" ${x===value?'selected':''}>${x||'请选择'}</option>`).join('')}</select>`;
+ const range=field('起止时间',select(['2025','2026'],'2025')+select(['6','9'],'6')+select(['2025','2026'])+select(['3','9'])+'<input type="checkbox">至今');
+ const h=harness(`<form><section><h3>项目经历</h3><div>${field('项目名称','<input value="示例项目">')}${range}</div></section></form>`);
+ try{let s=await h.engine.scan();assert.deepEqual(Array.from(s.fields.slice(1,5),f=>[f.dateLabel,f.datePart]),[['开始时间','year'],['开始时间','month'],['结束时间','year'],['结束时间','month']]);
+  const facts=[['项目名称','示例项目'],['开始时间','2025-06'],['结束时间','2026-03']].map(([label,value])=>({id:label,label,value,entity:'示例项目',section:'项目经历',confirmed:true}));
+  const {bindings}=resolveRecords(s,facts),p=makePlan(s,{facts},{},bindings,{reviewExisting:true});assert.equal(p.entries.filter(e=>e.status==='ready').length,2,JSON.stringify(p.entries));
+  const r=await h.engine.apply(p);assert.equal(r.results.filter(x=>x.status==='verified').length,2);assert.equal(h.w.document.querySelector('input[type=checkbox]').checked,false);
+  s=await h.engine.scan();const c=h.engine.capture({snapshotId:s.id,url:s.url,includeExisting:true});assert.deepEqual(Array.from(c.fields.filter(f=>/时间/.test(f.label)),f=>[f.label,f.value]),[['开始时间','2025-06'],['结束时间','2026-03']]);
+ }finally{h.close();}
+});
+
+test('numeric aria and placeholder do not override structural field labels',async()=>{
+ const h=harness(`<form>${field('项目名称','<input aria-label="2026" placeholder="4">')}</form>`);
+ try{const s=await h.engine.scan();assert.equal(s.fields[0].label,'项目名称');}finally{h.close();}
+});
+
+test('a unique exact long project duty binds a partially filled card, shared duty stays unbound',()=>{
+ const description='这是只属于某个项目的完整职责正文，负责需求分析、编码实现、接口联调、测试验证以及结果核对。';
+ const snapshot={url:'https://form.example.invalid/apply',fields:[{id:'name',label:'项目名称',section:'项目经历',groupId:'g',value:''},{id:'body',label:'项目职责',section:'项目经历',groupId:'g',value:description}]};
+ const facts=['甲','乙'].flatMap(entity=>[['项目名称',entity+'项目'],['项目职责',entity==='甲'?description:'另一段职责正文']].map(([label,value])=>({id:entity+label,label,value,entity,section:'项目经历',confirmed:true})));
+ let r=resolveRecords(snapshot,facts);assert.equal(Object.values(r.bindings)[0],'甲');assert.equal(Object.values(r.methods)[0],'exact-content');
+ facts.find(f=>f.id==='乙项目职责').value=description;r=resolveRecords(snapshot,facts);assert.equal(Object.keys(r.bindings).length,0);
+ snapshot.fields[0].value='不存在的名字';r=resolveRecords(snapshot,facts);assert.equal(Object.keys(r.bindings).length,0);
+});

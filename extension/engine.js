@@ -1,6 +1,6 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.10.1') return;
+ if(globalThis.__resumeFillEngine?.version==='0.10.2') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
  let busy=false,generation=0; const attemptedFields=new Set();
@@ -206,34 +206,34 @@
   return field.querySelector('.subform-head .subform-row')?.children[index]?.querySelector('.subform-title');
  }
  function labelRaw(e){
-  const clean=s=>s.replace(/^[*\s]+|[：:*\s]+$/g,'');
+  const clean=s=>{const t=s.replace(/^[*\s]+|[：:*\s]+$/g,'');return /^\d+(?:[年月日])?$/.test(t)?'':t;};
   const component=dateComponent(e);if(component)return component.label;
   const sh=subHead(e);if(sh)return clean(sh.getAttribute('title')||labelText(sh));
   // Resolve the first available source only, preserving the previous precedence.
   // Most ATS fields have a real label: do not also query wrappers/tables for them.
   const native=e.labels?.length?[...e.labels].map(labelText).join(' '):'';
-  if(native)return clean(native);
-  const direct=e.getAttribute('aria-label');if(direct)return clean(direct);
+  if(clean(native||''))return clean(native);
+  const direct=e.getAttribute('aria-label');if(clean(direct||''))return clean(direct);
   const named=e.getAttribute('aria-labelledby'),root=e.getRootNode();
   const aria=named?named.trim().split(/\s+/).map(id=>text(root.getElementById(id))).filter(Boolean).join(' '):'';
-  if(aria)return clean(aria);
-  const dataLabel=e.getAttribute('data-label');if(dataLabel?.trim())return clean(dataLabel);
+  if(clean(aria||''))return clean(aria);
+  const dataLabel=e.getAttribute('data-label');if(clean(dataLabel||''))return clean(dataLabel);
   const wrap=e.closest(wrappers),wrapLabel=wrap?.querySelector('label,.ant-form-item-label,.el-form-item__label,.form-item__label,.layui-form-label,.field-name');
   // A shared row can hold several independent inputs; do not reuse its first label.
   const peers=wrap?[...wrap.querySelectorAll(controlsSelector)].filter(n=>n!==e&&!e.contains(n)&&!n.contains(e)&&visible(n)&&!['hidden','button','submit'].includes(n.type)):[];
   const explicit=wrapLabel&&(!wrapLabel.htmlFor||wrapLabel.htmlFor===e.id)&&(!peers.length||e.type==='radio')?labelText(wrapLabel):'';
-  if(explicit)return clean(explicit);
+  if(clean(explicit||''))return clean(explicit);
   let table='';const cell=e.closest('td');if(cell){const row=cell.parentElement;const cells=[...row.children];const index=cells.indexOf(cell);const previous=cells[index-1];if(previous&&!previous.querySelector('input,select,textarea'))table=labelText(previous);if(!table){const head=e.closest('table')?.querySelector('thead tr');table=labelText(head?.children[index]);}}
-  if(table)return clean(table);
+  if(clean(table||''))return clean(table);
   const preceding=e.previousElementSibling;const sibling=preceding?.matches('label,.label,.field-label')?labelText(preceding):'';
-  if(sibling)return clean(sibling);
+  if(clean(sibling||''))return clean(sibling);
   const autocomplete={name:'姓名','given-name':'名字','family-name':'姓氏',email:'邮箱',tel:'手机号码','tel-national':'手机号码',bday:'出生日期','address-line1':'详细地址',organization:'公司名称','organization-title':'职位名称'}[(e.autocomplete||'').trim().toLowerCase().split(/\s+/).at(-1)]||'';
   if(autocomplete)return autocomplete;
   const nearby=nearbyLabel(e);if(nearby)return clean(nearby);
   const hint=(e.placeholder||'').replace(/^(请输入|请选择|请填写)\s*/,'');
   const placeholder=/^(选择|输入|搜索|select|enter|search)/i.test(hint)?'':hint;
-  if(placeholder)return clean(placeholder);
-  return clean(e.name||e.id||'未标注字段');
+  if(clean(placeholder||''))return clean(placeholder);
+  return clean(e.name||e.id||'')||'未标注字段';
  }
  // CSS-module based ATS forms often put a plain div label beside an input wrapper.
  // Stay within a small, single-field branch; do not take a label from a whole form.
@@ -251,6 +251,20 @@
   return '';
  }
  function dateComponent(e){
+  // A range is one labelled row but two independent dates. Ignore the "to
+  // present" checkbox and require exactly four/six real select components.
+  for(let p=e.parentElement,n=0;p&&n<5;n++,p=p.parentElement){
+   const inputs=[...p.querySelectorAll('input,select,textarea')].filter(x=>!['hidden','checkbox','radio','button','submit'].includes(x.type));
+   if(inputs.length>6)break;
+   if(![4,6].includes(inputs.length)||!inputs.includes(e))continue;
+   const names=[...p.querySelectorAll('*')].filter(x=>!x.children.length&&!x.matches('input,select,option')).map(x=>text(x).replace(/[*：:\s]/g,''));
+   if(!names.some(t=>/^(起止时间|起止日期|项目起止时间|工作起止时间)$/.test(t)))continue;
+   if(!inputs.every(x=>x.tagName==='SELECT'||selectWrap(x)))continue;
+   // Separate explicit start/end labels take precedence over a shared range.
+   if(names.some(t=>/^(开始时间|结束时间|入学时间|毕业时间)$/.test(t)))continue;
+   const half=inputs.length/2,index=inputs.indexOf(e),dateLabel=index<half?'开始时间':'结束时间',datePart=['year','month','day'][index%half];
+   return {label:dateLabel+'（'+{year:'年',month:'月',day:'日'}[datePart]+'）',dateLabel,datePart};
+  }
   const sw=selectWrap(e);
   const hint=(e.placeholder||e.getAttribute('aria-label')||e.options?.[0]?.textContent||sw?.querySelector('.Select-placeholder,[class*="placeholder"]')?.textContent||'').trim().replace(/请选择|选择/g,'');
   const part=/^(年|yyyy)$/i.test(hint)?'year':/^(月|mm)$/i.test(hint)?'month':/^(日|dd)$/i.test(hint)?'day':'';
@@ -454,7 +468,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.10.1',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
+  lastSnapshot={engineVersion:'0.10.2',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -624,5 +638,5 @@
  }
  function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.10.1',scan,localScan,apply,upload,locate,capture,cancel};
+ globalThis.__resumeFillEngine={version:'0.10.2',scan,localScan,apply,upload,locate,capture,cancel};
 })();

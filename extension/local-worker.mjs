@@ -113,7 +113,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       let targetTitle='';try{targetTitle=String((await attached(m.tabId)).title||'').slice(0,160);}catch{}
       return {target,targetTitle,profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
     }
-    if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data),enabled:data.enabled};}
+    if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data,{includeExplanations:false}),enabled:data.enabled};}
     if(type==='local-log-settings'){await ready;await logs.settings(m.enabled,m.clear===true);return {ok:true};}
     // Acquire synchronously before any asynchronous permission/storage check.
     if(active||externalBusy())throw Error('另一项任务正在执行，请先停止并等待回读');

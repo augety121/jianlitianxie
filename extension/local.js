@@ -1,3 +1,4 @@
+import {logPreview,logBlob} from './core/log-export.mjs';
 import {explainDiagnostic} from './core/match-diagnostics.mjs';
 import {planExplanation} from './core/page-summary.mjs';
 import {semanticLabel} from './core/semantics.mjs';
@@ -10,7 +11,7 @@ let busy=false,disposed=false,generation=0,fileGeneration=0,mapping=null,editing
 let resumeNotes=[];
 const statusNames={review:'已有内容待核对',ready:'可填写',missing:'缺资料 / 待匹配',manual:'人工处理',preserve:'保留已有',verified:'回读通过',invalid:'校验未通过',stale:'目标已变化','needs-user':'需要核对',cancelled:'已取消','not-attempted':'尚未尝试'};
 const codeNames={'existing-difference':'网页已有内容与资料不同','restricted-control':'受保护控件，人工操作','record-unbound':'需要绑定经历','ambiguous-source':'多个资料来源冲突','date-precision':'日期精度不足','no-label-match':'字段名称、别名或分区未对应','text-too-long':'所有正文版本超出字数上限','number-required':'网页只接受数字','option-unavailable':'没有准确匹配的选项'};
-const stageNames={preview:'读取与预览',import:'导入',scan:'扫描与匹配',fill:'填写与回读',bind:'绑定经历',map:'修改映射',stop:'停止',erase:'删除免口令资料'};
+const stageNames={preview:'读取与预览',import:'导入',scan:'扫描与匹配',fill:'填写与回读',bind:'绑定经历',map:'修改映射',stop:'停止',erase:'删除免口令资料',learn:'核对并保存网页内容'};
 const reasonNames={'none':'', 'check-input':'检查输入格式或资料内容','target-changed':'目标或资料已改变，请重新扫描','permission':'请在申请页重新点击工具栏授权','busy':'等待上一项任务完成','interrupted':'操作被取消或中断','review-required':'请核对并确认本次选择'};
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 function notice(text,error=false){$('notice').textContent=text;$('notice').dataset.error=String(error);}
@@ -106,12 +107,40 @@ async function readFile(){
   $('importText').value=text;$('fileState').textContent='已读取文件，仅在本机处理';
   await task(async()=>{const d=await send('preview',{text});if(id===fileGeneration&&!disposed)showImport(d);});
 }
-async function refreshLogs(){const data=await send('logs');if(disposed)return;exportData={...data,productVersion:chrome.runtime.getManifest().version};$('autoLogs').checked=data.enabled;$('logs').replaceChildren();
-  if(!data.records.length)$('logs').append(el('p','还没有操作记录。导入、扫描和填写时会自动记录。','help'));
-  for(const r of [...data.records].reverse()){const row=el('div',null,'log'),info=el('div');const abnormal=r.fields.some(f=>!['verified','preserve','ready'].includes(f.status));info.append(el('b',`${stageNames[r.stage]} · ${r.ok?(abnormal?'有待处理项':'完成'):'未完成'}`,(!r.ok||abnormal)?'bad':''),el('small',`${r.ms} 毫秒 · ${r.total} 项 · 日志 ${r.seq}`));info.append(el('small',`插件 ${r.version||'unknown'} / 引擎 ${r.engineVersion||'unknown'} · 本地资料 ${r.profile?.total??'未知'} 条`));const timing=timingText(r.performance);if(timing)info.append(el('small',timing));if(r.reason!=='none')info.append(el('small',reasonNames[r.reason]));const details=el('details');details.append(el('summary','结果详情'),el('pre',(r.profile?'资料类型（不含内容）：\n'+r.profile.inventory.map(x=>`${x.semantic} / ${x.section}：${x.count} 条，已确认 ${x.confirmed} 条`).join('\n')+'\n\n':'')+r.fields.map(explainDiagnostic).join('\n\n')+(r.omitted?`\n另有 ${r.omitted} 项未记录详情`:'')));row.append(info,details);$('logs').append(row);}
-  if(data.dropped)$('logs').prepend(el('p',`${data.dropped} 条日志未能写入；不要据此重复填写。`,'help'));
+let logPage=0,logRequest=0,exportController=null,exportPending=false;
+async function refreshLogs(){const request=++logRequest,data=await send('logs');if(disposed||request!==logRequest)return;exportData={...data,productVersion:chrome.runtime.getManifest().version};$('autoLogs').checked=data.enabled;logPage=0;renderLogs();}
+function renderLogs(){
+ const data=exportData;if(!data)return;$('logs').replaceChildren();
+ const records=[...data.records].reverse(),pages=Math.max(1,Math.ceil(records.length/10));logPage=Math.min(logPage,pages-1);
+ if(!records.length)$('logs').append(el('p','还没有操作记录。导入、扫描和填写时会自动记录。','help'));
+ const pager=el('div',null,'toolbar'),prev=el('button','上一页','subtle'),next=el('button','下一页','subtle');
+ prev.disabled=logPage===0;next.disabled=logPage+1>=pages;prev.onclick=()=>{logPage--;renderLogs();};next.onclick=()=>{logPage++;renderLogs();};
+ pager.append(prev,el('span',`${logPage+1} / ${pages} 页 · 共 ${records.length} 次操作 · 详情按需加载`),next);$('logs').append(pager);
+ for(const r of records.slice(logPage*10,logPage*10+10)){
+  const row=el('div',null,'log'),info=el('div'),abnormal=r.fields.some(f=>!['verified','preserve','ready'].includes(f.status));
+  info.append(el('b',`${stageNames[r.stage]||'操作'} · ${r.ok?(abnormal?'有待处理项':'完成'):'未完成'}`,(!r.ok||abnormal)?'bad':''),el('small',`${r.ms} 毫秒 · ${r.total} 项 · 日志 ${r.seq}`),el('small',`插件 ${r.version||'unknown'} / 引擎 ${r.engineVersion||'unknown'} · 本地资料 ${r.profile?.total??'未知'} 条`));
+  const timing=timingText(r.performance);if(timing)info.append(el('small',timing));if(r.reason!=='none')info.append(el('small',reasonNames[r.reason]||'请查看详情'));
+  const details=el('details');details.append(el('summary','结果详情'));
+  details.ontoggle=()=>{if(!details.open||details.dataset.loaded)return;details.dataset.loaded='true';details.append(el('pre',(r.profile?'资料类型（不含内容）：\n'+r.profile.inventory.map(x=>`${x.semantic} / ${x.section}：${x.count} 条，已确认 ${x.confirmed} 条`).join('\n')+'\n\n':'')+r.fields.map(explainDiagnostic).join('\n\n')+(r.omitted?`\n另有 ${r.omitted} 项未记录详情`:'')));};
+  row.append(info,details);$('logs').append(row);
+ }
+ if(data.dropped)$('logs').prepend(el('p',`${data.dropped} 条日志未能写入；不要据此重复填写。`,'help'));
 }
-function download(value){const {enabled,...report}=value;const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='local-fill-diagnostics.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+async function previewLogs(){
+ if(exportPending||exportController)return;exportPending=true;$('exportLogs').disabled=true;$('downloadLogs').disabled=true;
+ $('logPreview').textContent='正在读取脱敏日志，可以随时关闭…';$('logDialog').showModal();const request=++logRequest;
+ try{const data=await send('logs');if(disposed||request!==logRequest||!$('logDialog').open)return;exportData={...data,productVersion:chrome.runtime.getManifest().version};$('logPreview').textContent=logPreview(exportData);$('downloadLogs').disabled=false;}
+ catch(e){$('logPreview').textContent=e.message;}
+ finally{exportPending=false;$('exportLogs').disabled=false;}
+}
+async function downloadLogs(){
+ if(!exportData||exportController)return;const controller=new AbortController();exportController=controller;$('downloadLogs').disabled=true;
+ try{const blob=await logBlob(exportData,{signal:controller.signal,onProgress:(done,total)=>{$('downloadLogs').textContent=`正在生成 ${done}/${total} · 可关闭取消`;}});
+  if(disposed||controller.signal.aborted)return;const url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download='local-fill-diagnostics.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);$('logDialog').close();notice(`日志已生成（${Math.ceil(blob.size/1024)} KB），请查看浏览器下载列表。`);
+ }catch(e){if(e.name!=='AbortError')notice('导出失败：'+e.message,true);}
+ finally{if(exportController===controller)exportController=null;$('downloadLogs').disabled=false;$('downloadLogs').textContent='确认导出 JSON';}
+}
+$('logDialog').addEventListener('close',()=>{logRequest++;exportController?.abort();$('logPreview').textContent='';});
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view(b.dataset.view);if(b.dataset.view==='logs')refreshLogs().catch(e=>notice(e.message,true));});
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{$(b.dataset.close).close();if(b.dataset.close==='oldDialog')$('oldPassword').value='';if(b.dataset.close==='editDialog')$('editForm').reset();if(b.dataset.close==='mappingDialog'){$('mappingChoices').replaceChildren();mapping=null;}});
 click('returnTarget',()=>task(async()=>{await send('return',{tabId});notice('已回到申请页。点击右下角“填写简历”即可扫描并填写；复杂项可返回工作台。');}));
@@ -130,11 +159,11 @@ click('prev',()=>{pageIndex--;renderEntries();});click('next',()=>{pageIndex++;r
 $('editForm').onsubmit=e=>{e.preventDefault();if(e.isTrusted)task(async()=>{const next={...editing,label:$('editLabel').value,section:$('editSection').value,entity:$('editEntity').value,value:$('editValue').value,textVariants:[...$('editVariants').children].map(row=>({name:row.querySelector('input').value,value:row.querySelector('textarea').value}))};const p=await send('edit',{fact:next,revision:profile.revision,reviewed:true});generation++;setProfile(p);clearPlan();$('editDialog').close();$('editForm').reset();editing=null;notice('资料已修改，重新扫描后使用新值。');});};
 click('eraseProfile',()=>task(async()=>{if(!confirm('删除所有免口令资料？原加密库和MCP旧主档保持不变。'))return;generation++;fileGeneration++;const p=await send('erase',{confirm:true,revision:profile.revision});setProfile(p);clearImport();clearPlan();$('importText').value='';$('result').hidden=true;notice('免口令资料已清空。原加密库未修改。');}));
 click('importOld',()=>{$('oldPassword').value='';$('oldDialog').showModal();});click('readOld',()=>task(async()=>{const password=$('oldPassword').value;$('oldPassword').value='';const d=await send('encrypted-preview',{password});$('oldDialog').close();showImport(d);notice('原加密库已读取但未修改。确认保存后，所选资料才会复制到免口令存储。');}));
-click('refreshLogs',refreshLogs);click('exportLogs',async()=>{await refreshLogs();$('logPreview').textContent=JSON.stringify(exportData,null,2);$('logDialog').showModal();});click('downloadLogs',()=>{if(exportData)download(exportData);$('logDialog').close();});
+click('refreshLogs',refreshLogs);click('exportLogs',previewLogs);click('downloadLogs',downloadLogs);
 $('autoLogs').onchange=async()=>{try{await send('log-settings',{enabled:$('autoLogs').checked});await refresh();await refreshLogs();}catch(e){notice(e.message,true);}};
 click('clearLogs',async()=>{await send('log-settings',{enabled:$('autoLogs').checked,clear:true});await refreshLogs();notice('日志已清空，资料未修改。');});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){$('showValues').checked=false;renderEntries();}});
-window.addEventListener('pagehide',()=>{disposed=true;generation++;fileGeneration++;chrome.runtime.sendMessage({type:'local-stop'}).catch(()=>{});});
+window.addEventListener('pagehide',()=>{disposed=true;exportController?.abort();generation++;fileGeneration++;chrome.runtime.sendMessage({type:'local-stop'}).catch(()=>{});});
 await refresh().then(async()=>{if(disposed)return;if(!profile.facts.length){view('profile');notice('欢迎使用本地速填。上传PDF/Word简历或JSON资料，核对解析结果后保存。');}else if(tabId&&state.mode!=='mcp'){await task(scan);}else notice('本地资料已恢复，无需再次输入口令。请从申请页点击插件图标。');}).catch(e=>notice(e.message,true));
 
 function timingText(phases){

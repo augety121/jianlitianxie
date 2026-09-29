@@ -49,7 +49,7 @@ export class LocalReceipts {
     return this.queue(()=>this.storage.set({[FLAG]:enabled,...(clear?{[KEY]:[]}: {})}));
   }
 }
-export function exportReceipts(data){
+export function exportReceipts(data,{includeExplanations=true}={}){
   const records=(data.records||[]).map(safe).filter(Boolean),base=records[0]?.at||0;
-  return {schemaVersion:2,containsPersonalValues:false,dropped:int(data.dropped,1e9),legend:diagnosticCodes,limitations:['仅记录固定规范字段名，不含原始标签、个人值、网址或简历正文','verified仅表示页面回读，不表示保存或提交','旧版记录缺少诊断上下文，升级后重新扫描'],records:records.map(({at,...r})=>({...r,offsetMs:at-base,diagnosis:r.fields.map(explainDiagnostic)}))};
+  return {schemaVersion:2,containsPersonalValues:false,dropped:int(data.dropped,1e9),legend:diagnosticCodes,limitations:['仅记录固定规范字段名，不含原始标签、个人值、网址或简历正文','verified仅表示页面回读，不表示保存或提交','旧版记录缺少诊断上下文，升级后重新扫描'],records:records.map(({at,...r})=>({...r,offsetMs:at-base,...(includeExplanations?{diagnosis:r.fields.map(explainDiagnostic)}:{})}))};
 }

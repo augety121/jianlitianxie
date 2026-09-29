@@ -1,3 +1,4 @@
+import {logPreview,logBlob} from '../extension/core/log-export.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -18,7 +19,7 @@ test('management UI uploads Word, edits draft, saves confirmed facts and prepare
  const oldParser=globalThis.DOMParser;globalThis.DOMParser=w.DOMParser;
  w.scrollTo=()=>{};w.confirm=()=>true;
  w.chrome={runtime:{sendMessage:async message=>{try{return {data:await h.workflow.request(message,h.sender)};}catch(e){return {error:e.message};}},getManifest:()=>({version:'0.9.0'})}};
- Object.assign(w,{planExplanation,semanticLabel,reviewPage,mappingCandidates,parseResumeText,extractResumeFile,explainDiagnostic});
+ Object.assign(w,{logPreview,logBlob,planExplanation,semanticLabel,reviewPage,mappingCandidates,parseResumeText,extractResumeFile,explainDiagnostic});
  const waitUntil=async condition=>{for(let i=0;i<80;i++){if(condition())return;await new Promise(r=>setTimeout(r,10));}throw Error(w.document.querySelector('#notice').textContent);};
  try{
   await w.eval('(async()=>{'+source+'})()');
@@ -34,6 +35,8 @@ test('management UI uploads Word, edits draft, saves confirmed facts and prepare
   assert(state.profile.facts.every(f=>f.confirmed));assert(w.document.querySelector('#counts').textContent.includes('可填 2'));
   assert.equal(h.calls.filter(c=>c.action==='apply').length,0);
   w.document.querySelector('[data-view="logs"]').click();
+  await waitUntil(()=>w.document.querySelector('#logs details'));
+  const details=w.document.querySelector('#logs details');assert.equal(details.querySelector('pre'),null);details.open=true;details.ontoggle();
   await waitUntil(()=>w.document.querySelector('#logs').textContent.includes('最终候选'));
   assert(w.document.querySelector('#logs').textContent.includes('阶段：matching'));
  }finally{globalThis.DOMParser=oldParser;w.close();}
