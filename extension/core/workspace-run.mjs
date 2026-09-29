@@ -106,6 +106,7 @@ export class WorkspaceRun {
     if(!group.bindable||entity&&!group.candidates.some(c=>c.entity===entity))throw Error('请选择本次同分区的真实经历');
     f.entityBindings||={};
     if(entity)f.entityBindings[id]=entity;else delete f.entityBindings[id];
+    f.bindingMethods||={};f.bindingMethods[id]='manual';
     for(const fieldId of group.fieldIds){delete f.mappings[fieldId];delete f.corrections?.[fieldId];}
     j.id=crypto.randomUUID();return this.preview();
   }

@@ -83,7 +83,9 @@ with sync_playwright() as p:
    payload={'facts':[{'label':label,'value':value,'section':'教育经历','entity':entity} for entity,school,major in [('MASTER_RECORD','FICTIONAL_MASTER_SCHOOL','AI'),('BACHELOR_RECORD','FICTIONAL_BACHELOR_SCHOOL','Engineering')] for label,value in [('学校',school),('专业',major)]]}
    page.locator('#importFile').set_input_files({'name':'records.json','mimeType':'application/json','buffer':json.dumps(payload).encode()})
    expect(page.locator('.import-row')).to_have_count(4);page.locator('#commitImport').click();expect(page.locator('.group select')).to_have_count(2)
-   page.locator('.group select').nth(0).select_option('BACHELOR_RECORD');expect(page.locator('.field input:checked')).to_have_count(2)
+   expect(page.locator('.field input:checked')).to_have_count(4)
+   expect(page.locator('.group select').nth(0)).to_have_value('MASTER_RECORD');expect(page.locator('.group select').nth(1)).to_have_value('BACHELOR_RECORD')
+   page.locator('.group select').nth(0).select_option('BACHELOR_RECORD');expect(page.locator('.field input:checked')).to_have_count(4)
    page.locator('.group select').nth(1).select_option('MASTER_RECORD');expect(page.locator('.field input:checked')).to_have_count(4)
    page.locator('#fillSelected').click();expect(page.locator('#result')).to_contain_text('回读通过 4')
    values=rpc({'type':'inspect'})['data']['values'];require(values['aschool']=='FICTIONAL_BACHELOR_SCHOOL' and values['bschool']=='FICTIONAL_MASTER_SCHOOL','record binding followed import order instead of explicit choice')
