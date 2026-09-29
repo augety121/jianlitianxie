@@ -11,7 +11,7 @@ NAME='FICTIONAL_PAGE_USER';EMAIL='fictional@example.invalid';context=None;report
 class Fixture(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
   if self.path=='/unmatched':
-   fields=''.join(f'<label>已有字段{i}<input value="测试内容"></label>' for i in range(13))+''.join(f'<label>未知字段{i}<input></label>' for i in range(6))+'<label>附件<input type="file"></label>'
+   fields=''.join(f'<label>已有字段{i}<input value="测试内容"></label>' for i in range(13))+''.join(f'<label>未知字段{i}<input></label>' for i in range(5))+'<input id="opaque_field_5">'+'<label>附件<input type="file"></label>'
   elif self.path.startswith('/learn'):
    fields='<section data-section="基本信息"><label>姓名<input id="name"></label><label>邮箱<input id="email" type="email"></label><label>兴趣爱好<input id="hobby"></label><label>密码<input id="secret" type="password"></label></section>'
   elif self.path=='/projects':
@@ -141,7 +141,10 @@ try:
    data=worker.evaluate('()=>chrome.storage.local.get("resumeLocalReceiptsV1")');raw=json.dumps(data,ensure_ascii=False)
    require(NAME not in raw and EMAIL not in raw and base not in raw and 'SYNTHETIC USER HOBBY' not in raw,'private data in receipts')
    rows=data['resumeLocalReceiptsV1'];require(any(r['stage']=='fill' and any(f['status']=='verified' for f in r['fields']) for r in rows),'page fill missing log')
-   require(any(f.get('code')=='field-unrecognized' for r in rows for f in r['fields']),'recognition failure incorrectly attributed to missing profile data')
+   # A custom but explicit label is not a failed DOM label read. The sixth fixture
+   # field genuinely has no label, while the other five have known label sources.
+   require(any(f.get('code')=='field-unrecognized' and f.get('recognition',{}).get('labelSource')=='attribute' for r in rows for f in r['fields']),'unlabelled control incorrectly attributed to missing profile data')
+   require(any(f.get('code')=='no-label-match' and f.get('recognition',{}).get('labelSource')=='label' for r in rows for f in r['fields']),'explicit custom label incorrectly treated as DOM recognition failure')
   step('page-fill-and-unmatched-receipts-record-no-profile-or-URL',logs)
   def record_flow():
    manager.bring_to_front();manager.locator('[data-view=profile]').click()
