@@ -8,8 +8,8 @@ export class FrameBroker {
   }
   async invoke(tabId, frame, action, argument) {
     if (action === 'apply' && frame.frameId !== 0) throw Error('嵌入文档本次仅扫描，请单独打开后填写');
-    if (action === 'locate' && frame.frameId !== 0) throw Error('嵌入文档仅扫描，请单独打开后定位');
-    if (!['scan','apply','cancel','locate'].includes(action)) throw Error('不支持的控件操作');
+    if (['locate','capture'].includes(action) && frame.frameId !== 0) throw Error('嵌入文档仅扫描，请单独打开后定位');
+    if (!['scan','apply','cancel','locate','capture'].includes(action)) throw Error('不支持的控件操作');
     const target = frame.documentId ? {tabId, documentIds: [frame.documentId]} : {tabId, frameIds: [frame.frameId]};
     const results = await this.chrome.scripting.executeScript({target, func: async (a, arg) => {
       if(a==='cancel')return globalThis.__resumeFillEngine?.cancel();

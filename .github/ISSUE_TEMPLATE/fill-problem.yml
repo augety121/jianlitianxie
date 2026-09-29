@@ -1,0 +1,44 @@
+name: 填写问题与诊断日志
+description: 复现、导出无内容诊断，并描述预期和实际结果。
+title: "[填写问题] "
+body:
+  - type: markdown
+    attributes:
+      value: "本地0.7.1候选提供诊断；GitHub0.6.0运行代码尚无新日志。先开启诊断，复现一次再停止。请只上传已预览的日志JSON或虚构最小页面；不要上传真实简历、网页HTML、截图中的个人信息、Cookie、配对码或完整岗位链接。"
+  - type: input
+    id: version
+    attributes:
+      label: 插件实际版本与来源
+      description: 以浏览器扩展详情或诊断页版本为准；注明GitHub分支或本地候选包。
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 运行方式
+      options:
+        - 本地工作台
+        - 临时MCP分享
+        - 旧MCP抽屉
+        - 旧MCP独立面板
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 操作、预期与实际结果
+      description: 不写真实个人内容；可描述控件类型和诊断字段编号。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: 已预览的诊断文件或固定原因码
+      description: 可以拖入JSON；日志不包含字段名称，必要时提供虚构复现页面。
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 公开反馈确认
+      options:
+        - label: 我已检查附件与描述，不含个人资料、口令、配对码或Cookie。
+          required: true

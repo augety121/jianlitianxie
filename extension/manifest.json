@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "简历填写 · 本地资料与 MCP",
-  "version": "0.5.0",
-  "description": "本地加密资料、同源嵌入表单扫描、逐项映射与授权填写；MCP 可选，默认不上传，不自动提交。",
+  "name": "简历填写 · 本地速填",
+  "version": "0.10.0",
+  "description": "上传PDF/Word简历、本地解析与逐条核对、补填空白项、确认后修正已有内容；保留资料与自动脱敏日志。",
   "permissions": [
     "activeTab",
     "scripting",
@@ -20,7 +20,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "打开简历填写助手",
+    "default_title": "本地扫描与填写",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -28,7 +28,7 @@
     }
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; connect-src http://127.0.0.1:19327"
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; worker-src 'self'; connect-src 'self' http://127.0.0.1:19327"
   },
   "icons": {
     "16": "icons/icon16.png",
@@ -41,7 +41,7 @@
     "webNavigation"
   ],
   "options_ui": {
-    "page": "workspace.html",
+    "page": "local.html",
     "open_in_tab": true
   }
 }

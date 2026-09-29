@@ -1,6 +1,6 @@
 {
   "name": "jianlitianxie",
-  "version": "0.5.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,6 +16,17 @@
     "test:ui": "python tests/transport-ui.py",
     "bench:transport": "node tests/transport-bench.mjs",
     "test:workspace": "python tests/workspace-ui.py",
-    "test:mv3": "python tests/workspace-mv3.py"
+    "test:mv3": "python tests/workspace-mv3.py",
+    "test:compatibility": "python tests/compatibility-browser.py",
+    "test:local": "python tests/local-first-browser.py",
+    "test:local-mv3": "python tests/local-first-mv3.py",
+    "test:jev": "python tests/jev-execution-browser.py",
+    "bench:jev": "python tests/jev-local-bench.py",
+    "test:page-mv3": "python tests/page-entry-mv3.py",
+    "test:oneclick": "python tests/oneclick-browser.py && python tests/picker-layout.py",
+    "test:learn": "python tests/learn-browser.py"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
   }
 }

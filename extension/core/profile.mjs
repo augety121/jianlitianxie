@@ -1,4 +1,6 @@
 import {normalize, semanticLabel, scope} from './semantics.mjs';
+import {normalizeTextVariants} from './text-variants.mjs';
+import {normalizePresets} from './profile-presets.mjs';
 /** Strict, bounded facts. Only this schema is persisted; never spread imported objects. */
 export const MAX_PROFILE_BYTES = 2 * 1024 * 1024;
 export const MAX_FACTS = 1000;
@@ -39,6 +41,7 @@ export function normalizeFact(raw) {
     source: text(raw.source, '来源', 500, true),
     aliases: strings(raw.aliases, '字段别名'),
     entityAliases: strings(raw.entityAliases, '经历别名'), origin,
+    ...(raw.textVariants!==undefined?{textVariants:normalizeTextVariants(raw.textVariants,raw.label)}:{}),
     confirmed: raw.confirmed === true, conflict: raw.conflict === true
   };
 }
@@ -53,6 +56,7 @@ export function normalizeProfile(raw) {
     revision: Number.isSafeInteger(raw.revision) && raw.revision >= 0 ? raw.revision : 0,
     facts
   };
+  if(raw.presets!==undefined)result.presets=normalizePresets(raw.presets,facts);
   if (encoder.encode(JSON.stringify(result)).length > MAX_PROFILE_BYTES) throw Error('资料总大小超过2MB');
   return result;
 }
@@ -117,6 +121,7 @@ export function fromJsonResume(raw) {
 }
 
 const importKey = f => JSON.stringify([scope(f.section)||normalize(f.section), normalize(f.entity), semanticLabel(f.label,f.section), f.origin || '']);
+const sameContent=(a,b)=>a.value===b.value&&JSON.stringify(a.textVariants||[])===JSON.stringify(b.textVariants||[]);
 /** Preview semantic duplicates/changes before any write; IDs from files are never trusted. */
 export function planImport(existing, incoming) {
   const old=normalizeProfile({facts:existing}).facts, fresh=normalizeProfile({facts:incoming}).facts;
@@ -124,9 +129,9 @@ export function planImport(existing, incoming) {
   const batch=new Map();
   return fresh.map(f=>{
     const key=importKey(f), previous=seen.get(key)||[], earlier=batch.get(key)||[]; batch.set(key,[...earlier,f]);
-    if(earlier.some(a=>a.value===f.value))return {fact:f,status:'duplicate',reason:'本文件内的相同内容已合并',existingIds:[]};
+    if(earlier.some(a=>sameContent(a,f)))return {fact:f,status:'duplicate',reason:'本文件内的相同内容已合并',existingIds:[]};
     if(earlier.length)return {fact:f,status:'conflict',reason:'本文件同一字段提供不同内容，请先修正文件',existingIds:[]};
-    if(previous.some(a=>a.value===f.value))return {fact:f,status:'duplicate',reason:'资料库已有相同内容，保留核实状态',existingIds:previous.map(a=>a.id)};
+    if(previous.some(a=>sameContent(a,f)))return {fact:f,status:'duplicate',reason:'资料库已有相同内容，保留核实状态',existingIds:previous.map(a=>a.id)};
     return {fact:f,status:previous.length?'change':'new',reason:previous.length?'与资料库内容不同，默认保留原值':'新增待核实资料',existingIds:previous.map(a=>a.id)};
   });
 }

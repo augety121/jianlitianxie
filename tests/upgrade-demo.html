@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>简历速填 0.8.5 验证页</title>
+<style>body{max-width:900px;margin:32px auto;font:16px/1.7 'Microsoft YaHei',sans-serif;color:#223748;background:#f7faf9}fieldset{background:white;border:1px solid #cadbd5;border-radius:12px;margin:18px 0;padding:20px}label{display:block;margin:8px 0}input,textarea,select{padding:8px;border:1px solid #b6c8c0;border-radius:6px;display:block;width:90%;font:inherit}textarea{height:110px}button{background:#21634d;color:white;border:0;border-radius:8px;padding:12px 20px;margin:8px}pre{white-space:pre-wrap;background:#eaf2ee;padding:16px}small{color:#587568}</style>
+<h1>简历速填验证页</h1><p>全部为虚构资料。本页测试真实识别、匹配和回读代码，不代表已安装扩展或已验证招聘网站。</p>
+<button id="scan">扫描并预览</button><button id="fill" disabled>填写已匹配项</button><button id="add">显示下一段项目</button>
+<pre id="report">等待扫描</pre>
+<fieldset><legend>基本信息</legend><input id="mail" autocomplete="email" placeholder="candidate@example.invalid"><label>姓名<input id="name" value="网页已有姓名"></label><label>期望薪资<input type="number" id="salary"></label><label>四级成绩<input type="number" id="score"></label><input id="otp" autocomplete="ONE-TIME-CODE" placeholder="6位验证码"></fieldset>
+<fieldset data-entity="演示项目甲"><legend>项目经历 演示项目甲</legend><label>项目介绍（500字内）<textarea id="projectA" aria-label="项目描述" maxlength="500"></textarea></label><small>预期：填入同一项目的400字中版，保留完整句子。</small></fieldset>
+<fieldset data-entity="演示项目乙"><legend>项目经历 演示项目乙</legend><label>项目描述<textarea id="projectB" maxlength="60"></textarea></label></fieldset>
+<fieldset><legend>工作经历</legend><div class="form-item"><label for="employer">公司名称</label><input id="employer"><input id="role" autocomplete="organization-title" placeholder="示例职位"></div></fieldset>
+<div id="later"></div><script src="../extension/engine.js"></script><script type="module">
+import {makePlan} from '../extension/core/planner.mjs';
+let current;
+const f=(id,label,value,section='基本信息',entity='',extra={})=>({id,label,value,section,entity,source:'虚构验收资料',confirmed:true,...extra});
+const facts=[f('email','邮箱','demo@example.invalid'),f('salary','期望薪资','面议'),f('score','英语四级成绩','386', '基本信息'),f('a','项目描述','完整描述。'.repeat(160),'项目经历','演示项目甲',{textVariants:[{name:'中版',value:'项目甲中版。以测试数据验证。'.repeat(25)},{name:'短版',value:'项目甲采用合成数据验证表单填写，并回读结果。'}]}),f('b','项目描述','项目乙的独立描述，不应与项目甲混合。','项目经历','演示项目乙'),f('c','项目描述','新展开的项目需要重新扫描。','项目经历','演示项目丙'),f('employer','公司名称','演示单位','工作经历'),f('role','职位名称','演示工程师','工作经历')];
+document.querySelector('#scan').onclick=async()=>{const s=await __resumeFillEngine.scan();current=makePlan(s,{facts});document.querySelector('#report').textContent=current.entries.map(e=>`${e.label}：${e.status} — ${e.reason}${e.value!==undefined?'（'+String(e.value).length+'字）':''}`).join('\n');document.querySelector('#fill').disabled=false;};
+document.querySelector('#fill').onclick=async()=>{const r=await __resumeFillEngine.apply(current);document.querySelector('#report').textContent=JSON.stringify(r,null,2);document.querySelector('#fill').disabled=true;};
+document.querySelector('#add').onclick=()=>{document.querySelector('#later').innerHTML='<fieldset data-entity="演示项目丙"><legend>项目经历 演示项目丙</legend><label>项目描述<textarea id="projectC"></textarea></label></fieldset>';document.querySelector('#add').disabled=true;};
+</script></html>

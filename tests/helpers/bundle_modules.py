@@ -11,7 +11,10 @@ def bundle(entry):
         key=str(path)
         if key in known:return key
         known.add(key)
-        source=path.read_text()
+        source=path.read_text(encoding='utf-8')
+        # Preserve each module's URL when embedding it in a classic-script UI fixture.
+        # These fixtures do not load PDF workers; PDF byte extraction has separate tests.
+        source=source.replace('import.meta.url',json.dumps(path.as_uri()))
         imp=re.compile(r"^\s*import\s*\{([^}]+)\}\s*from\s*['\"]([^'\"]+)['\"];?",re.M)
         bindings=[]
         for match in imp.finditer(source):
@@ -21,6 +24,15 @@ def bundle(entry):
         source=imp.sub('',source)
         exported=re.findall(r'\bexport\s+(?:async\s+)?(?:function|class|const|let)\s+(\w+)',source)
         source=re.sub(r'\bexport\s+(?=(?:async\s+)?(?:function|class|const|let)\b)','',source)
+        named=re.findall(r'\bexport\s*\{([^}]+)\}\s*;?',source)
+        for group in named:
+            for name in group.split(','):
+                name=name.strip()
+                if not re.fullmatch(r'[A-Za-z_$][\w$]*',name):raise ValueError('Unsupported named test export: '+name)
+                exported.append(name)
+        source=re.sub(r'\bexport\s*\{[^}]+\}\s*;?','',source)
+        exported=list(dict.fromkeys(exported))
+
         if re.search(r'^\s*(?:import|export)\s',source,re.M):raise ValueError('Unsupported test bundle syntax: '+key)
         modules.append(f'M[{json.dumps(key)}]=await(async()=>{{\n'+ '\n'.join(bindings)+'\n'+source+'\nreturn {'+','.join(exported)+'};\n})();')
         return key

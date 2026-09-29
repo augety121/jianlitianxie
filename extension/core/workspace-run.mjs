@@ -1,5 +1,8 @@
+import {numericMetrics,sumMetrics} from './performance.mjs';
+import {resolveRecords} from './record-resolver.mjs';
 import {makePlan} from './planner.mjs';
 import {entityGroups,factMatchesBinding} from './entity-binding.mjs';
+import {normalize,semanticLabel} from './semantics.mjs';
 import {PLAN_TTL, selectedFacts, sensitive, redactSnapshot} from './workspace-policy.mjs';
 /** One explicit user task. Private values stay in the trusted worker until selected for a write. */
 export class WorkspaceRun {
@@ -16,7 +19,12 @@ export class WorkspaceRun {
       const observed = await this.broker.scan(request.tabId, request.includeFrames === true);
       if (epoch !== this.epoch || !this.vault.unlocked || this.vault.read().revision !== profile.revision) throw Error('扫描被取消或资料已修改');
       this.job = {...observed, id: crypto.randomUUID(), owner, tabId: request.tabId, revision: profile.revision,
-        facts, expiresAt: this.clock() + PLAN_TTL, frames: observed.frames.map(f => ({...f, mappings: {}, entityBindings: {}}))};
+        facts, reviewExisting:request.reviewExisting===true, expiresAt: this.clock() + PLAN_TTL, frames: observed.frames.map(f => ({...f, mappings: {}, entityBindings: {},corrections:{}}))};
+      if(request.autoBindEmpty===true)for(const frame of this.job.frames){
+        if(frame.frameId!==0)continue;
+        const resolved=resolveRecords(frame.snapshot,facts);
+        frame.entityBindings=resolved.bindings;frame.bindingMethods=resolved.methods;
+      }
       return this.preview();
     } finally { this.busy = false; }
   }
@@ -30,9 +38,9 @@ export class WorkspaceRun {
   preview() {
     const j = this.job, entries = [], groups = [];
     for (const f of j.frames) {
-      f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings, f.entityBindings);
+      f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings, f.entityBindings,{reviewExisting:j.reviewExisting,corrections:f.corrections});
       groups.push(...entityGroups(f.snapshot,j.facts,f.entityBindings).map(g=>({...g,id:`${f.frameId}:${g.id}`,
-        frameId:f.frameId,fieldIds:g.fieldIds.map(id=>`${f.frameId}:${id}`),bindable:g.bindable&&f.frameId===0,
+        frameId:f.frameId,bindingMethod:f.bindingMethods?.[g.id]||'manual',fieldIds:g.fieldIds.map(id=>`${f.frameId}:${id}`),bindable:g.bindable&&f.frameId===0,
         reason:f.frameId===0?g.reason:'嵌入文档仅扫描，请单独打开后绑定'})));
       // The retained executor has no parent-frame hit test. Never send values there.
       if(f.frameId!==0)f.plan.entries=f.plan.entries.map(e=>{
@@ -43,6 +51,7 @@ export class WorkspaceRun {
         origin: new URL(f.snapshot.url).origin, sensitive: sensitive(e.label), required: !!e.required});
     }
     return {id: j.id, expiresAt: j.expiresAt, origin: new URL(j.url).origin, entries, groups,
+      performance:{scan:sumMetrics(j.frames.map(f=>f.plan.performance?.scan)),match:sumMetrics(j.frames.map(f=>f.plan.performance?.match))},
       frames: j.frames.map(f => ({frameId: f.frameId, fields: f.snapshot.fields.length, coverage: f.snapshot.coverage})),
       skipped: j.skipped, includeFrames: j.includeFrames, capabilities:{locate:true,embeddedWrite:false}};
   }
@@ -54,7 +63,37 @@ export class WorkspaceRun {
     const field=f.snapshot.fields.find(e=>e.id===fieldId),entity=f.entityBindings?.[field.groupId];
     if(factId&&entity&&!factMatchesBinding(j.facts.find(x=>x.id===factId),field,entity))throw Error('该资料不属于已绑定的经历和分区');
     if (factId) f.mappings[fieldId] = factId; else delete f.mappings[fieldId];
+    delete f.corrections?.[fieldId];
     j.id = crypto.randomUUID(); return this.preview();
+  }
+  approveCorrection(owner,{planId,id,reviewed}){
+    if(this.busy||reviewed!==true)throw Error('请先核对该字段的旧值和新值');
+    const j=this.current(owner,planId),f=j.frames.find(f=>f.frameId===0&&f.plan.entries.some(e=>`0:${e.fieldId}`===id));
+    const entry=f?.plan.entries.find(e=>`0:${e.fieldId}`===id);
+    if(!entry||entry.status!=='review')throw Error('该字段没有可确认的修正');
+    f.corrections[entry.fieldId]=true;j.id=crypto.randomUUID();return this.preview();
+  }
+  bindInOrder(owner,{planId,reviewed}){
+    if(this.busy||reviewed!==true)throw Error('请核对按简历顺序匹配经历');
+    const j=this.current(owner,planId),f=j.frames.find(f=>f.frameId===0);if(!f)throw Error('没有主页面');
+    const groups=entityGroups(f.snapshot,j.facts,f.entityBindings),used=new Set(Object.values(f.entityBindings));
+      const occupied=x=>x.value!==''&&x.value!=null&&x.value!==false&&(!Array.isArray(x.value)||x.value.length>0);
+      // Reserve existing records before assigning empty cards, even if the empty card
+      // appears earlier in DOM order. Ambiguous existing anchors reserve all possibilities.
+      for(const g of groups){
+        const fields=f.snapshot.fields.filter(x=>g.fieldIds.includes(x.id));if(!g.bindable||!fields.some(occupied))continue;
+        const anchors=fields.filter(x=>occupied(x)&&['学校','公司名称','项目名称','证书名称'].includes(semanticLabel(x.label,x.section)));
+        const possible=g.candidates.filter(c=>anchors.length&&anchors.every(x=>j.facts.some(a=>a.entity===c.entity&&factMatchesBinding(a,x,c.entity)&&semanticLabel(a.label,a.section)===semanticLabel(x.label,x.section)&&normalize(a.value)===normalize(x.value))));
+        for(const c of possible.length?possible:g.candidates)used.add(c.entity);
+      }
+    for(const g of groups){
+      if(!g.bindable||g.entity)continue;
+      const fields=f.snapshot.fields.filter(x=>g.fieldIds.includes(x.id));
+        if(fields.some(occupied))continue;
+      const selected=g.candidates.find(c=>!used.has(c.entity));if(!selected)continue;
+      f.entityBindings[g.id]=selected.entity;used.add(selected.entity);
+    }
+    f.corrections={};j.id=crypto.randomUUID();return this.preview();
   }
   bindEntity(owner,{planId,groupId,entity}) {
     if(this.busy)throw Error('请等待当前操作');
@@ -67,7 +106,7 @@ export class WorkspaceRun {
     if(!group.bindable||entity&&!group.candidates.some(c=>c.entity===entity))throw Error('请选择本次同分区的真实经历');
     f.entityBindings||={};
     if(entity)f.entityBindings[id]=entity;else delete f.entityBindings[id];
-    for(const fieldId of group.fieldIds)delete f.mappings[fieldId];
+    for(const fieldId of group.fieldIds){delete f.mappings[fieldId];delete f.corrections?.[fieldId];}
     j.id=crypto.randomUUID();return this.preview();
   }
   async locate(owner, {planId, id}) {
@@ -85,7 +124,7 @@ export class WorkspaceRun {
     if (reviewed !== true || !Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length || ids.some(id => !allowed.has(id))) throw Error('须核对并明确选择当前可填写字段');
     this.busy = true; const epoch = this.epoch, selected = new Set(ids); this.job = null;
     this.running = j;
-    const results = []; let halt = false;
+    const results = [], metrics=[]; let halt = false;
     try {
       for (const f of j.frames) {
         const entries = f.plan.entries.filter(e => selected.has(`${f.frameId}:${e.fieldId}`));
@@ -98,7 +137,8 @@ export class WorkspaceRun {
           // stop()/expiry may have happened while tabs.get() was pending.
           if(epoch!==this.epoch||!this.vault.unlocked||this.clock()>=j.expiresAt){results.push(...ids.map(id=>({id,status:'cancelled'})));halt=true;continue;}
           // Only the chosen entries, never the full profile or skipped values, cross into the page.
-          const r = (await this.broker.invoke(j.tabId, {frameId:f.frameId,documentId:f.documentId}, 'apply', {...f.plan, entries})).result;
+          const r = (await this.broker.invoke(j.tabId, {frameId:f.frameId,documentId:f.documentId}, 'apply', {...f.plan, expiresAt:j.expiresAt, entries})).result;
+          metrics.push(numericMetrics(r.performance));
           const known = new Set(['verified','invalid','stale','manual','needs-user','cancelled','not-attempted','preserve']);
           if (!Array.isArray(r.results) || new Set(r.results.map(x => x.fieldId)).size !== r.results.length ||
             r.results.some(x => !entries.some(e => e.fieldId === x.fieldId) || !known.has(x.status))) throw Error('回读不符合所选范围');
@@ -107,7 +147,7 @@ export class WorkspaceRun {
           if (r.results.some(x => x.status !== 'verified' && x.status !== 'preserve') || r.results.length !== entries.length) halt = true;
         } catch { halt = true; results.push(...ids.map(id => ({id, status: 'needs-user'}))); }
       }
-      return {results, submitted: false, saved: false};
+      return {results, performance:sumMetrics(metrics), submitted: false, saved: false};
     } finally { this.running = null; this.busy = false; }
   }
   async stop() {

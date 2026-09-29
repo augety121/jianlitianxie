@@ -1,0 +1,42 @@
+import {semanticLabel,scope} from './semantics.mjs';
+// Only known semantic vocabulary is exported. Unknown labels may contain PII.
+const names=['姓名','手机号码','邮箱','性别','出生日期','政治面貌','学校','学院','专业','学历','学位','学习形式','开始月份','结束月份','预计毕业月份','公司名称','职位名称','部门名称','岗位职责','项目名称','项目角色','项目描述','项目职责','项目成果','作品链接','自我评价','证书名称','获奖名称','获奖时间','获得日期','绩点','平均分','专业排名','英语四级成绩','主修课程','教育经历描述','语言类型','掌握程度'];
+const known=new Map(names.map(n=>[semanticLabel(n),n]));
+export const diagnosticCodes={
+ 'no-label-match':['matching','没有同字段且同分区的已确认资料','查看规范字段和分区；在导入页补齐或修正字段名称'],
+ 'record-unbound':['record','尚未唯一对应具体经历','在核对页选择这张卡片对应的学校、公司或项目'],
+ 'ambiguous-source':['matching','同一字段仍有多个候选','检查重复资料或同名经历，指定唯一来源'],
+ 'date-precision':['validation','日期精度不足','补充真实日期；不会自行推断日期'],
+ 'option-unavailable':['options','当前候选中没有唯一匹配','先选上级选项再扫描；检查下拉框适配'],
+ 'text-too-long':['validation','已确认正文均超过字数限制','补充已核实短版正文'],
+ 'number-required':['validation','目标仅接受数字','无法填写面议等文字时由本人填写'],
+ 'existing-difference':['review','现有内容与资料不同','在核对页查看旧值、新值后确认修正'],
+ 'existing-consistent':['review','现有内容与资料一致','保留，无需处理'],
+ 'existing-unverified':['review','保留现有内容，但未能核实是否正确','按证据代码检查资料，不能将保留当作核验通过'],
+ 'restricted-control':['policy','附件或声明需要人工操作','在申请页选择附件或确认声明'],
+ 'matched':['matching','字段与具体经历已对应','等待执行或查看填写回读'],
+ 'readback-failed':['readback','写入后的值或有效性未通过检查','查看网页实际内容；不要盲目重试'],
+ 'target-changed':['execution','执行时页面或字段发生变化','重新扫描，保留本人已修改内容'],
+ 'verified':['readback','本页回读通过','仍需本人检查；不代表网站已保存或提交'],
+ 'unclassified':['unknown','本阶段证据不足','查看操作阶段和状态，提供最小复现']
+};
+export function fieldDiagnostic(e,facts=[],bindingMethod='none'){
+ const key=semanticLabel(e.dateLabel||e.label,e.section),kind=scope(e.section);
+ const same=facts.filter(f=>[f.label,...f.aliases||[]].some(l=>semanticLabel(l,f.section)===key));
+ const scoped=same.filter(f=>!kind||!scope(f.section)||scope(f.section)===kind);
+ const code=e.reasonCode||({ready:'matched',verified:'verified',invalid:'readback-failed',stale:'target-changed','needs-user':'readback-failed'}[e.status])||'unclassified';
+ return {code,semantic:known.get(key)||'unknown',section:kind||'unknown',binding:bindingMethod,kind:e.kind,optionCount:e.optionCount,required:e.required,
+  sourceCount:same.length,scopedCount:scoped.length,confirmedCount:scoped.filter(f=>f.confirmed===true&&!f.conflict).length,
+  candidateCount:e.candidateIds?.length??(e.factId?1:0),hasExisting:e.oldValue!==''&&e.oldValue!=null&&e.oldValue!==false,
+  evidenceCode:e.evidenceCode};
+}
+export function cleanDiagnostic(d){
+ const n=v=>Number.isSafeInteger(v)&&v>=0?Math.min(v,20000):0;
+ return {semantic:[...known.values()].includes(d.semantic)?d.semantic:'unknown',section:['personal','education','work','project','certificate','award','family','language','contact'].includes(d.section)?d.section:'unknown',binding:['anchor','source-order','manual'].includes(d.binding)?d.binding:'none',kind:['text','textarea','email','tel','date','month','number','select','select-one','custom-select','custom-radio','radio-group','file','checkbox','repeat-group','contenteditable'].includes(d.kind)?d.kind:'unknown',optionCount:n(d.optionCount),required:d.required===true,
+  sourceCount:n(d.sourceCount),scopedCount:n(d.scopedCount),confirmedCount:n(d.confirmedCount),candidateCount:n(d.candidateCount),hasExisting:d.hasExisting===true,
+  ...(Object.hasOwn(diagnosticCodes,d.evidenceCode)?{evidenceCode:d.evidenceCode}:{})};
+}
+export function explainDiagnostic(f){
+ const [stage,reason,action]=diagnosticCodes[f.code]||diagnosticCodes.unclassified;
+ return `#${f.index} ${f.semantic||'unknown'} / ${f.section||'unknown'} · ${f.status}\n  控件：${f.kind||'unknown'}；候选选项 ${f.optionCount||0}；${f.required?'必填':'未标记必填'}\n  阶段：${stage}；原因：${reason}\n  资料：同字段 ${f.sourceCount||0} → 同分区 ${f.scopedCount||0} → 已确认 ${f.confirmedCount||0} → 最终候选 ${f.candidateCount||0}；经历对应：${f.binding||'none'}${f.evidenceCode?'；底层原因：'+f.evidenceCode:''}\n  处理：${action}`;
+}

@@ -48,7 +48,7 @@ try:
     step('installed-worker-create-import-confirm-and-ciphertext-storage',create_import)
     def scan_main():
         page.locator('[data-view=fill]').click();page.locator('#scan').click();expect(page.locator(".field-card")).to_have_count(2)
-        require(page.locator('#fillSelected').is_disabled(),'review missing');page.locator('#reviewed').check();page.locator('#fillSelected').click();expect(page.locator("#result")).to_contain_text("回读通过 2")
+        page.locator('button[aria-label="姓名 资料映射"]').click();expect(page.locator('#mappingDialog')).to_be_visible();page.locator('#mappingChoices button').first.click();expect(page.locator('#mappingDialog')).to_be_hidden();require(page.locator('#fillSelected').is_disabled(),'review missing');page.locator('#reviewed').check();page.locator('#fillSelected').click();expect(page.locator("#result")).to_contain_text("回读通过 2")
         require(target.locator('#name').input_value()==NAME,'name not retained');require(target.locator('#email').input_value()==EMAIL,'email not retained');require(target.evaluate('submitted')==0,'submitted');require(target.locator('#secret').input_value()=='','password changed')
     step('real-runtime-messaging-document-target-and-independent-DOM-readback',scan_main)
     def boundaries():

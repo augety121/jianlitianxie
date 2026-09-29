@@ -26,6 +26,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install Node test dependencies
+        run: npm ci --ignore-scripts
       - name: Unit and release checks
         run: npm test && npm run check
 
@@ -44,7 +46,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py
+        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick && npm run test:learn
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -99,11 +101,52 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: Installed extension and local-only MCP fixture
-        run: npm run test:mv3
+        run: npm run test:mv3 && npm run test:local-mv3 && npm run test:page-mv3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: installed-mv3-verification
-          path: test-results/workspace-mv3.json
+          path: |
+            test-results/workspace-mv3.json
+            test-results/local-first-mv3.json
+            test-results/local-first-installed.png
+            test-results/page-entry-mv3.json
+            test-results/page-entry-installed.png
+            test-results/single-field-picker-installed.png
+            test-results/learn-review-installed.png
+            test-results/learn-reused-installed.png
+          if-no-files-found: error
+          retention-days: 14
+
+  jev-local-matched:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_performance == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: 8cdb273fc725ec6f771727456dfda02da5b05e58
+          path: baseline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test-only browser
+        working-directory: candidate
+        run: |
+          python -m pip install -r requirements-test.txt
+          python -m playwright install --with-deps chromium
+      - name: Alternating comparison with independent value and scan-contract verification
+        working-directory: candidate
+        run: npm run bench:jev -- --baseline-root ../baseline --pairs 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jev-local-matched-raw
+          path: candidate/test-results/jev-local-matched.json
           if-no-files-found: error
           retention-days: 14
