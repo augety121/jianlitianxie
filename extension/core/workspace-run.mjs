@@ -40,7 +40,7 @@ export class WorkspaceRun {
     for (const f of j.frames) {
       f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings, f.entityBindings,{reviewExisting:j.reviewExisting,corrections:f.corrections});
       groups.push(...entityGroups(f.snapshot,j.facts,f.entityBindings).map(g=>({...g,id:`${f.frameId}:${g.id}`,
-        frameId:f.frameId,bindingMethod:f.bindingMethods?.[g.id]||'manual',fieldIds:g.fieldIds.map(id=>`${f.frameId}:${id}`),bindable:g.bindable&&f.frameId===0,
+        frameId:f.frameId,bindingMethod:f.bindingMethods?.[g.id]||(g.entity?'manual':'none'),fieldIds:g.fieldIds.map(id=>`${f.frameId}:${id}`),bindable:g.bindable&&f.frameId===0,
         reason:f.frameId===0?g.reason:'嵌入文档仅扫描，请单独打开后绑定'})));
       // The retained executor has no parent-frame hit test. Never send values there.
       if(f.frameId!==0)f.plan.entries=f.plan.entries.map(e=>{

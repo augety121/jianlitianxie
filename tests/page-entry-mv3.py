@@ -141,7 +141,7 @@ try:
    data=worker.evaluate('()=>chrome.storage.local.get("resumeLocalReceiptsV1")');raw=json.dumps(data,ensure_ascii=False)
    require(NAME not in raw and EMAIL not in raw and base not in raw and 'SYNTHETIC USER HOBBY' not in raw,'private data in receipts')
    rows=data['resumeLocalReceiptsV1'];require(any(r['stage']=='fill' and any(f['status']=='verified' for f in r['fields']) for r in rows),'page fill missing log')
-   require(any(f.get('code')=='no-label-match' for r in rows for f in r['fields']),'fixed unmatched code not logged')
+   require(any(f.get('code')=='field-unrecognized' for r in rows for f in r['fields']),'recognition failure incorrectly attributed to missing profile data')
   step('page-fill-and-unmatched-receipts-record-no-profile-or-URL',logs)
   def record_flow():
    manager.bring_to_front();manager.locator('[data-view=profile]').click()
