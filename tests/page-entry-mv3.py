@@ -14,6 +14,8 @@ class Fixture(http.server.BaseHTTPRequestHandler):
    fields=''.join(f'<label>已有字段{i}<input value="测试内容"></label>' for i in range(13))+''.join(f'<label>未知字段{i}<input></label>' for i in range(6))+'<label>附件<input type="file"></label>'
   elif self.path.startswith('/learn'):
    fields='<section data-section="基本信息"><label>姓名<input id="name"></label><label>邮箱<input id="email" type="email"></label><label>兴趣爱好<input id="hobby"></label><label>密码<input id="secret" type="password"></label></section>'
+  elif self.path=='/projects':
+   fields='<section><h2>项目经历</h2><div class="card"><label>项目名称<input id="projectA"></label><label>项目描述<textarea id="bodyA"></textarea></label></div><div class="card"><label>项目名称<input id="projectB" value="虚构项目甲"></label><label>项目描述<textarea id="bodyB"></textarea></label></div></section>'
   else:fields='<label>姓名<input id="name" autocomplete="name"></label><label>邮箱<input type="email" id="email"></label><label>性别<input id="gender"></label><label>密码<input type="password" id="secret"></label>'
   body=f'''<!doctype html><meta charset="utf-8"><title>虚构申请页 · 测试</title><style>body{{font:16px system-ui;padding:40px;background:#f5f7fa}}form{{background:white;padding:24px;width:560px;max-width:70%;border-radius:14px}}label{{display:block;margin:12px 0}}input{{display:block;padding:10px;max-width:90%}}h1{{font-size:25px}}</style><h1>虚构招聘申请表</h1><p>仅用于安装后的填写回归，不发送申请。</p><form id="app">{fields}<button>提交（测试）</button></form><script>window.submitted=0;app.onsubmit=e=>{{e.preventDefault();submitted++;}};</script>'''
   self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.end_headers();self.wfile.write(body.encode())
@@ -141,6 +143,17 @@ try:
    rows=data['resumeLocalReceiptsV1'];require(any(r['stage']=='fill' and any(f['status']=='verified' for f in r['fields']) for r in rows),'page fill missing log')
    require(any(f.get('code')=='no-label-match' for r in rows for f in r['fields']),'fixed unmatched code not logged')
   step('page-fill-and-unmatched-receipts-record-no-profile-or-URL',logs)
+  def record_flow():
+   manager.bring_to_front();manager.locator('[data-view=profile]').click()
+   records='## 项目经历 | 甲\n项目名称：虚构项目甲\n项目描述：虚构甲的独立描述\n## 项目经历 | 乙\n项目名称：虚构项目乙\n项目描述：虚构乙的独立描述'
+   manager.locator('#importFile').set_input_files({'name':'records.md','mimeType':'text/markdown','buffer':records.encode()});expect(manager.locator('.import-row')).to_have_count(4)
+   manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text('8')
+   target.bring_to_front();target.goto(base+'/projects');expect(target.locator('#resume-local-assistant')).to_be_visible();wait_text('无需先点扫描');click('填写简历');wait_text('回读通过 3 项')
+   require(target.locator('#projectA').input_value()=='虚构项目乙','blank card duplicated populated record')
+   require(target.locator('#bodyA').input_value()=='虚构乙的独立描述','wrong blank-card description')
+   require(target.locator('#projectB').input_value()=='虚构项目甲' and target.locator('#bodyB').input_value()=='虚构甲的独立描述','existing record was mixed')
+   require(target.evaluate('submitted')==0,'record workflow submitted application')
+  step('installed-oneclick-resolves-records-before-filling-without-manual-binding',record_flow)
   def offline():require(not [u for u in requests if not u.startswith((base+'/',origin+'/','data:','blob:'))],'external or MCP request observed')
   step('local-page-workflow-makes-no-observed-external-or-MCP-requests',offline)
   report['scope']='Real installed extension/runtime/storage/scripting/closed Shadow DOM; test CDP inspects elements and sends mouse input; only localhost permission and initial toolbar grant seeded. No real ATS, toolbar click or permission-prompt test.'
