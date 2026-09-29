@@ -1,4 +1,4 @@
-import {normalize,semanticLabel,candidatesFor,createCandidateIndex,entityMatches,dateValue,optionKey} from './semantics.mjs';
+import {normalize,semanticLabel,candidatesFor,createCandidateIndex,entityMatches,dateValue,optionKey,scope} from './semantics.mjs';
 import {numericMetrics} from './performance.mjs';
 import {entityGroups,factMatchesBinding} from './entity-binding.mjs';
 import {chooseText} from './text-variants.mjs';
@@ -9,7 +9,8 @@ export function makePlan(snapshot,profile,mappings={},entityBindings={},options=
  const metrics={fieldCount:snapshot.fields.length,factCount:facts.length};
  const index=createCandidateIndex(facts,snapshot.url,metrics);
  const groups=new Map(entityGroups(snapshot,facts,entityBindings).map(g=>[g.id,g]));
- for(const f of snapshot.fields){const k=semanticLabel(f.label,f.section);counts.set(k,(counts.get(k)||0)+1);}
+ const countKey=f=>scope(f.section)+'|'+semanticLabel(f.label,f.section);
+ for(const f of snapshot.fields){const k=countKey(f);counts.set(k,(counts.get(k)||0)+1);}
  const entries=snapshot.fields.map(original=>{
   const f={...original};if(Array.isArray(f.type)&&/\bx-combocheck\b/.test(f.control?.classes||''))f.type='custom-select';
   const row={fieldId:f.id,label:f.label,dateLabel:f.dateLabel,datePart:f.datePart,section:f.section,groupId:f.groupId,kind:f.type,oldValue:f.value,recognition:f.recognition,required:f.required,optionCount:f.options?.length||0,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
@@ -22,13 +23,14 @@ export function makePlan(snapshot,profile,mappings={},entityBindings={},options=
   if(bound?.entity){
    if(!bound.valid)return {...row,status:'missing',reasonCode:'record-unbound',reason:bound.reason};
    candidates=candidates.filter(a=>factMatchesBinding(a,f,bound.entity));
-  }else if(!mappings[f.id]){const named=candidates.filter(a=>entityMatches(a,f)),anchored=named.length?named:index.anchored(f,candidates);if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(semanticLabel(f.label,f.section))>1){needsBinding=candidates.length>0;candidates=[];}}
+  }else if(!mappings[f.id]){const named=candidates.filter(a=>entityMatches(a,f)),anchored=named.length?named:index.anchored(f,candidates);if(anchored.length)candidates=anchored;else if(candidates.some(a=>a.entity)||counts.get(countKey(f))>1){needsBinding=candidates.length>0;candidates=[];}}
   const targetPrecision=f.datePart?null:f.type==='month'||f.datePrecision==='month'&&f.type==='date-picker'?'month':['date','date-picker'].includes(f.type)?'day':null;
   if(targetPrecision){const before=candidates.length;candidates=candidates.filter(a=>dateValue(a.value,targetPrecision)).map(a=>({...a,value:dateValue(a.value,targetPrecision)}));dateRejected=before>0&&!candidates.length;}
   candidates=candidates.filter((a,i,all)=>all.findIndex(b=>b.value===a.value&&b.entity===a.entity&&JSON.stringify(b.textVariants||[])===JSON.stringify(a.textVariants||[]))===i);
   if(candidates.length!==1)return {...row,status:'missing',reasonCode:candidates.length?'ambiguous-source':dateRejected?'date-precision':needsBinding?'record-unbound':'no-label-match',candidateIds:candidates.map(a=>a.id),reason:candidates.length?'多个来源不一致，请指定资料':dateRejected?'资料没有所需日期精度，不补造日期':needsBinding?'请先选择这段教育、工作或项目记录对应的经历':'资料中没有相同字段或别名（或分区不同），点击选资料核对；不要重复导入相同文件'};
   const fact=candidates[0];let value=String(fact.value),variantName='';
-  if(f.datePart){const normalized=dateValue(value,f.datePart==='day'?'day':'month');if(!normalized)return {...row,status:'missing',reasonCode:'date-precision',reason:'资料缺少此日期的准确年月或日，请核对'};value=String(Number(normalized.split('-')[{year:0,month:1,day:2}[f.datePart]]));}
+  if(f.datePart==='year'&&/^(?:19|20)\d{2}$/.test(value.trim())){value=value.trim();}
+  else if(f.datePart){const normalized=dateValue(value,f.datePart==='day'?'day':'month');if(!normalized)return {...row,status:'missing',reasonCode:'date-precision',reason:'资料缺少此日期的准确年月或日，请核对'};value=String(Number(normalized.split('-')[{year:0,month:1,day:2}[f.datePart]]));}
   if(f.type==='repeat-group'){
    const count=Number(value);if(!Number.isInteger(count)||count<1||count>20)return {...row,status:'missing',reason:'经历总条数须为1至20'};
    if(count<=f.currentRows)return {...row,status:'preserve',reason:'已有足够行，不删除或重复添加'};

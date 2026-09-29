@@ -1,9 +1,10 @@
 import {semanticLabel,scope} from './semantics.mjs';
 // Only known semantic vocabulary is exported. Unknown labels may contain PII.
-const names=['姓名','手机号码','邮箱','性别','出生日期','政治面貌','学校','学院','专业','学历','学位','学习形式','开始月份','结束月份','预计毕业月份','公司名称','职位名称','部门名称','岗位职责','项目名称','项目角色','项目描述','项目职责','项目成果','作品链接','自我评价','证书名称','获奖名称','获奖时间','获得日期','绩点','平均分','专业排名','英语四级成绩','主修课程','教育经历描述','语言类型','掌握程度','最高学历','所在地','现居住地','期望城市','当前薪资','期望薪资','最近公司','推荐码','获奖级别'];
+const names=['姓名','手机号码','邮箱','性别','出生日期','政治面貌','学校','学院','专业','学历','学位','学习形式','开始月份','结束月份','预计毕业月份','公司名称','职位名称','部门名称','岗位职责','项目名称','项目角色','项目描述','项目职责','项目成果','作品链接','自我评价','证书名称','获奖名称','获奖时间','获得日期','绩点','平均分','专业排名','英语四级成绩','主修课程','教育经历描述','语言类型','掌握程度','听说能力','读写能力','最高学历','所在地','现居住地','期望城市','当前薪资','期望薪资','最近公司','推荐码','获奖级别'];
 const known=new Map(names.map(n=>[semanticLabel(n),n]));
 export const diagnosticCodes={
  'field-unrecognized':['recognition','没有识别出稳定的字段含义','这是页面识别问题；检查控件标签、分区和版本，不要反复导入资料'],
+ 'scope-mismatch':['matching','同名资料不属于目标分区','核对来源分区；不能把本人姓名、电话用于家庭成员'],
  'no-label-match':['matching','没有同字段且同分区的已确认资料','查看规范字段和分区；在导入页补齐或修正字段名称'],
  'record-unbound':['record','尚未唯一对应具体经历','在核对页选择这张卡片对应的学校、公司或项目'],
  'ambiguous-source':['matching','同一字段仍有多个候选','检查重复资料或同名经历，指定唯一来源'],
@@ -15,6 +16,7 @@ export const diagnosticCodes={
  'existing-consistent':['review','现有内容与资料一致','保留，无需处理'],
  'existing-unverified':['review','保留现有内容，但未能核实是否正确','按证据代码检查资料，不能将保留当作核验通过'],
  'restricted-control':['policy','附件或声明需要人工操作','在申请页选择附件或确认声明'],
+ 'not-attempted':['execution','本项尚未执行，不能算写入失败','前一项异常、取消或授权到期后停止；核对后重新扫描'],
  'matched':['matching','字段与具体经历已对应','等待执行或查看填写回读'],
  'readback-failed':['readback','写入后的值或有效性未通过检查','查看网页实际内容；不要盲目重试'],
  'target-changed':['execution','执行时页面或字段发生变化','重新扫描，保留本人已修改内容'],
@@ -24,9 +26,9 @@ export const diagnosticCodes={
 export function fieldDiagnostic(e,facts=[],bindingMethod='none'){
  const key=semanticLabel(e.dateLabel||e.label,e.section),kind=scope(e.section);
  const same=facts.filter(f=>[f.label,...f.aliases||[]].some(l=>semanticLabel(l,f.section)===key));
- const scoped=same.filter(f=>!kind||!scope(f.section)||scope(f.section)===kind);
- const code=e.reasonCode==='no-label-match'&&!known.has(key)&&!['label','nearby','placeholder','autocomplete','date-group'].includes(e.recognition?.labelSource)?'field-unrecognized':e.reasonCode||({ready:'matched',verified:'verified',invalid:'readback-failed',stale:'target-changed','needs-user':'readback-failed'}[e.status])||'unclassified';
- return {code,semantic:known.get(key)||'unknown',section:kind||'unknown',binding:bindingMethod,kind:e.kind,optionCount:e.optionCount,required:e.required,
+ const scoped=same.filter(f=>(kind==='family'||kind==='contact')?scope(f.section)===kind:!kind||!scope(f.section)||scope(f.section)===kind);
+ const code=e.reasonCode==='no-label-match'&&!known.has(key)&&!['label','nearby','placeholder','autocomplete','date-group'].includes(e.recognition?.labelSource)?'field-unrecognized':e.reasonCode||({'not-attempted':'not-attempted',ready:'matched',verified:'verified',invalid:'readback-failed',stale:'target-changed','needs-user':'readback-failed'}[e.status])||'unclassified';
+ return {code:code==='no-label-match'&&same.length&&!scoped.length?'scope-mismatch':code,semantic:known.get(key)||'unknown',section:kind||'unknown',binding:bindingMethod,kind:e.kind,optionCount:e.optionCount,required:e.required,
   sourceCount:same.length,scopedCount:scoped.length,confirmedCount:scoped.filter(f=>f.confirmed===true&&!f.conflict).length,
   candidateCount:e.candidateIds?.length??(e.factId?1:0),hasExisting:e.oldValue!==''&&e.oldValue!=null&&e.oldValue!==false,
   evidenceCode:e.evidenceCode,recognition:e.recognition};

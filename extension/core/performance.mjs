@@ -12,7 +12,8 @@ export function numericMetrics(value) {
   const out = {};
   if (!value || typeof value !== 'object') return out;
   for (const key of COUNTERS) {
-    const n = value[key];
+    // Keep the public counter stable across engine revisions.
+    const n = key === 'writesAttempted' ? (value.writesAttempted ?? value.writeAttempts) : value[key];
     if (typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1e9) {
       out[key] = Math.round(n * 100) / 100;
     }
