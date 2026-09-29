@@ -12,7 +12,7 @@ export function makePlan(snapshot,profile,mappings={},entityBindings={},options=
  for(const f of snapshot.fields){const k=semanticLabel(f.label,f.section);counts.set(k,(counts.get(k)||0)+1);}
  const entries=snapshot.fields.map(original=>{
   const f={...original};if(Array.isArray(f.type)&&/\bx-combocheck\b/.test(f.control?.classes||''))f.type='custom-select';
-  const row={fieldId:f.id,label:f.label,dateLabel:f.dateLabel,section:f.section,groupId:f.groupId,kind:f.type,oldValue:f.value,recognition:f.recognition,required:f.required,optionCount:f.options?.length||0,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
+  const row={fieldId:f.id,label:f.label,dateLabel:f.dateLabel,datePart:f.datePart,section:f.section,groupId:f.groupId,kind:f.type,oldValue:f.value,recognition:f.recognition,required:f.required,optionCount:f.options?.length||0,action:f.action,accept:f.accept,multiple:f.multiple,datePrecision:f.datePrecision,rowIndex:f.rowIndex,currentRows:f.currentRows};
   if(restricted(f))return {...row,status:'manual',reasonCode:'restricted-control',reason:'附件须选择文件；声明、密码和提交由本人操作'};
   if(!options.reviewExisting&&f.value!==''&&f.value!==false&&f.value!=null&&(!Array.isArray(f.value)||f.value.length))return {...row,status:'preserve',reason:'已有内容保留；可检查已有内容后逐项核对差异'};
   if((f.multiple||f.type==='repeat-group')&&!mappings[f.id])return {...row,status:'manual',reason:'请明确指定本次多选资料或经历条数'};
@@ -54,7 +54,7 @@ export function makePlan(snapshot,profile,mappings={},entityBindings={},options=
   const occupied=e.oldValue!==''&&e.oldValue!==false&&e.oldValue!=null&&(!Array.isArray(e.oldValue)||e.oldValue.length);
   if(!options.reviewExisting||!occupied||e.status==='manual')return e;
   if(e.status!=='ready')return {...e,status:'preserve',evidenceCode:e.reasonCode,reasonCode:'existing-unverified',reason:'已有内容保留；没有足够资料判断是否需要修正'};
-  if(String(e.oldValue).trim()===String(e.value).trim())return {...e,status:'preserve',reasonCode:'existing-consistent',reason:'与已核实资料一致，保留原值'};
+  if(String(e.oldValue).trim()===String(e.value).trim()||e.datePart&&/^\d{1,4}[年月日]?$/.test(String(e.oldValue).trim())&&Number(String(e.oldValue).trim().replace(/[年月日]$/,''))===Number(e.value))return {...e,status:'preserve',reasonCode:'existing-consistent',reason:'与已核实资料一致，保留原值'};
   return {...e,status:options.corrections?.[e.fieldId]===true?'ready':'review',allowOverwrite:options.corrections?.[e.fieldId]===true,reasonCode:'existing-difference',reason:'网页已有内容与资料不同；核对旧值和新值后确认修正'};
  });
  return {id:crypto.randomUUID(),snapshotId:snapshot.id,url:snapshot.url,createdAt:Date.now(),coverage:snapshot.coverage,limitations:snapshot.limitations,performance:{scan:numericMetrics(snapshot.performance),match:numericMetrics({...metrics,durationMs:performance.now()-start})},entries:reviewedEntries};

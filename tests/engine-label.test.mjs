@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const source=readFileSync(new URL('../extension/engine.js',import.meta.url),'utf8');
 const raw=source.slice(source.indexOf(' function labelRaw(e){'),source.indexOf(' // Many ATS pages'));
 const label=vm.runInNewContext(raw+';labelRaw',{
+ memo:(_key,_node,read)=>read(),labelled:(_node,value)=>value,controlTarget:e=>e,componentValueSelector:'.selected-value',placeholderSelector:'.placeholder',menuSelector:'[role=listbox]',
  subHead:()=>null,labelText:n=>n?.text||'',text:n=>n?.text||n?.textContent||'',visible:n=>n.visible!==false,
  wrappers:'.form-item',controlsSelector:'input,textarea,select',selectWrap:()=>null,selectedSelector:'.selected-value'
 });
