@@ -101,7 +101,7 @@ with sync_playwright() as pw:
  def zero(page):
   load_assistant(page);click(page,'填写简历');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('没有可自动补全')")
   require(page.evaluate("testRoot.querySelector('.primary').getClientRects().length>0&&!testRoot.querySelector('.primary').disabled"),'fill disappeared')
-  require(page.evaluate("testRoot.querySelectorAll('.problem').length===7"),'missing fields not explained inline');require(page.evaluate("!testCalls.includes('page-local-fill')&&!testCalls.includes('page-local-manage')"),'zero matched jumped or wrote');require(page.evaluate("!testRoot.querySelector('details').open"),'skipped rows should be collapsed');box=page.evaluate("()=>{const r=testRoot.querySelector('summary').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}");page.mouse.click(box['x'],box['y']);click(page,'补填这项');require(page.evaluate("testCalls.includes('page-local-pick')"),'no inline remedy')
+  require(page.evaluate("testRoot.querySelectorAll('.problem').length===7"),'missing fields not explained inline');require(page.evaluate("!testCalls.includes('page-local-fill')&&!testCalls.includes('page-local-manage')"),'zero matched jumped or wrote');require(page.evaluate("testRoot.querySelector('details').open"),'zero-match remediation must be expanded');click(page,'补填这项');require(page.evaluate("testCalls.includes('page-local-pick')"),'no inline remedy')
   page.screenshot(path=str(ROOT/'test-results/oneclick-zero-match.png'))
  case('zero-matches-keeps-fill-button-and-shows-remedies-without-auto-navigation',unmatched,zero)
  def inspect(page):
