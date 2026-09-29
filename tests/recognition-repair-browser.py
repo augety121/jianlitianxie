@@ -48,6 +48,10 @@ with sync_playwright() as p:
  def conflict():
   page=load('<label>正常字段<input id="ordinary"></label><div class="select-help">旁边说明</div>');s=page.evaluate('()=>__resumeFillEngine.scan()');needed(s['fields'][0]['type']=='text','ordinary field promoted to select');page.close()
  check('ordinary-input-with-nearby-select-word-remains-native',conflict)
+ def neighboring_label():
+  page=load('<label>独立字段<input id="first"></label><input id="opaque_field_5"><label for="first">原字段标签</label><input id="another_opaque">');snap=page.evaluate('()=>__resumeFillEngine.scan()')
+  by_id={f['label']:f for f in snap['fields']};needed('opaque_field_5' in by_id and 'another_opaque' in by_id,'preceding labels were stolen from neighboring controls');needed(by_id['opaque_field_5']['recognition']['labelSource']=='attribute','unknown field given false label evidence');page.close()
+ check('preceding-label-owned-by-another-control-is-not-reused',neighboring_label)
  def padded_dates():
   page=load(edu(years=('2024','09','','')))
   # All choices belong to the currently opened component; no guessing absent dates.

@@ -25,3 +25,12 @@ test('shared field wrapper does not steal a neighboring label',()=>{
  b.closest=s=>s==='.form-item'?wrap:null;
  assert.equal(label(b),'职位名称');
 });
+
+test('preceding label for another control cannot rename an unlabeled input',()=>{
+ const previous={text:'其他字段',htmlFor:'other',matches:()=>true,querySelector:()=>({})};
+ assert.equal(label(input({}, {id:'opaque',previousElementSibling:previous})),'opaque');
+ previous.querySelector=()=>null;
+ assert.equal(label(input({}, {id:'opaque',previousElementSibling:previous})),'opaque');
+ previous.htmlFor='opaque';
+ assert.equal(label(input({}, {id:'opaque',previousElementSibling:previous})),'其他字段');
+});

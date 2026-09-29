@@ -254,7 +254,7 @@
   if(clean(explicit||''))return labelled(e,clean(explicit),'label');
   let table='';const cell=e.closest('td');if(cell){const row=cell.parentElement;const cells=[...row.children];const index=cells.indexOf(cell);const previous=cells[index-1];if(previous&&!previous.querySelector('input,select,textarea'))table=labelText(previous);if(!table){const head=e.closest('table')?.querySelector('thead tr');table=labelText(head?.children[index]);}}
   if(clean(table||''))return labelled(e,clean(table),'label');
-  const preceding=e.previousElementSibling;const sibling=preceding?.matches('label,.label,.field-label')?labelText(preceding):'';
+  const preceding=e.previousElementSibling;const sibling=preceding?.matches('label,.label,.field-label')&&!preceding.querySelector(controlsSelector)&&(!preceding.htmlFor||preceding.htmlFor===e.id)?labelText(preceding):'';
   if(clean(sibling||''))return labelled(e,clean(sibling),'label');
   const autocomplete={name:'姓名','given-name':'名字','family-name':'姓氏',email:'邮箱',tel:'手机号码','tel-national':'手机号码',bday:'出生日期','address-line1':'详细地址',organization:'公司名称','organization-title':'职位名称'}[(e.autocomplete||'').trim().toLowerCase().split(/\s+/).at(-1)]||'';
   if(autocomplete)return labelled(e,autocomplete,'autocomplete');
@@ -268,7 +268,7 @@
  // Stay within a small, single-field branch; do not take a label from a whole form.
  function nearbyLabel(e){
   let current=controlTarget(e);
-  const valid=n=>{if(!n||n.querySelector?.(controlsSelector)||n.closest?.('nav,aside,button,[role=navigation]')||n.matches?.(componentValueSelector+','+placeholderSelector)||n.closest?.('[aria-hidden=true],[hidden],'+menuSelector))return '';const t=text(n).replace(/^[*\s]+|[：:*\s]+$/g,'');return t&&t.length<=45&&/[\p{L}\p{N}]/u.test(t)&&!/^\d+(?:[年月日])?$/.test(t)&&! /^(请选择|请输入|选填|必填|添加|删除|年|月|日|开始|结束)$/.test(t)?t:'';};
+  const valid=n=>{if(!n||n.matches?.('label[for]')&&n.htmlFor!==e.id||n.querySelector?.(controlsSelector)||n.closest?.('nav,aside,button,[role=navigation]')||n.matches?.(componentValueSelector+','+placeholderSelector)||n.closest?.('[aria-hidden=true],[hidden],'+menuSelector))return '';const t=text(n).replace(/^[*\s]+|[：:*\s]+$/g,'');return t&&t.length<=45&&/[\p{L}\p{N}]/u.test(t)&&!/^\d+(?:[年月日])?$/.test(t)&&! /^(请选择|请输入|选填|必填|添加|删除|年|月|日|开始|结束)$/.test(t)?t:'';};
   for(let level=0;level<6&&current?.parentElement;level++,current=current.parentElement){
    const sibling=current.previousElementSibling,value=valid(sibling);if(value)return value;
    const parent=current.parentElement;
