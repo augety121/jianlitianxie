@@ -67,9 +67,11 @@
   const valid=fields.length===record.fields.length&&fields.every((f,i)=>f!==undefined&&f===record.fields[i]);
   shapeCache?.cache.set(record,valid);return valid;
  }
- function captureGuard(e){const form=e.form||e.closest('form');return {root:e.getRootNode(),label:fieldLabel(e),section:section(e),record:recordShape(e),binding:e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'',radios:radioGroups.get(e)?.slice(),form,formState:formState(form),controlState:controlState(e),anchors:anchorRecords(e)};}
+ function layoutIdentity(e){const region=layoutRegion(e);return region?layoutCandidates(region.node).map(node=>layoutTitle(node)).filter(Boolean).join('|'):'';}
+ function captureGuard(e){const form=e.form||e.closest('form');return {root:e.getRootNode(),label:fieldLabel(e),section:section(e),layoutIdentity:layoutIdentity(e),record:recordShape(e),binding:e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'',radios:radioGroups.get(e)?.slice(),form,formState:formState(form),controlState:controlState(e),anchors:anchorRecords(e)};}
  function guardUnchanged(e,id){
   const g=guards.get(id);if(!g||fieldLabel(e)!==g.label||section(e)!==g.section||!recordUnchanged(g.record)||g.binding&&(e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'')!==g.binding||e.getRootNode()!==g.root||(e.form||e.closest('form'))!==g.form||formState(g.form)!==g.formState||controlState(e)!==g.controlState)return false;
+  if(layoutIdentity(e)!==g.layoutIdentity)return false;
   if(g.radios){const current=[...e.getRootNode().querySelectorAll('input[type=radio]')].filter(r=>e.name?r.name===e.name&&r.form===e.form&&r.closest('fieldset')===e.closest('fieldset'):r===e);if(current.length!==g.radios.length||current.some((r,i)=>r!==g.radios[i]))return false;}
   return g.anchors.every(a=>a.node.isConnected&&container(a.node)===contexts.get(id)&&JSON.stringify(val(a.node))===a.value&&label(a.node)===a.label);
  }
@@ -327,7 +329,9 @@
     if(headings.length===1){const h=headings[0];if(h.node.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING)return {node:p,name:h.name};}
     if(headings.length>1){
      // Flat ATS sections may share one parent. Use the last preceding heading,
-     // never a later section or a navigation label.
+     // but only when each heading has a distinct control-free wrapper. Bare
+     // competing headings remain ambiguous, as do wrappers containing records.
+     if(headings.some(h=>{let branch=h.node;while(branch.parentElement&&branch.parentElement!==p)branch=branch.parentElement;return branch===h.node||!!branch.querySelector(controlsSelector);}))return null;
      const preceding=headings.filter(h=>h.node.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING);
      if(preceding.length)return {node:p,name:preceding.at(-1).name};
      return null;

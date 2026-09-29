@@ -102,3 +102,11 @@ test('numeric adjacent text is not accepted as a field label',async()=>{
  const h=harness('<form><div><span>2022</span><input></div></form>');
  try{const s=await h.engine.scan();assert.equal(s.fields[0].label,'未标注字段');}finally{h.close();}
 });
+
+test('new wrapped heading invalidates an old flat-section plan even if the nearest preceding title is unchanged',async()=>{
+ const h=harness(`<form><div><h3>个人信息</h3></div>${field('姓名')}${field('邮箱')}</form>`);
+ try{const s=await h.engine.scan(),facts=[['姓名','示例'],['邮箱','fiction@example.invalid']].map(([label,value])=>({id:label,label,value,confirmed:true}));
+  const p=makePlan(s,{facts});h.w.document.querySelector('input').addEventListener('change',()=>{const n=h.w.document.createElement('div');n.innerHTML='<h3>项目经历</h3>';h.w.document.querySelector('form').append(n);},{once:true});
+  const r=await h.engine.apply(p);assert.equal(h.w.document.querySelectorAll('input')[1].value,'');assert(r.results.some(x=>x.status==='stale'));
+ }finally{h.close();}
+});
