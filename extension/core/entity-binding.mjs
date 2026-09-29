@@ -1,6 +1,6 @@
 import {normalize, scope, semanticLabel, restrictedFactScope} from './semantics.mjs';
 
-const recordScopes = new Set(['education', 'work', 'project', 'certificate', 'award', 'family']);
+const recordScopes = new Set(['education', 'work', 'project', 'certificate', 'award', 'family', 'language']);
 /** Groups identify observed DOM containers for one scan, never an array position or a saved selector. */
 export function entityGroups(snapshot, facts, bindings = {}) {
   const buckets = new Map(), origin = new URL(snapshot.url).origin;

@@ -1,3 +1,4 @@
+import {storedProfileHealth} from './core/stored-profile-repair.mjs';
 import {logPreview,logBlob} from './core/log-export.mjs';
 import {explainDiagnostic} from './core/match-diagnostics.mjs';
 import {planExplanation} from './core/page-summary.mjs';
@@ -25,13 +26,13 @@ function controls(){
   $('fillSelected').textContent=selected.size?`已核对，填写所选 ${selected.size} 项`:'已核对，填写所选项';
   $('stop').disabled=!busy&&!plan;
   $('selectedCount').textContent=plan?`本次选择 ${selected.size} 项`:'导入一次，之后直接扫描填写';
-  for(const id of ['bindOrder','previewImport','commitImport','eraseProfile','importOld','advanced','readOld'])$(id).disabled=busy;
+  for(const id of ['repairStored','bindOrder','previewImport','commitImport','eraseProfile','importOld','advanced','readOld'])$(id).disabled=busy;
   document.querySelectorAll('.field input,.field button,.fact button').forEach(n=>{if(busy)n.disabled=true;});
   document.querySelectorAll('.group select').forEach(n=>n.disabled=busy);
   $('commitImport').disabled=busy||!preview||!importIds.size;
 }
 function clearPlan(){plan=null;selected.clear();$('entries').replaceChildren();$('review').hidden=true;$('groups').replaceChildren();controls();}
-function setProfile(p){profile=p;$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}
+function setProfile(p){profile=p;const health=storedProfileHealth(p);$('profileHealth').textContent=`教育 ${health.education} 段 · 项目 ${health.projects} 段 · 工作/实习 ${health.work} 段`+(health.projectFragments?' · 检测到项目分段资料，可检查整理':'。条目总数不代表原简历已完整识别。');$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}
 async function refresh(){
   const g=generation,next=await send('state',{tabId});if(disposed||g!==generation)return;
   state=next;setProfile(next.profile);$('importOld').hidden=!next.encryptedExists;$('modeWarning').hidden=next.mode!=='mcp';$('autoLogs').checked=next.logging;
@@ -147,6 +148,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{$(b.dataset.
 click('returnTarget',()=>task(async()=>{await send('return',{tabId});notice('已回到申请页。点击右下角“填写简历”即可扫描并填写；复杂项可返回工作台。');}));
 click('showFill',()=>task(async()=>{view('fill');if(profile.facts.length)await scan();}));
 click('continueSaved',()=>task(async()=>{view('fill');await scan();}));
+click('repairStored',()=>task(async()=>{clearImport();clearPlan();const d=await send('repair-preview');if(!d.items.length){notice('没有可自动整理的已存项目片段。未曾导入的教育/项目需从原简历重新提取，原有资料保持不变。');return;}showImport(d);notice('已从本地旧资料整理出项目正文预览。原句保留、原条目不删除，核对后保存即可用于填写。');}));
 click('goImport',()=>view('profile'));click('goLogs',async()=>{view('logs');await refreshLogs();});
 click('scan',()=>task(scan));click('previewImport',()=>task(async()=>{clearImport();const g=++fileGeneration,d=await send('preview',{text:$('importText').value});if(g===fileGeneration&&!disposed)showImport(d);}));
 $('importFile').onchange=()=>readFile().catch(e=>notice(e.message,true));

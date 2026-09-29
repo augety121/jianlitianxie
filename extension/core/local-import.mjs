@@ -2,7 +2,7 @@ import {tableSchema, tableFacts} from './import-table.mjs';
 import {normalizeFact, normalizeProfile, parseImport, MAX_PROFILE_BYTES} from './profile.mjs';
 import {secret} from './workspace-policy.mjs';
 
-const sections = new Set(['基本信息','教育经历','教育背景','教育经验','学习经历','工作经历','实习经历','项目经历','项目经验','专业技能','语言能力','获奖经历','奖励荣誉','证书','论文','家庭信息']);
+const sections = new Set(['基本信息','教育经历','教育背景','教育经验','学习经历','工作经历','实习经历','项目经历','项目经验','科研与项目经历','科研及项目经历','科研和项目经历','专业技能','语言能力','获奖经历','奖励荣誉','证书','论文','家庭信息']);
 const sectionTitle=s=>s.replace(/^(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/, '').trim();
 const cleanLabel = s => s.trim().replace(/^\*\*([^*]+)\*\*$/, '$1').replace(/[:：]$/, '').trim();
 const cells = s => s.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(v => v.trim().replace(/\\\|/g, '|'));

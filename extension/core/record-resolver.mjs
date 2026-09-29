@@ -1,7 +1,7 @@
 import {entityGroups, factMatchesBinding} from './entity-binding.mjs';
 import {semanticLabel, normalize} from './semantics.mjs';
 const occupied=f=>f.value!==''&&f.value!=null&&f.value!==false&&(!Array.isArray(f.value)||f.value.length>0);
-const anchors=new Set(['学校','公司名称','项目名称','证书名称','获奖名称']);
+const anchors=new Set(['学校','公司名称','项目名称','证书名称','获奖名称','语言类型']);
 /** Resolve whole records before individual fields. Existing records reserve their source
  * even when a blank card appears first. Never infer relatives or conflicting records. */
 export function resolveRecords(snapshot,facts,existing={}) {

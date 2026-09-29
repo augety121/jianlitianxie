@@ -1,6 +1,6 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.10.3') return;
+ if(globalThis.__resumeFillEngine?.version==='0.10.4') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
  let busy=false,generation=0; const attemptedFields=new Set();
@@ -306,7 +306,7 @@
     const inputs=[...p.querySelectorAll('input,select')].filter(x=>x.type!=='hidden');
     if(inputs.length>3)break;
     const leaves=[...p.querySelectorAll('*')].filter(x=>!x.children.length&&!x.matches('input,select,option'));
-    if(inputs.length>=2&&leaves.some(x=>/^(开始时间|结束时间|入学时间|毕业时间|获奖时间|获奖日期|获得日期)$/.test(text(x)))){
+    if(inputs.length>=2&&leaves.some(x=>/^(开始时间|结束时间|入学时间|毕业时间|获奖时间|获奖日期|获得日期)$/.test(text(x).replace(/[*：:\s]/g,'')))){
      if(inputs.every(x=>x.tagName==='SELECT'||selectWrap(x))){resolvedPart=['year','month','day'][inputs.indexOf(e)];break;}
     }
    }
@@ -325,7 +325,7 @@
  // Recognize only an explicit, short section title in a nearby shallow sibling area.
  // Never use a navigation item or one of several competing titles as a field scope.
  const recordSelector='[data-entity],.resume-item,.education-item,.project-item,.experience-item,fieldset,section,[data-section]';
- const sectionNames=/^(?:个人基本信息|个人信息|基本信息|求职意向|教育经历|教育背景|教育经验|学习经历|实习经历|工作经历|工作经验|项目经历|项目经验|培训经历|证书|资格证书|奖励荣誉|获奖经历|语言能力|自我评价|自我描述|紧急联系人|家庭信息|家庭成员|Education|Work Experience|Projects|Personal Information)$/i;
+ const sectionNames=/^(?:个人基本信息|个人信息|基本信息|求职意向|教育经历|教育背景|教育经验|学习经历|实习经历|工作经历|工作经验|项目经历|项目经验|培训经历|证书|资格证书|奖励荣誉|获奖经历|语言能力|自我评价|自我描述|紧急联系人|家庭信息|家庭情况|家庭成员|Education|Work Experience|Projects|Personal Information)$/i;
  function layoutName(node){
   const value=(node?.textContent||'').trim();if(!value||value.length>60)return '';
   const clean=value.replace(/^\s*(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/,'').replace(/[\s*：:]/g,' ').replace(/\s*(?:必填|选填|required)\s*$/i,'').trim();
@@ -501,7 +501,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.10.3',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
+  lastSnapshot={engineVersion:'0.10.4',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -533,7 +533,7 @@
    if(!empty(val(e))&&p.allowOverwrite!==true){results.push({fieldId:p.fieldId,status:'preserve'});continue;}
    if(!['string','number'].includes(typeof p.value)&&!Array.isArray(p.value)){results.push({fieldId:p.fieldId,status:'manual'});continue;}
    if(['text','email','url','tel','number','date','month','textarea'].includes(p.kind)&&!nativeAccepts(e,p.value)){results.push({fieldId:p.fieldId,status:'invalid',reason:'资料不满足当前控件格式、范围或长度；尚未写入'});continue;}
-   let writeStarted=false;const beginWrite=()=>{writeStarted=true;attemptedFields.add(p.fieldId);tick('writesAttempted');};
+   let writeStarted=false;const beginWrite=()=>{writeStarted=true;attemptedFields.add(p.fieldId);tick('writeAttempts');};
    try{
     interactionGuard(controlTarget(e));if(!guardUnchanged(e,p.fieldId)||!alive())throw Error('目标上下文已变化');
     if(p.kind==='custom-radio'){const options=[...e.querySelectorAll('.x-radio,[role=radio]')].filter(r=>text(r.querySelector('.radio-text')||r)===String(p.value)&&!r.classList.contains('disabled')&&r.getAttribute('aria-disabled')!=='true');if(options.length!==1)throw Error('单选候选不唯一');beginWrite();activate(options[0].querySelector('.radio-check-icon')||options[0].querySelector('.x-radio-wrapper')||options[0]);
@@ -671,5 +671,5 @@
  }
  function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.10.3',scan,localScan,apply,upload,locate,capture,cancel};
+ globalThis.__resumeFillEngine={version:'0.10.4',scan,localScan,apply,upload,locate,capture,cancel};
 })();

@@ -1,13 +1,29 @@
 import {normalizeFact,normalizeProfile} from './profile.mjs';
 import {semanticLabel,scope} from './semantics.mjs';
-const sections=[['教育背景',/^(教育背景|教育经历|education)$/i],['项目经历',/^(项目经历|项目经验|科研项目|projects?)$/i],['实习经历',/^(实习经历|工作经历|工作经验|internships?|workexperience)$/i],['专业技能',/^(专业技能|个人优势&?专业技能|个人优势与专业技能|技能|skills?)$/i],['自我评价',/^(自我评价|自我描述|个人优势|个人简介|summary)$/i],['获奖经历',/^(荣誉与证书|荣誉与奖励|获奖经历|奖项|荣誉|awards?)$/i],['论文',/^(论文|科研成果|论文与科研成果|论文与知识产权|论文与专利|发表论文|publications?)$/i]];
+const sections=[['教育背景',/^(教育背景|教育经历|education)$/i],['项目经历',/^(项目经历|项目经验|科研项目|科研与项目经历|科研及项目经历|科研和项目经历|项目与科研经历|projects?)$/i],['实习经历',/^(实习经历|工作经历|工作经验|internships?|workexperience)$/i],['专业技能',/^(专业技能|个人优势&?专业技能|个人优势与专业技能|技能|skills?)$/i],['自我评价',/^(自我评价|自我描述|个人优势|个人简介|summary)$/i],['获奖经历',/^(荣誉与证书|荣誉与奖励|获奖经历|奖项|荣誉|awards?)$/i],['论文',/^(论文|科研成果|论文与科研成果|论文与知识产权|论文与专利|发表论文|publications?)$/i]];
 const dateRE=/(20\d{2})[.\-/年](\d{1,2})(?:[.\-/月](\d{1,2})日?)?/g;
 const heading=s=>s.replace(/[\s#·•：:]/g,'');
 const titleName=s=>s.replace(/^[➢▶◆●•\-*\d、.\s]+/,'').trim();
+/** Preserve explicit layout evidence only: a split school/employer and the next
+ * date range are one record. Do not join arbitrary missing dates or paragraphs. */
+export function resumeLines(input){
+ const lines=String(input).replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean)
+  .filter(s=>!/^第?\s*\d+\s*[/／]\s*\d+\s*页?$/.test(s)&&!/^.{1,30}[|｜]项目经历与能力补充$/.test(s));
+ const result=[];
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i],next=lines[i+1]||'';
+  if(line.length<240&&!/^[^：:]{1,18}[：:]/.test(line)&&!/20\d{2}[.\-/年]\d/.test(line)&&
+     /大学|学院|University|College|公司|研究院|研究所/i.test(line)&&
+     /^20\d{2}[.\-/年]\d{1,2}.*?(?:20\d{2}[.\-/年]\d{1,2}|至今|迄今)/.test(next)){
+   result.push(line+'  '+next);i++;
+  }else result.push(line);
+ }
+ return result;
+}
 /** Local draft extraction, never a claim that facts are verified. Every source remains reviewable. */
 export function parseResumeText(input,{sourceName='上传简历'}={}){
  if(typeof input!=='string'||new TextEncoder().encode(input).length>2*1024*1024)throw Error('简历文本须小于2MB');
- const lines=input.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean);
+ const lines=resumeLines(input);
  if(lines.length>5000)throw Error('简历过长，请使用较短版本');
  const facts=[],unclassified=[],warnings=['自动解析为待核对草稿；姓名、经历边界、专业和日期请对照原文。不会推断简历未写的成绩、英语通过情况或薪资。'];
  const add=(label,value,section='基本信息',entity='',line=0)=>{
@@ -22,7 +38,7 @@ export function parseResumeText(input,{sourceName='上传简历'}={}){
   if(kind==='project'){
    // Copy complete source paragraphs, never invent a role or fabricate a shorter result.
    const paragraphs=[];for(const line of record.body){if(/^[\u4e00-\u9fa5]{2,12}[：:]/.test(line)||!paragraphs.length)paragraphs.push(line);else paragraphs[paragraphs.length-1]+='\n'+line;}
-   for(const [field,pattern] of [['项目职责',/^(?:个人职责|项目职责|负责内容|问题与方法|方法与实现|技术实现|设计与实现)[：:]/],['项目成果',/^(?:结果与指标|结果与验证|成果与指标|项目成果|成果|结果|验证结果)[：:]/]]){
+   for(const [field,pattern] of [['项目职责',/^(?:个人职责|项目职责|负责内容|问题与方法|方法与实现|技术实现|设计与实现)[：:]/],['项目成果',/^(?:结果与指标|结果与验证|结果与能力|成果与指标|项目成果|成果|结果|验证结果)[：:]/]]){
     if(!facts.some(f=>f.entity===record.entity&&f.label===field))add(field,paragraphs.filter(p=>pattern.test(p)).join('\n'),record.section,record.entity,record.line);
    }
   }
@@ -33,6 +49,32 @@ export function parseResumeText(input,{sourceName='上传简历'}={}){
   const line=lines[i],h=sections.find(([,r])=>r.test(heading(line)));
   if(h){flush();section=h[0];continue;}
   if(/^第?\s*\d+\s*[/／]\s*\d+\s*页?$/.test(line))continue;
+  // A numbered project is a record even without employment-style date metadata.
+  if(scope(section)==='project'&&/^\d{1,2}[.．、]\s+\S/.test(line)){
+   flush();let title=titleName(line),end=i;
+   while(end+1<lines.length&&title.length<300){
+    const next=lines[end+1];
+    if(/[：:。；;]/.test(next)||/^(?:\d{1,2}[.．、]\s|20\d{2}[.\-/年])/.test(next)||/[|｜]/.test(next)||sections.some(([,r])=>r.test(heading(next))))break;
+    const balance=[...title].reduce((n,c)=>n+('（('.includes(c)?1:'）)'.includes(c)?-1:0),0);
+    if(balance<=0)break;
+    title+=' '+next;end++;
+   }
+   const entity=title.slice(0,180);record={section,entity,body:[],line:i,numbered:true,metadata:true};
+   add('项目名称',title,section,entity,i);i=end;continue;
+  }
+  if(record?.numbered&&record.metadata){
+   record.metadata=false;const ds=dates(line);
+   if(/^20\d{2}[.\-/年]/.test(line)||(/^[^：:]{1,50}[|｜]/.test(line)&&!/^[^：:]{1,18}[：:]/.test(line))){
+    // Publication years are not project start dates. Only explicit YYYY-MM is used.
+    if(ds[0])add('开始时间',ds[0],section,record.entity,i);
+    if(ds[1])add('结束时间',ds[1],section,record.entity,i);
+    if(/至今|迄今/.test(line))add('是否至今','是',section,record.entity,i);
+    const role=line.split(/[|｜]/)[1]?.split(/在线作品|https?:/)[0].trim();
+    if(role)add('项目角色',role,section,record.entity,i);
+    const url=line.match(/https?:\/\/[^\s|｜）)]+/);if(url)add('作品链接',url[0],section,record.entity,i);
+    continue;
+   }
+  }
   let used=false;
   if(section==='基本信息'){
    const emails=line.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[];for(const x of emails){add('邮箱',x,section,'',i);used=true;}
@@ -41,9 +83,22 @@ export function parseResumeText(input,{sourceName='上传简历'}={}){
    const age=line.match(/(?:^|[\s|｜])([1-9]\d)岁(?:$|[\s|｜])/);if(age){add('年龄',age[1],section,'',i);used=true;}
    const politics=line.match(/中共(?:预备)?党员|共青团员|群众/);if(politics){add('政治面貌',politics[0],section,'',i);used=true;}
   }
+  const list=line.match(/^(荣誉奖励|荣誉与奖励|资格证书|证书)[：:]\s*(.+)$/);
+  if(list){
+   let value=list[2];
+   while((value.match(/[（(]/g)||[]).length>(value.match(/[）)]/g)||[]).length&&i+1<lines.length&&!sections.some(([,r])=>r.test(heading(lines[i+1]))))value+=lines[++i];
+   const certificate=/证书/.test(list[1]),sc=certificate?'证书':'获奖经历';
+   for(const item of value.split(/[；;]/).map(s=>s.trim()).filter(Boolean)){
+    const normalized=item.replace(/[。.]$/,''),d=normalized.match(/[（(]((?:19|20)\d{2}(?:[.\-/年]\d{1,2})?)[年）)]*$/);
+    const name=d?normalized.slice(0,d.index).trim():normalized,entity=name.slice(0,140)+(d?' | '+d[1]:'');
+    add(certificate?'证书名称':'获奖名称',name,sc,entity,i);
+    if(d)add(certificate?'获得日期':'获奖时间',d[1].replace(/[.\/年]/g,'-'),sc,entity,i);
+   }
+   continue;
+  }
   const sk=scope(section),ds=dates(line),dateTitle=ds.length&&line.replace(dateRE,'').replace(/至今|至|迄今|[\s~—–\-./()（）|｜]+/g,'').length>2;
   const school=sk==='education'&&/大学|学院|University|College/i.test(line)&&ds.length>=1;
-  const projectOrWork=['project','work'].includes(sk)&&dateTitle&&line.length<260&&(sk!=='work'||/公司|研究院|研究所|中心|实习生|工程师|开发者/.test(line))&&!/^(针对|负责|采用|实现|结果|成果|能力|方法|背景)[：:]/.test(line);
+  const projectOrWork=!record?.numbered&&['project','work'].includes(sk)&&dateTitle&&line.length<260&&(sk!=='work'||/公司|研究院|研究所|中心|实习生|工程师|开发者/.test(line))&&!/^(针对|负责|采用|实现|结果|成果|能力|方法|背景)[：:]/.test(line);
   if(school||projectOrWork){
    let previousTitle='';const previous=lines[i-1]||'';
    if(sk==='project'&&/^20\d{2}[.\-/年]/.test(line)&&previous.length<150&&!dates(previous).length&&!/[：:。；;]/.test(previous)&&!sections.some(([,r])=>r.test(heading(previous)))){
@@ -53,7 +108,7 @@ export function parseResumeText(input,{sourceName='上传简历'}={}){
    const title=previousTitle||metadata;
    const parts=title.split(/\t+|\s{2,}|\s*[|｜]\s*/).map(x=>x.trim()).filter(Boolean);
    const entity=`${title.slice(0,140)} | ${ds[0]}`;record={section,entity,body:[],line:i};
-   const name=parts[0]||title,schoolName=school?(title.match(/^(.+?(?:大学|学院))/)?.[1]||name):'',companyName=sk==='work'?(title.match(/^(.+?(?:有限公司|分公司|研究院|研究所|公司))/)?.[1]||name):'';
+   const name=parts[0]||title,schoolName=school?(title.match(/^(\S*(?:大学|学院)\S*)\s+/)?.[1]||title.match(/^(.+?(?:大学|学院))/)?.[1]||name):'',companyName=sk==='work'?(title.match(/^(.+?(?:有限公司|分公司|研究院|研究所|公司))/)?.[1]||name):'';
    add(school?'学校':sk==='project'?'项目名称':'公司名称',school?schoolName:sk==='work'?companyName:name,section,entity,i);
    add(school?'入学时间':'开始时间',ds[0],section,entity,i);if(ds[1])add(school?'毕业时间':'结束时间',ds[1],section,entity,i);
    if(/至今|迄今/.test(line))add('是否至今','是',section,entity,i);

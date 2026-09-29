@@ -1,6 +1,6 @@
 {
   "name": "jianlitianxie",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -26,7 +26,9 @@
     "test:oneclick": "python tests/oneclick-browser.py && python tests/picker-layout.py",
     "test:learn": "python tests/learn-browser.py",
     "test:recognition": "python tests/recognition-repair-browser.py",
-    "test:recognition-mv3": "python tests/recognition-repair-mv3.py"
+    "test:recognition-mv3": "python tests/recognition-repair-mv3.py",
+    "test:recovery": "node --test tests/recovery.test.mjs && python tests/recovery-browser.py",
+    "test:recovery-mv3": "python tests/recovery-mv3.py"
   },
   "devDependencies": {
     "jsdom": "^26.1.0"

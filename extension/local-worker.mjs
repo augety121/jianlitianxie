@@ -1,3 +1,4 @@
+import {proposeStoredRepair,storedProfileHealth} from './core/stored-profile-repair.mjs';
 import {learningPreview,mergeLearned} from './core/learn-profile.mjs';
 import {fieldDiagnostic,profileDiagnostic} from './core/match-diagnostics.mjs';
 import {mappingCandidates} from './core/review-model.mjs';
@@ -92,7 +93,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     const items=planImport(profile.facts,parsed.facts).map(x=>!safeIds.has(x.fact.id)&&x.status!=='duplicate'?{...x,status:'conflict',reason:'同一字段的文件内容互相矛盾，请修正'}:x);
     return {id:preview.id,revision:preview.revision,items,skipped:parsed.skipped,warnings:parsed.warnings||[]};
   }
-  function record(stage,start,data,error,sourceEntries=[]){
+  function record(stage,start,data,error,sourceEntries=[],sourceVersion){
     const entries=data?.entries||[],outcomes=data?.results||entries;
     const order=new Map(sourceEntries.map((e,i)=>[e.id,i+1]));
     const fields=outcomes.map((e,i)=>{const original=sourceEntries.find(x=>x.id===e.id)||e;
@@ -100,7 +101,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const combined={...original,...e,...(stage==='fill'?{reasonCode:undefined}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,version:chrome.runtime.getManifest?.().version||'0.10.3',engineVersion:run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
+    logs.add({stage,version:chrome.runtime.getManifest?.().version||'0.10.4',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
@@ -111,17 +112,22 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const old=(await storage.get('resumeVaultV1')).resumeVaultV1;
       let target='';try{target=new URL((await attached(m.tabId)).url).origin;}catch{}
       let targetTitle='';try{targetTitle=String((await attached(m.tabId)).title||'').slice(0,160);}catch{}
-      return {target,targetTitle,profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
+      return {target,targetTitle,health:storedProfileHealth(profile),profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
     }
     if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data,{includeExplanations:false}),enabled:data.enabled};}
     if(type==='local-log-settings'){await ready;await logs.settings(m.enabled,m.clear===true);return {ok:true};}
     // Acquire synchronously before any asynchronous permission/storage check.
     if(active||externalBusy())throw Error('另一项任务正在执行，请先停止并等待回读');
-    active=true;activeOwner=own;const generation=epoch,start=performance.now();let data,stage,sourceEntries=[];
+    active=true;activeOwner=own;const generation=epoch,start=performance.now();let data,stage,sourceEntries=[],sourceVersion;
     const alive=()=>{if(generation!==epoch)throw Error('操作已取消，请重新扫描');};
     try {
       await ready;await refresh();alive();
       if(type==='local-return'){await attached(m.tabId);alive();await attachButton(m.tabId);await chrome.tabs.update(m.tabId,{active:true});return {returned:true};}
+      if(type==='local-repair-preview'){
+        stage='preview';if(!accepted)throw Error('请先保存资料');
+        const proposed=proposeStoredRepair(profile);alive();
+        data={...draft(own,proposed),health:storedProfileHealth(profile)};return data;
+      }
       if(type==='local-preview'){stage='preview';data=draft(own,readLocalImport(m.text));return data;}
       if(type==='local-encrypted-preview'){
         stage='preview';
@@ -249,12 +255,12 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       if(type==='local-correct'){stage='map';data=run.approveCorrection(own,m);return data;}
       if(type==='local-locate')return await run.locate(own,m);
       if(type==='local-fill'){
-        stage='fill';run.current(own,m.planId);sourceEntries=run.job.frames.flatMap(f=>f.plan.entries.map(e=>({...e,id:`${f.frameId}:${e.fieldId}`})));
+        stage='fill';run.current(own,m.planId);sourceVersion=run.job.frames[0]?.snapshot?.engineVersion;sourceEntries=run.job.frames.flatMap(f=>f.plan.entries.map(e=>({...e,id:`${f.frameId}:${e.fieldId}`})));
         data=await run.apply(own,m);return data;
       }
       throw Error('不支持的操作');
-    } catch(error){if(stage)record(stage,start,null,error,sourceEntries);stage=null;throw error;}
-    finally{if(stage)record(stage,start,data,null,sourceEntries);active=false;activeOwner=null;}
+    } catch(error){if(stage)record(stage,start,null,error,sourceEntries,sourceVersion);stage=null;throw error;}
+    finally{if(stage)record(stage,start,data,null,sourceEntries,sourceVersion);active=false;activeOwner=null;}
   }
   async function request(m,sender){
     if(!trustedWorkspace(sender,chrome.runtime,'local.html'))throw Error('只有本地填写页可以访问资料');

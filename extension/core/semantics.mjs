@@ -3,7 +3,7 @@ export const normalize=s=>String(s??'').normalize('NFKC').toLowerCase().replace(
 const groups=[
  ['姓名','真实姓名','full name','candidate name','your name'],['手机号码','手机号','移动电话','mobile','mobile phone','phone number','phone'],['邮箱','电子邮箱','电子邮件','联系邮箱','默认邮箱','email','email address','e-mail'],
  ['出生日期','出生年月日','生日','date of birth','birth date'],['政治面貌','政治面目'],['生源地','生源所在地'],['户口所在地','现户口所在地','户籍所在地'],
- ['现居住地','现住址','当前所在地区'],['身高','身高厘米','身高(cm)','身高（厘米）'],['体重','体重公斤','体重(kg)','体重（公斤）'],
+ ['现居住地','现住址','当前所在地区','所在地','当前所在地'],['身高','身高厘米','身高(cm)','身高（厘米）'],['体重','体重公斤','体重(kg)','体重（公斤）'],
  ['证件号码','身份证号码','身份证号'],['学校','学校名称','毕业学校','毕业院校','院校名称','university','school name','university name','institution name'],['学院','学院名称','院系'],
  ['专业','所学专业','专业名称','major','field of study'],['学习形式','学习方式'],['导师','导师姓名','实验室/课题组导师'],
  ['开始月份','开始年月','开始时间','入学时间','入学日期','项目开始时间','start date','start month','from date'],
@@ -20,7 +20,7 @@ const groups=[
  ['项目职责','项目中职责','项目中的职责','承担职责','project responsibilities'],['项目成果','项目业绩','project achievements','project results'],
  ['作品链接','项目链接','项目网址','project url','portfolio url'],['主修课程','主要课程','courses','coursework'],
  ['绩点','平均学分绩点','GPA'],['平均分','平均成绩','average score'],['专业排名','成绩排名','class rank'],
- ['教育经历描述','教育描述','education description']
+ ['语言类型','语种','外语语种','语言名称','language'],['掌握程度','语言水平','熟练程度'],['听说能力','听说'],['读写能力','读写'],['教育经历描述','教育描述','education description']
 ];
 const aliases=new Map(groups.flatMap(g=>g.map(x=>[normalize(x),normalize(g[0])])));
 export function semanticLabel(label,section=''){
@@ -32,6 +32,7 @@ export function semanticLabel(label,section=''){
  if(s==='company'&&fieldScope==='work')s='公司名称';
  if(['职责','项目中职责'].includes(s)&&fieldScope==='project')s='项目职责';
  if(s==='职位'&&fieldScope==='work')s='职位名称';
+ if(fieldScope==='language'&&s==='类型')s='语言类型';
  if(/紧急联系|emergency contact/i.test(section)){
   if(['姓名','联系人','联系人姓名','name','fullname','contactname'].includes(s))s='紧急联系人姓名';
   if(['电话','联系电话','手机号','手机号码','phone','phonenumber','mobile','mobilephone'].includes(s))s='紧急联系人电话';
@@ -52,7 +53,7 @@ export function candidatesFor(f,facts){
  const key=semanticLabel(f.label,f.section),fs=scope(f.section);
  return facts.filter(a=>a.confirmed!==false&&!a.conflict&&(!a.origin||a.origin===new URL(f.url||'https://unknown.invalid').origin))
  .filter(a=>[a.label,...a.aliases||[]].some(l=>semanticLabel(l,a.section)===key))
- .filter(a=>{const as=scope(a.section);return !fs||!as||fs===as||fs==='personal'&&as==='language';});
+ .filter(a=>{const as=scope(a.section);return fs==='family'||fs==='contact'?fs===as:!fs||!as||fs===as||fs==='personal'&&as==='language';});
 }
 export function dateValue(value,precision){
  const m=String(value).trim().match(/^(\d{4})[-/.年](\d{1,2})(?:[-/.月](\d{1,2})日?)?月?$/);if(!m)return null;
@@ -94,7 +95,7 @@ export function createCandidateIndex(facts, url, metrics = {}) {
   candidates(f) {
    const key = semanticLabel(f.label, f.section), fs = scope(f.section);
    const candidates = byLabel.get(key) || []; metrics.candidateChecks += candidates.length;
-   return candidates.filter(a => { const as = scopes.get(a); return !fs || !as || fs === as || fs === 'personal' && as === 'language'; });
+   return candidates.filter(a => { const as = scopes.get(a); return fs==='family'||fs==='contact'?fs===as:!fs || !as || fs === as || fs === 'personal' && as === 'language'; });
   }
  };
 }
