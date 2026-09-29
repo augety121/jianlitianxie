@@ -1,16 +1,20 @@
 import {numericMetrics} from './performance.mjs';
+import {cleanDiagnostic,cleanProfileDiagnostic,diagnosticCodes,explainDiagnostic} from './match-diagnostics.mjs';
 /** Local-only bounded operation receipts. No URLs, labels, values or raw exceptions. */
 const KEY='resumeLocalReceiptsV1', FLAG='resumeLocalReceiptsEnabled';
-const stages=new Set(['preview','import','scan','fill','bind','map','stop','erase']);
-const statuses=new Set(['ready','missing','manual','preserve','verified','invalid','stale','needs-user','cancelled','not-attempted']);
-const codes=new Set(['restricted-control','record-unbound','ambiguous-source','date-precision','no-label-match']);
+const stages=new Set(['preview','import','scan','fill','bind','map','stop','erase','learn']);
+const statuses=new Set(['ready','review','missing','manual','preserve','verified','invalid','stale','needs-user','cancelled','not-attempted']);
+const codes=new Set(Object.keys(diagnosticCodes));
 const reasons=new Set(['none','check-input','target-changed','permission','busy','interrupted','review-required']);
 const int=(v,max)=>Number.isSafeInteger(v)&&v>=0?Math.min(v,max):0;
 function safe(r) {
   if(!r || !stages.has(r.stage))return null;
   return {seq:int(r.seq,1e9),at:int(r.at,9e15),stage:r.stage,ok:r.ok===true,
+    version:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.version||'')?r.version:'unknown',
+    engineVersion:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.engineVersion||'')?r.engineVersion:'unknown',
+    ...(cleanProfileDiagnostic(r.profile)?{profile:cleanProfileDiagnostic(r.profile)}:{}),
     reason:reasons.has(r.reason)?r.reason:'check-input',ms:int(r.ms,3600000),total:int(r.total,20000),
-    fields:(Array.isArray(r.fields)?r.fields:[]).slice(0,300).filter(x=>statuses.has(x?.status)).map(x=>({index:int(x.index,20000),status:x.status,...(codes.has(x.code)?{code:x.code}:{})})),
+    fields:(Array.isArray(r.fields)?r.fields:[]).slice(0,300).filter(x=>statuses.has(x?.status)).map(x=>({index:int(x.index,20000),status:x.status,...(codes.has(x.code)?{code:x.code}:{}),...cleanDiagnostic(x)})),
     omitted:int(r.omitted,20000),performance:{scan:numericMetrics(r.performance?.scan),match:numericMetrics(r.performance?.match),apply:numericMetrics(r.performance?.apply)}};
 }
 export function receiptReason(error) {
@@ -45,7 +49,7 @@ export class LocalReceipts {
     return this.queue(()=>this.storage.set({[FLAG]:enabled,...(clear?{[KEY]:[]}: {})}));
   }
 }
-export function exportReceipts(data){
+export function exportReceipts(data,{includeExplanations=true}={}){
   const records=(data.records||[]).map(safe).filter(Boolean),base=records[0]?.at||0;
-  return {schemaVersion:1,containsPersonalValues:false,dropped:int(data.dropped,1e9),records:records.map(({at,...r})=>({...r,offsetMs:at-base}))};
+  return {schemaVersion:2,containsPersonalValues:false,dropped:int(data.dropped,1e9),legend:diagnosticCodes,limitations:['仅记录固定规范字段名，不含原始标签、个人值、网址或简历正文','verified仅表示页面回读，不表示保存或提交','旧版记录缺少诊断上下文，升级后重新扫描'],records:records.map(({at,...r})=>({...r,offsetMs:at-base,...(includeExplanations?{diagnosis:r.fields.map(explainDiagnostic)}:{})}))};
 }

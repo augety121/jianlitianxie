@@ -1,0 +1,19 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>0.10.0 经历补填与诊断验收</title>
+<style>body{max-width:920px;margin:32px auto;font:16px/1.6 system-ui;color:#173b46;background:#f5f9f8}section,.card{padding:16px;background:white;border:1px solid #c8ded7;border-radius:12px;margin:12px 0}input,textarea{font:inherit;display:block;width:95%;padding:8px;border:1px solid #adcac0;border-radius:6px}button{padding:12px;background:#087f70;color:white;border:0;border-radius:8px;cursor:pointer}pre{white-space:pre-wrap;font:14px/1.5 monospace}</style>
+<h1>经历补填与诊断验收</h1><p>全部使用虚构资料。复用生产扫描、经历解析、匹配与写入代码；不是已安装扩展或线上招聘网站验收。</p>
+<button id="run">识别经历并补填</button><pre id="status">等待操作</pre>
+<form><section><h2>项目经历</h2><div class="card"><div>项目名称<input></div><div>项目描述<textarea></textarea></div></div><div class="card"><div>项目名称<input value="示例项目甲"></div><div>项目描述<textarea></textarea></div></div></section><section><h2>个人信息</h2><label>期望薪资<input type="number"></label><label>自我评价<textarea></textarea></label></section></form>
+<h2>逐字段诊断</h2><pre id="diagnosis"></pre>
+<script src="../extension/engine.js"></script><script type="module">
+import {resolveRecords} from '../extension/core/record-resolver.mjs';
+import {makePlan} from '../extension/core/planner.mjs';
+import {fieldDiagnostic,explainDiagnostic} from '../extension/core/match-diagnostics.mjs';
+const facts=['甲','乙'].flatMap(entity=>[['项目名称','示例项目'+entity],['项目描述','项目'+entity+'：用虚构资料验证独立经历对应、补填和回读。']].map(([label,value])=>({id:entity+label,label,value,entity,section:'项目经历',confirmed:true})));
+facts.push({id:'salary',label:'期望薪资',value:'面议',section:'个人信息',confirmed:true});
+document.querySelector('#run').onclick=async()=>{
+ const s=await __resumeFillEngine.scan(),r=resolveRecords(s,facts),p=makePlan(s,{facts},{},r.bindings,{reviewExisting:true});
+ document.querySelector('#diagnosis').textContent=p.entries.map((e,i)=>explainDiagnostic({index:i+1,status:e.status,...fieldDiagnostic(e,facts,r.methods[e.groupId])})).join('\n\n');
+ const selected=p.entries.filter(e=>e.status==='ready');const result=await __resumeFillEngine.apply({...p,entries:selected});
+ document.querySelector('#status').textContent=`扫描 ${s.fields.length}，计划补填 ${selected.length}，页面回读通过 ${result.results.filter(x=>x.status==='verified').length}；保留 ${p.entries.filter(e=>e.status==='preserve').length}；待处理 ${p.entries.filter(e=>e.status==='missing').length}。`;
+};
+</script></html>

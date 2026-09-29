@@ -9,25 +9,36 @@ const groups=[
  ['开始月份','开始年月','开始时间','入学时间','入学日期','项目开始时间','start date','start month','from date'],
  ['结束月份','预计结束月份','结束年月','结束时间','毕业时间','毕业日期','项目结束时间','end date','end month','to date'],
  ['预计毕业月份','预计毕业日期','预计毕业时间'],['入党月份','入党时间','入党日期'],
- ['公司名称','企业名称','单位名称','实习单位','company name','employer'],['职位名称','岗位名称','担任职务','job title','position title'],['部门名称','所在部门'],
+ ['公司名称','企业名称','单位名称','实习单位','company name','employer'],['职位名称','岗位名称','担任职务','job title','position title'],['部门名称','所在部门','部门'],
  ['岗位职责','实习内容','工作内容','工作描述','工作职责','responsibilities','job responsibilities'],['项目描述','项目介绍','项目简介','project description'],
- ['兴趣爱好','个人爱好','爱好'],['特长','技能特长'],['证书名称','资格证书名称','certificate name','certification name'],
+ ['自我评价','自我描述','评价内容','个人评价','self evaluation','self assessment'],['兴趣爱好','个人爱好','爱好'],['特长','技能特长'],['证书名称','资格证书名称','certificate name','certification name'],
  ['获得日期','获得月份','获得时间','取得时间','获证日期'],['获奖名称','获奖项','奖项名称','award name'],['获奖时间','获奖日期'],
  ['获奖级别','奖励级别'],['紧急联系人','紧急联系人姓名'],['紧急联系人电话','紧急联系电话'],
  ['英语四级成绩','四级成绩','CET4成绩'],['毕业届次','毕业届别'],
  ['姓氏','family name','last name'],['名字','given name','first name'],['性别','gender'],
- ['学历','education level'],['学位','degree'],['项目名称','project name']
+ ['学历','education level','highest education'],['学位','degree'],['项目名称','project name','project title'],
+ ['项目职责','项目中职责','项目中的职责','承担职责','project responsibilities'],['项目成果','项目业绩','project achievements','project results'],
+ ['作品链接','项目链接','项目网址','project url','portfolio url'],['主修课程','主要课程','courses','coursework'],
+ ['绩点','平均学分绩点','GPA'],['平均分','平均成绩','average score'],['专业排名','成绩排名','class rank'],
+ ['教育经历描述','教育描述','education description']
 ];
 const aliases=new Map(groups.flatMap(g=>g.map(x=>[normalize(x),normalize(g[0])])));
 export function semanticLabel(label,section=''){
- let s=normalize(label).replace(/必填|选填/g,'');
+ label=String(label??'').replace(/[（(]\s*(?:限|最多|不超过)?\s*\d+\s*(?:个)?(?:字|字符)(?:以内|内)?\s*[)）]\s*$/,'');
+ let s=normalize(label).replace(/必填|选填/g,'').replace(/(?:required|optional)$/,'').replace(/[?？]+$/,'');
+ const fieldScope=scope(section);
+ if(s==='name')s=({project:'项目名称',education:'学校',work:'公司名称',personal:'姓名',certificate:'证书名称',award:'获奖名称'})[fieldScope]||s;
+ if(s==='description')s=({project:'项目描述',work:'岗位职责',education:'教育经历描述'})[fieldScope]||s;
+ if(s==='company'&&fieldScope==='work')s='公司名称';
+ if(['职责','项目中职责'].includes(s)&&fieldScope==='project')s='项目职责';
+ if(s==='职位'&&fieldScope==='work')s='职位名称';
  if(/紧急联系|emergency contact/i.test(section)){
   if(['姓名','联系人','联系人姓名','name','fullname','contactname'].includes(s))s='紧急联系人姓名';
   if(['电话','联系电话','手机号','手机号码','phone','phonenumber','mobile','mobilephone'].includes(s))s='紧急联系人电话';
  }
  if(/证书|资格/.test(section)){if(s==='名称')s='证书名称';if(s==='日期')s='获得日期';}
  if(/获奖|奖励/.test(section)&&['名称','奖项'].includes(s))s='获奖名称';
- if(s==='联系电话'&&/基本|个人/.test(section))s='手机号码';
+ if(['电话','联系电话'].includes(s)&&/基本|个人/.test(section))s='手机号码';
  return aliases.get(s)||s;
 }
 export function scope(s=''){

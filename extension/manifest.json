@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "简历填写 · 本地速填",
-  "version": "0.8.3",
-  "description": "MD/JSON导入、免口令本地保存、扫描后核对填写及自动脱敏日志；加密库与MCP为可选高级模式。",
+  "version": "0.10.2",
+  "description": "上传PDF/Word简历、本地解析与逐条核对、补填空白项、确认后修正已有内容；保留资料与自动脱敏日志。",
   "permissions": [
     "activeTab",
     "scripting",
@@ -28,7 +28,7 @@
     }
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; connect-src http://127.0.0.1:19327"
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; worker-src 'self'; connect-src 'self' http://127.0.0.1:19327"
   },
   "icons": {
     "16": "icons/icon16.png",

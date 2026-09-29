@@ -11,7 +11,10 @@ def bundle(entry):
         key=str(path)
         if key in known:return key
         known.add(key)
-        source=path.read_text()
+        source=path.read_text(encoding='utf-8')
+        # Preserve each module's URL when embedding it in a classic-script UI fixture.
+        # These fixtures do not load PDF workers; PDF byte extraction has separate tests.
+        source=source.replace('import.meta.url',json.dumps(path.as_uri()))
         imp=re.compile(r"^\s*import\s*\{([^}]+)\}\s*from\s*['\"]([^'\"]+)['\"];?",re.M)
         bindings=[]
         for match in imp.finditer(source):

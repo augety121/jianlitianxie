@@ -51,12 +51,14 @@ try:
    require(target.locator('#name').input_value()==NAME,'wrong name destination');require(target.locator('#email').input_value()==EMAIL,'wrong email destination');require(target.locator('#gender').input_value()=='','unselected sensitive field written');require(target.locator('#password').input_value()=='','password input touched');require(target.evaluate('submissions')==0,'submitted')
   step('actual-extension-fill-independent-DOM-check-no-submit',fill)
   def log_export():
-   page.locator('[data-view=logs]').click();expect(page.locator('.log')).to_have_count(4);page.locator('#exportLogs').click();expect(page.locator('#logDialog')).to_be_visible();text=page.locator('#logPreview').text_content();parsed=json.loads(text)
-   for private in [NAME,EMAIL,'姓名','邮箱',base,'Bearer']:require(private not in text,'private content in logs')
+   page.locator('[data-view=logs]').click();expect(page.locator('.log')).to_have_count(4);page.locator('#exportLogs').click();expect(page.locator('#logDialog')).to_be_visible();expect(page.locator('#downloadLogs')).to_be_enabled()
+   with page.expect_download() as dl: page.locator('#downloadLogs').click()
+   text=Path(dl.value.path()).read_text(encoding='utf-8');parsed=json.loads(text)
+   for private in [NAME,EMAIL,base,'Bearer']:require(private not in text,'private content in logs')
    require(any(r['stage']=='fill' and any(f['status']=='verified' for f in r['fields']) for r in parsed['records']),'missing actual fill receipt')
    scan=next(r for r in parsed['records'] if r['stage']=='scan');filled=next(r for r in parsed['records'] if r['stage']=='fill')
    require(scan['performance']['scan']['durationMs']>=0 and scan['performance']['match']['durationMs']>=0,'real scan/match timings missing')
-   require(filled['performance']['apply']['verificationWaitMs']>=490 and filled['performance']['apply']['readbackChecks']==2,'real readback metrics missing');page.locator('[data-close=logDialog]').click()
+   require(filled['performance']['apply']['verificationWaitMs']>=490 and filled['performance']['apply']['readbackChecks']==2,'real readback metrics missing')
   step('automatic-private-content-free-receipts-from-real-fill',log_export)
   def boundaries():
    r=worker.evaluate('''async id=>(await chrome.scripting.executeScript({target:{tabId:id},func:async()=>{let storageReadable=false;try{await chrome.storage.local.get(null);storageReadable=true;}catch{} const answer=await chrome.runtime.sendMessage({type:'local-state'});return {storageReadable,rejected:!!answer.error};}}))[0].result''',tab_id)
@@ -68,7 +70,7 @@ try:
   step('full-browser-restart-reuses-local-profile-without-password',restart)
   def invalid_input():
    page.locator('[data-view=profile]').click();page.locator('#profileSearch').fill('邮箱');page.locator('.fact button').click();page.locator('#editValue').fill('not-an-email');page.locator('#editForm button[type=submit]').click();expect(page.locator('#editDialog')).to_be_hidden();page.locator('[data-view=fill]').click();page.locator('#scan').click();expect(page.locator('.field')).to_have_count(3);page.locator('#fillSelected').click();expect(page.locator('#result')).to_contain_text('未提交')
-   require(target.locator('#email').input_value()=='','invalid email was written');require(target.evaluate('submissions')==0,'submitted on invalid input');page.locator('[data-view=logs]').click();page.locator('#exportLogs').click();expect(page.locator('#logDialog')).to_be_visible();text=page.locator('#logPreview').text_content();require('invalid' in text,'field rejection not logged');require('not-an-email' not in text,'raw value logged');page.locator('[data-close=logDialog]').click()
+   require(target.locator('#email').input_value()=='','invalid email was written');require(target.evaluate('submissions')==0,'submitted on invalid input');page.locator('[data-view=logs]').click();page.locator('#exportLogs').click();expect(page.locator('#logDialog')).to_be_visible();expect(page.locator('#downloadLogs')).to_be_enabled();text=page.locator('#logPreview').text_content();require('invalid' in text,'field rejection not logged');require('not-an-email' not in text,'raw value logged');page.locator('[data-close=logDialog]').click()
   step('native-rejection-is-logged-without-leaking-value-or-retrying',invalid_input)
   def screenshot():
    page.locator('[data-view=fill]').click();page.locator('#scan').click();expect(page.locator('.field')).to_have_count(3);page.locator('#showValues').uncheck();page.screenshot(path=str(ROOT/'test-results/local-first-installed.png'),full_page=True)

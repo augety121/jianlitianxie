@@ -1,7 +1,7 @@
 import {VaultSession} from './core/vault-session.mjs';
 import {FrameBroker} from './core/frame-broker.mjs';
 import {WorkspaceRun} from './core/workspace-run.mjs';
-import {trustedWorkspace, secureTarget} from './core/workspace-policy.mjs';
+import {trustedWorkspace, secureTarget, selectedFacts} from './core/workspace-policy.mjs';
 /** No web-page sender can call these routes, even if it guesses the message names. */
 export function createWorkspace(chrome, {api, inject, pair, legacyBusy, externalBusy=()=>false}) {
   const storageReady = Promise.all([chrome.storage.local.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'}), chrome.storage.session.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'})]);
@@ -110,6 +110,11 @@ export function createWorkspace(chrome, {api, inject, pair, legacyBusy, external
     if (m.type === 'workspace-create') return vault.create(m.password);
     if (m.type === 'workspace-unlock') return vault.unlock(m.password);
     if (m.type === 'workspace-read') return vault.read();
+    if (m.type === 'workspace-copy') {
+      const p=vault.read();if(p.revision!==m.revision)throw Error('资料已修改，请重新载入');
+      return {value:selectedFacts(p,[m.factId])[0].value};
+    }
+    if (m.type === 'workspace-presets') { await run.stop();return vault.savePresets(m.presets,m.revision); }
     if (m.type === 'workspace-save') { await run.stop(); return vault.save(m.facts, m.revision); }
     if (m.type === 'workspace-backup') return vault.backup();
     if (m.type === 'workspace-restore') { await run.stop(); return vault.restore(m.envelope, m.password, m.replace === true); }

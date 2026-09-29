@@ -17,10 +17,10 @@ export function entityGroups(snapshot, facts, bindings = {}) {
     let reason = '';
     if (!recordScopes.has(kind) || fields.some(f => scope(f.section) !== kind)) reason = '分区不明确，不能整段绑定';
     else if (new Set(labels).size !== labels.length) reason = '该区块存在重复字段，可能包含多段经历，请逐项核对';
-    const byEntity = new Map();
+    const byEntity = new Map(),sourceLabels=new Set(fields.map(f=>semanticLabel(f.dateLabel||f.label,f.section)));
     if (!reason) for (const fact of facts) {
       if (fact.confirmed !== true || fact.conflict || !fact.entity || fact.origin && fact.origin !== origin ||
-          restrictedFactScope(fact, kind) || !labels.includes(semanticLabel(fact.label, fact.section))) continue;
+          restrictedFactScope(fact, kind) || !sourceLabels.has(semanticLabel(fact.label, fact.section))) continue;
       if (!byEntity.has(fact.entity)) byEntity.set(fact.entity, 0);
       byEntity.set(fact.entity, byEntity.get(fact.entity) + 1);
     }

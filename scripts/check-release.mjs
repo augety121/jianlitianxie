@@ -13,7 +13,7 @@ async function walk(dir){
   if(e.isDirectory()){await walk(p);continue;}
   if(privateNames.test(e.name)||/\.(pdf|docx|zip|pyc)$/i.test(p))throw Error('Private/document artifact in source: '+p);
   files.push(p);
-  if(/\.(png|jpg|jpeg|webp|woff2?)$/i.test(p))continue;
+  if(/\.(png|jpg|jpeg|webp|woff2?|bcmap|pfb|ttf)$/i.test(p))continue;
   const text=await fs.readFile(p,'utf8');
   if(/\b1[3-9]\d{9}\b|[0-9]+@nwnu\.edu\.cn/.test(text))throw Error('Known private-data pattern in '+p);
  }
@@ -35,7 +35,7 @@ const manifest=JSON.parse(await fs.readFile(path.join(root,'extension/manifest.j
 const pkg=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
 if(manifest.version!==pkg.version||manifest.manifest_version!==3)throw Error('Release version mismatch');
 const readme=await fs.readFile(path.join(root,'README.md'),'utf8');
-if(!readme.startsWith('# 简历填写助手 '+pkg.version+'\n'))throw Error('README version mismatch');
+if(readme.split(/\r?\n/,1)[0]!=='# 简历填写助手 '+pkg.version)throw Error('README version mismatch');
 const localPage=await fs.readFile(path.join(root,'extension/local.html'),'utf8');
 if(!localPage.includes('本地速填 '+pkg.version)||manifest.options_ui.page!=='local.html')throw Error('Local entry version mismatch');
 if([...manifest.permissions].sort().join(',')!=='activeTab,scripting,storage')throw Error('Unexpected permission expansion');

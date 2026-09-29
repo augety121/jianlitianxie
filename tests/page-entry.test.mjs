@@ -38,7 +38,7 @@ test('page cannot stop a plan owned by the management page',async()=>{
 });
 test('existing values are preserved and a zero-ready scan explains why rather than pretending to fill',async()=>{
  const h=await setup();h.values.name='EXISTING';h.values.email='existing@example.invalid';
- const p=await call(h,'scan');assert.equal(p.counts.preserve,2);assert.equal(p.quick.length,0);
+ const p=await call(h,'scan');assert.equal(p.counts.review,2);assert.equal(p.quick.length,0);
  await assert.rejects(call(h,'fill',{planId:p.id,reviewed:true}),/没有可/);assert.equal(h.values.name,'EXISTING');
  const zero={entries:[...Array.from({length:13},()=>({status:'preserve'})),...Array.from({length:6},()=>({status:'missing'})),{status:'manual'}]};
  assert.match(planExplanation(zero),/6 项未唯一匹配，1 项需人工处理，13 项已有内容/);

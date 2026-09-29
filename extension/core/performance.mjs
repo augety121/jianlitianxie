@@ -4,7 +4,7 @@ const COUNTERS = [
   'labelComputations', 'anchorComputations', 'waitCalls', 'waitProbes',
   'mutationSignals', 'fallbackPolls', 'observersCreated', 'observersClosed',
   'hitTests', 'writesAttempted', 'uncertainStops', 'yieldCount',
-  'fieldCount', 'factCount', 'candidateChecks', 'indexEntries',
+  'fieldCount', 'factCount', 'candidateChecks', 'indexEntries', 'unlabeledFields', 'unscopedFields',
   'recordShapeReads', 'recordShapeQueries', 'recordShapeCacheHits', 'recordInvalidations',
   'schedulerYields', 'timerYields', 'verificationWaitMs', 'readbackMs', 'readbackChecks'
 ];

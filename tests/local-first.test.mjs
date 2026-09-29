@@ -67,7 +67,8 @@ test('encrypted migration is read-only until confirmed, and the old encrypted by
 test('logs record actual scan/fill by default without personal content, URLs or raw errors',async()=>{
  const h=localHarness();await h.attach();await importText(h,text);const p=await h.api('scan',{tabId:11});await h.api('fill',{planId:p.id,ids:['0:name'],reviewed:true});
  const log=await h.api('logs'),serialized=JSON.stringify(log);assert(log.enabled);assert(log.records.some(r=>r.stage==='fill'&&r.fields[0].index===1&&r.fields[0].status==='verified'));
- for(const value of ['FICTIONAL_USER','candidate@example.invalid','姓名','邮箱','https://','target-document','local-document'])assert(!serialized.includes(value),value);
+ for(const value of ['FICTIONAL_USER','candidate@example.invalid','https://','target-document','local-document'])assert(!serialized.includes(value),value);
+ assert(log.records.find(r=>r.stage==='scan').fields.some(f=>f.semantic==='姓名'));
  await h.api('log-settings',{enabled:false,clear:true});await h.api('scan',{tabId:11});assert.equal((await h.api('logs')).records.length,0);
 });
 test('receipt sanitize, retention, capacity and queued clear are bounded',async()=>{

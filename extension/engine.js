@@ -1,9 +1,9 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.8.3') return;
+ if(globalThis.__resumeFillEngine?.version==='0.10.2') return;
  globalThis.__resumeFillEngine?.cancel?.();
- const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot;
- let busy=false,generation=0;
+ const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
+ let busy=false,generation=0; const attemptedFields=new Set();
  // Detached validation uses native setters captured before any later page-control instrumentation.
  const probeSetters={INPUT:Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set,TEXTAREA:Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set};
  const controlsSelector='input,textarea,select,[contenteditable="true"],[contenteditable=""],[contenteditable="plaintext-only"],[role="combobox"],.x-combo,.x-combocheck,.x-radio-group,[role=radiogroup]';
@@ -23,7 +23,7 @@
  function anchorRecords(e){
   const p=container(e);if(!p)return [];
   return memo('anchorRecords',p,()=>[...p.querySelectorAll('input,select')]
-   .filter(x=>/学校|院校|项目名称|公司|单位名称|证书名称|与本人关系/.test(label(x))&&!empty(val(x)))
+   .filter(x=>/学校|院校|项目名称|公司|企业名称|单位名称|证书名称|与本人关系/.test(label(x))&&!empty(val(x)))
    .map(node=>({node,value:JSON.stringify(val(node)),label:label(node)})));
  }
  const formState=f=>f?JSON.stringify(['action','method','target'].map(a=>f.getAttribute(a))):'';
@@ -31,7 +31,7 @@
   ...(e.tagName==='SELECT'?[...e.options].map(o=>[o.value,o.label,o.disabled,!!o.parentElement?.disabled]):[]),
   ...(e.type==='radio'?(radioGroups.get(e)||[]).map(r=>[r.value,label(r),r.disabled,r.name]):[]),
   ...(e.matches('.x-radio-group,[role=radiogroup]')?[...e.querySelectorAll('.x-radio,[role=radio]')].map(r=>[text(r.querySelector('.radio-text')||r),r.getAttribute('aria-disabled'),r.classList.contains('disabled')]):[])]);
- function recordNode(e){if(!e)return null;const p=container(e);return p&&(p.matches('[data-entity],.resume-item,.education-item,.project-item,.experience-item,.fx-subform-row,fieldset,section,[data-section],tr')||!e.closest(recordSelector)&&layoutRegion(e)?.node===p)?p:null;}
+ function recordNode(e){if(!e)return null;const p=container(e);return p&&(p.matches('[data-entity],.resume-item,.education-item,.project-item,.experience-item,.fx-subform-row,fieldset,section,[data-section],tr')||(layoutRegion(e)?.node===p||inferredRecord(e)===p))?p:null;}
  function recordShape(e){const p=recordNode(e);if(!p)return null;return memo('recordShapes',p,()=>({node:p,parent:p.parentNode,index:[...p.parentNode.children].indexOf(p),fields:[...p.querySelectorAll(controlsSelector)]}));}
  /** Cache only structural membership, never labels, values, geometry or permissions.
   * takeRecords() drains synchronous mutations before every lookup (including own writes).
@@ -67,9 +67,11 @@
   const valid=fields.length===record.fields.length&&fields.every((f,i)=>f!==undefined&&f===record.fields[i]);
   shapeCache?.cache.set(record,valid);return valid;
  }
- function captureGuard(e){const form=e.form||e.closest('form');return {root:e.getRootNode(),label:fieldLabel(e),section:section(e),record:recordShape(e),binding:e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'',radios:radioGroups.get(e)?.slice(),form,formState:formState(form),controlState:controlState(e),anchors:anchorRecords(e)};}
+ function layoutIdentity(e){const region=layoutRegion(e);return region?layoutCandidates(region.node).map(node=>layoutTitle(node)).filter(Boolean).join('|'):'';}
+ function captureGuard(e){const form=e.form||e.closest('form');return {root:e.getRootNode(),label:fieldLabel(e),section:section(e),layoutIdentity:layoutIdentity(e),record:recordShape(e),binding:e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'',radios:radioGroups.get(e)?.slice(),form,formState:formState(form),controlState:controlState(e),anchors:anchorRecords(e)};}
  function guardUnchanged(e,id){
   const g=guards.get(id);if(!g||fieldLabel(e)!==g.label||section(e)!==g.section||!recordUnchanged(g.record)||g.binding&&(e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'')!==g.binding||e.getRootNode()!==g.root||(e.form||e.closest('form'))!==g.form||formState(g.form)!==g.formState||controlState(e)!==g.controlState)return false;
+  if(layoutIdentity(e)!==g.layoutIdentity)return false;
   if(g.radios){const current=[...e.getRootNode().querySelectorAll('input[type=radio]')].filter(r=>e.name?r.name===e.name&&r.form===e.form&&r.closest('fieldset')===e.closest('fieldset'):r===e);if(current.length!==g.radios.length||current.some((r,i)=>r!==g.radios[i]))return false;}
   return g.anchors.every(a=>a.node.isConnected&&container(a.node)===contexts.get(id)&&JSON.stringify(val(a.node))===a.value&&label(a.node)===a.label);
  }
@@ -170,8 +172,21 @@
  };
  function roots(root=document){tick('rootWalks');const out=[root];const nodes=root.querySelectorAll('*');tick('nodesVisited',nodes.length);for(const el of nodes)if(el.shadowRoot)out.push(...roots(el.shadowRoot));return out;}
  const all=selector=>(queryRoots||roots()).flatMap(root=>[...root.querySelectorAll(selector)]);
- const menuSelector='[role=listbox],.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown';
- const optionSelector='[role=option],.ant-select-item-option,.el-select-dropdown__item,.ivu-select-item,.x-combo-dropdown-item';
+ const menuSelector='[role=listbox],.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown,.Select-menu-outer,[class$="-menu"]';
+ const optionSelector='[role=option],.ant-select-item-option,.ant-select-dropdown-menu-item,.el-select-dropdown__item,.ivu-select-item,.x-combo-dropdown-item,.Select-option,[class$="-option"]';
+ const selectWrappers='.ant-select,.el-select,.phoenix-select,.ivu-select,.Select,.react-select__control,[role=combobox]';
+ const selectedSelector='.ant-select-selection-item,.ant-select-selection-selected-value,.el-select__selected-item:not(.is-placeholder),.ivu-select-selected-value,.phoenix-select-selection-selected-value,.Select-value-label,[class*="singleValue"],[class*="single-value"],[class*="selectedValue"]';
+ function selectWrap(e){
+  if(e.tagName==='SELECT')return null;
+  const known=e.closest(selectWrappers.replace(',[role=combobox]',''));if(known)return known;
+  // CSS modules may erase library class names. Require an explicit selected-value
+  // marker and a single input branch, never arbitrary sibling text or a whole row.
+  for(let p=e.parentElement,n=0;p&&n<4;n++,p=p.parentElement){
+   if(p.querySelectorAll('input,textarea,select').length!==1)break;
+   if(p.querySelector(selectedSelector))return p;
+  }
+  return e.closest('[role=combobox]');
+ }
  function ownedMenus(e,selector=menuSelector){
   return [...new Set((e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'').split(/\s+/).filter(Boolean).map(id=>e.getRootNode().getElementById?.(id)||document.getElementById(id)).filter(Boolean)
     .map(x=>x.closest('.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown')||x))].filter(x=>visible(x)&&x.matches(selector));
@@ -191,33 +206,96 @@
   return field.querySelector('.subform-head .subform-row')?.children[index]?.querySelector('.subform-title');
  }
  function labelRaw(e){
-  const clean=s=>s.replace(/^[*\s]+|[：:*\s]+$/g,'');
+  const clean=s=>{const t=s.replace(/^[*\s]+|[：:*\s]+$/g,'');return /^\d+(?:[年月日])?$/.test(t)?'':t;};
+  const component=dateComponent(e);if(component)return component.label;
   const sh=subHead(e);if(sh)return clean(sh.getAttribute('title')||labelText(sh));
   // Resolve the first available source only, preserving the previous precedence.
   // Most ATS fields have a real label: do not also query wrappers/tables for them.
   const native=e.labels?.length?[...e.labels].map(labelText).join(' '):'';
-  if(native)return clean(native);
-  const direct=e.getAttribute('aria-label');if(direct)return clean(direct);
+  if(clean(native||''))return clean(native);
+  const direct=e.getAttribute('aria-label');if(clean(direct||''))return clean(direct);
   const named=e.getAttribute('aria-labelledby'),root=e.getRootNode();
-  const aria=named?named.split(' ').map(id=>text(root.getElementById(id))).join(' '):'';
-  if(aria)return clean(aria);
-  const wrap=e.closest(wrappers),explicit=labelText(wrap?.querySelector('label,.ant-form-item-label,.el-form-item__label,.form-item__label,.layui-form-label,.field-name'));
-  if(explicit)return clean(explicit);
+  const aria=named?named.trim().split(/\s+/).map(id=>text(root.getElementById(id))).filter(Boolean).join(' '):'';
+  if(clean(aria||''))return clean(aria);
+  const dataLabel=e.getAttribute('data-label');if(clean(dataLabel||''))return clean(dataLabel);
+  const wrap=e.closest(wrappers),wrapLabel=wrap?.querySelector('label,.ant-form-item-label,.el-form-item__label,.form-item__label,.layui-form-label,.field-name');
+  // A shared row can hold several independent inputs; do not reuse its first label.
+  const peers=wrap?[...wrap.querySelectorAll(controlsSelector)].filter(n=>n!==e&&!e.contains(n)&&!n.contains(e)&&visible(n)&&!['hidden','button','submit'].includes(n.type)):[];
+  const explicit=wrapLabel&&(!wrapLabel.htmlFor||wrapLabel.htmlFor===e.id)&&(!peers.length||e.type==='radio')?labelText(wrapLabel):'';
+  if(clean(explicit||''))return clean(explicit);
   let table='';const cell=e.closest('td');if(cell){const row=cell.parentElement;const cells=[...row.children];const index=cells.indexOf(cell);const previous=cells[index-1];if(previous&&!previous.querySelector('input,select,textarea'))table=labelText(previous);if(!table){const head=e.closest('table')?.querySelector('thead tr');table=labelText(head?.children[index]);}}
-  if(table)return clean(table);
+  if(clean(table||''))return clean(table);
   const preceding=e.previousElementSibling;const sibling=preceding?.matches('label,.label,.field-label')?labelText(preceding):'';
-  if(sibling)return clean(sibling);
+  if(clean(sibling||''))return clean(sibling);
+  const autocomplete={name:'姓名','given-name':'名字','family-name':'姓氏',email:'邮箱',tel:'手机号码','tel-national':'手机号码',bday:'出生日期','address-line1':'详细地址',organization:'公司名称','organization-title':'职位名称'}[(e.autocomplete||'').trim().toLowerCase().split(/\s+/).at(-1)]||'';
+  if(autocomplete)return autocomplete;
+  const nearby=nearbyLabel(e);if(nearby)return clean(nearby);
   const hint=(e.placeholder||'').replace(/^(请输入|请选择|请填写)\s*/,'');
   const placeholder=/^(选择|输入|搜索|select|enter|search)/i.test(hint)?'':hint;
-  if(placeholder)return clean(placeholder);
-  const autocomplete={name:'姓名','given-name':'名字','family-name':'姓氏',email:'邮箱',tel:'手机号码','tel-national':'手机号码',bday:'出生日期','address-line1':'详细地址'}[(e.autocomplete||'').split(/\s+/).at(-1)]||'';
-  return clean(autocomplete||e.name||e.id||'未标注字段');
+  if(clean(placeholder||''))return clean(placeholder);
+  return clean(e.name||e.id||'')||'未标注字段';
+ }
+ // CSS-module based ATS forms often put a plain div label beside an input wrapper.
+ // Stay within a small, single-field branch; do not take a label from a whole form.
+ function nearbyLabel(e){
+  let current=selectWrap(e)||e;
+  const valid=n=>{if(!n||n.querySelector?.(controlsSelector)||n.closest?.('nav,aside,button,[role=navigation]')||n.matches?.(selectedSelector))return '';const t=text(n).replace(/^[*\s]+|[：:*\s]+$/g,'');return t&&t.length<=45&&!/^\d+(?:[年月日])?$/.test(t)&&! /^(请选择|请输入|选填|必填|添加|删除|年|月|日|开始|结束)$/.test(t)?t:'';};
+  for(let level=0;level<4&&current?.parentElement;level++,current=current.parentElement){
+   const sibling=current.previousElementSibling,value=valid(sibling);if(value)return value;
+   const parent=current.parentElement;
+   const peers=[...parent.querySelectorAll(controlsSelector)].filter(n=>n!==e&&!e.contains(n)&&!n.contains(e)&&!['hidden','button','submit'].includes(n.type));
+   if(peers.length)break;
+   const labels=[...parent.children].filter(n=>n!==current).map(valid).filter(Boolean);
+   if(labels.length===1)return labels[0];
+  }
+  return '';
+ }
+ function dateComponent(e){
+  // A range is one labelled row but two independent dates. Ignore the "to
+  // present" checkbox and require exactly four/six real select components.
+  for(let p=e.parentElement,n=0;p&&n<5;n++,p=p.parentElement){
+   const inputs=[...p.querySelectorAll('input,select,textarea')].filter(x=>!['hidden','checkbox','radio','button','submit'].includes(x.type));
+   if(inputs.length>6)break;
+   if(![4,6].includes(inputs.length)||!inputs.includes(e))continue;
+   const names=[...p.querySelectorAll('*')].filter(x=>!x.children.length&&!x.matches('input,select,option')).map(x=>text(x).replace(/[*：:\s]/g,''));
+   if(!names.some(t=>/^(起止时间|起止日期|项目起止时间|工作起止时间)$/.test(t)))continue;
+   if(!inputs.every(x=>x.tagName==='SELECT'||selectWrap(x)))continue;
+   // Separate explicit start/end labels take precedence over a shared range.
+   if(names.some(t=>/^(开始时间|结束时间|入学时间|毕业时间)$/.test(t)))continue;
+   const half=inputs.length/2,index=inputs.indexOf(e),dateLabel=index<half?'开始时间':'结束时间',datePart=['year','month','day'][index%half];
+   return {label:dateLabel+'（'+{year:'年',month:'月',day:'日'}[datePart]+'）',dateLabel,datePart};
+  }
+  const sw=selectWrap(e);
+  const hint=(e.placeholder||e.getAttribute('aria-label')||e.options?.[0]?.textContent||sw?.querySelector('.Select-placeholder,[class*="placeholder"]')?.textContent||'').trim().replace(/请选择|选择/g,'');
+  const part=/^(年|yyyy)$/i.test(hint)?'year':/^(月|mm)$/i.test(hint)?'month':/^(日|dd)$/i.test(hint)?'day':'';
+  let resolvedPart=part;
+  if(!resolvedPart&&sw){
+   // Filled selects often remove the year/month placeholder. Infer components
+   // only inside an explicitly labelled date row with exactly two/three controls.
+   for(let p=sw.parentElement,n=0;p&&n<4;n++,p=p.parentElement){
+    const inputs=[...p.querySelectorAll('input,select')].filter(x=>x.type!=='hidden');
+    if(inputs.length>3)break;
+    const leaves=[...p.querySelectorAll('*')].filter(x=>!x.children.length&&!x.matches('input,select,option'));
+    if(inputs.length>=2&&leaves.some(x=>/^(开始时间|结束时间|入学时间|毕业时间|获奖时间|获奖日期|获得日期)$/.test(text(x)))){
+     if(inputs.every(x=>x.tagName==='SELECT'||selectWrap(x))){resolvedPart=['year','month','day'][inputs.indexOf(e)];break;}
+    }
+   }
+  }
+  if(!resolvedPart)return null;
+  for(let p=e.parentElement,n=0;p&&n<5;n++,p=p.parentElement){
+   if(p.querySelectorAll(controlsSelector).length>3)break;
+   const nodes=[...p.children].flatMap(c=>[c,...c.children]);
+   const names=[...new Set(nodes.filter(c=>!c.querySelector(controlsSelector)&&!c.matches(controlsSelector)).map(c=>text(c).replace(/[*：:\s]/g,'')).filter(t=>/^(开始时间|开始日期|起始时间|结束时间|结束日期|入学时间|入学日期|毕业时间|毕业日期|获奖时间|获奖日期|获得日期)$/.test(t)))];
+   if(names.length>1)return null;
+   if(names.length===1)return {label:names[0]+'（'+{year:'年',month:'月',day:'日'}[resolvedPart]+'）',dateLabel:names[0],datePart:resolvedPart};
+  }
+  return null;
  }
  // Many ATS pages use plain div columns, not semantic section/fieldset elements.
  // Recognize only an explicit, short section title in a nearby shallow sibling area.
  // Never use a navigation item or one of several competing titles as a field scope.
  const recordSelector='[data-entity],.resume-item,.education-item,.project-item,.experience-item,fieldset,section,[data-section]';
- const sectionNames=/^(?:个人基本信息|个人信息|基本信息|求职意向|教育经历|教育背景|教育经验|学习经历|实习经历|工作经历|工作经验|项目经历|项目经验|培训经历|证书|资格证书|奖励荣誉|获奖经历|自我评价|紧急联系人|家庭信息|家庭成员|Education|Work Experience|Projects|Personal Information)$/i;
+ const sectionNames=/^(?:个人基本信息|个人信息|基本信息|求职意向|教育经历|教育背景|教育经验|学习经历|实习经历|工作经历|工作经验|项目经历|项目经验|培训经历|证书|资格证书|奖励荣誉|获奖经历|语言能力|自我评价|自我描述|紧急联系人|家庭信息|家庭成员|Education|Work Experience|Projects|Personal Information)$/i;
  function layoutName(node){
   const value=(node?.textContent||'').trim();if(!value||value.length>60)return '';
   const clean=value.replace(/^\s*(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/,'').replace(/[\s*：:]/g,' ').replace(/\s*(?:必填|选填|required)\s*$/i,'').trim();
@@ -230,7 +308,9 @@
   return name&&!node.closest('nav,aside,a,button,label,[role=navigation]')&&visible(node)&&!node.querySelector(controlsSelector)?name:'';
  }
  function layoutCandidates(parent){
-  return [...parent.children].slice(0,80).flatMap(c=>[c,...[...c.children].slice(0,30)]).filter(n=>layoutName(n));
+  let nodes=[...parent.children].slice(0,80),allNodes=[...nodes];
+  for(let depth=0;depth<3;depth++){nodes=nodes.flatMap(n=>[...n.children].slice(0,30));allNodes.push(...nodes);}
+  return allNodes.filter(n=>layoutName(n));
  }
  /** Keep candidate NODE lists, not current title/visibility/role decisions. New or
   * changed text and child membership invalidate them before every synchronous read.
@@ -261,7 +341,15 @@
      return named.filter(x=>!named.some(y=>x!==y&&x.node.contains(y.node)));
     });
     if(headings.length===1){const h=headings[0];if(h.node.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING)return {node:p,name:h.name};}
-    if(headings.length>1)return null;
+    if(headings.length>1){
+     // Flat ATS sections may share one parent. Use the last preceding heading,
+     // but only when each heading has a distinct control-free wrapper. Bare
+     // competing headings remain ambiguous, as do wrappers containing records.
+     if(headings.some(h=>{let branch=h.node;while(branch.parentElement&&branch.parentElement!==p)branch=branch.parentElement;return branch===h.node||!!branch.querySelector(controlsSelector);}))return null;
+     const preceding=headings.filter(h=>h.node.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING);
+     if(preceding.length)return {node:p,name:preceding.at(-1).name};
+     return null;
+    }
     if(p.matches(recordSelector))break;
    }
    return null;
@@ -271,16 +359,33 @@
   if(e.closest('.fx-subform-row'))return e.closest('.fx-subform-row');
   if(e.closest('td')&&e.closest('table')?.querySelector('thead'))return e.closest('tr');
   const explicit=e.closest(recordSelector);
-  // Preserve established explicit record boundaries; layout inference is fallback only.
+  // A section often contains several plain div cards. Strong record markers win;
+  // otherwise find the individual card inside the section before using its wrapper.
+  if(explicit?.matches('[data-entity],.resume-item,.education-item,.project-item,.experience-item'))return explicit;
+  const inferred=inferredRecord(e);
+  if(inferred&&(!explicit||explicit.contains(inferred)))return inferred;
   if(explicit)return explicit;
-  return layoutRegion(e)?.node||e.closest('table')||e.closest('form');
+  return inferredRecord(e)||layoutRegion(e)?.node||e.closest('table')||e.closest('form');
  }
- function sectionRaw(e){const inferred=e.closest(recordSelector)?null:layoutRegion(e);if(inferred&&inferred.node===container(e))return inferred.name;if(e.closest('.fx-subform-row'))return text(e.closest('.fx-field')?.querySelector('.field-name'));const parent=container(e);if(parent?.tagName==='FORM'&&parent.querySelectorAll('legend,h2,h3,h4,caption').length>1)return '';const outer=parent?.parentElement?.closest('section,[data-section],fieldset');const own=parent?.getAttribute('data-section')||text(parent?.querySelector('legend,h2,h3,h4,caption'))||text(e.closest('table')?.querySelector('caption'));const inherited=outer?.getAttribute('data-section')||text(outer?.querySelector(':scope > legend,:scope > h2,:scope > h3,:scope > h4'));const typed=parent?.matches('.education-item')?'教育经历':parent?.matches('.project-item')?'项目经历':parent?.matches('.experience-item')?'工作经历':'';const group=parent?.getAttribute('data-section')||inherited||typed||own;return [group,own&&own!==group?own:'',parent?.getAttribute('data-entity')].filter(Boolean).join(' ');}
- function anchorsRaw(e){const p=container(e);if(!p)return [];return [...p.querySelectorAll('input,select')].filter(x=>/学校|院校|项目名称|公司|单位名称|证书名称|与本人关系/.test(label(x))).map(x=>x.tagName==='SELECT'?text(x.selectedOptions[0]):x.value).filter(Boolean).slice(0,12);}
+ function inferredRecord(e){return memo('inferredRecords',e,()=>{
+  let candidate=null;const boundary=layoutRegion(e)?.node;
+  for(let p=e.parentElement,level=0;p&&level<7&&p.tagName!=='FORM';p=p.parentElement,level++){
+   const fields=[...p.querySelectorAll(controlsSelector)].filter(n=>!['hidden','button','submit','file'].includes(n.type));
+   if(fields.length<2)continue;if(fields.length>24)break;
+   const names=fields.map(label).filter(n=>n&&n!=='未标注字段'&&!/^(年|月|日|请选择|开始|结束)$/.test(n));
+   if(new Set(names).size!==names.length)break;
+   if(names.some(n=>/^(项目名称|学校|学校名称|院校名称|公司名称|企业名称|单位名称|奖项名称|获奖名称|证书名称)$/.test(n)))candidate=p;
+   if(p===boundary)break;
+  }
+  return candidate;
+ });}
+ function sectionRaw(e){const inferred=e.closest(recordSelector)?null:layoutRegion(e);if(inferred&&(inferred.node===container(e)||inferred.node.contains(container(e))))return inferred.name;if(e.closest('.fx-subform-row'))return text(e.closest('.fx-field')?.querySelector('.field-name'));const parent=container(e);if(parent?.tagName==='FORM'&&parent.querySelectorAll('legend,h2,h3,h4,caption').length>1)return '';const outer=parent?.parentElement?.closest('section,[data-section],fieldset');const own=parent?.getAttribute('data-section')||text(parent?.querySelector('legend,h2,h3,h4,caption'))||text(e.closest('table')?.querySelector('caption'));const inherited=outer?.getAttribute('data-section')||text(outer?.querySelector(':scope > legend,:scope > h2,:scope > h3,:scope > h4'));const typed=parent?.matches('.education-item')?'教育经历':parent?.matches('.project-item')?'项目经历':parent?.matches('.experience-item')?'工作经历':'';const group=parent?.getAttribute('data-section')||inherited||typed||own;return [group,own&&own!==group?own:'',parent?.getAttribute('data-entity')].filter(Boolean).join(' ');}
+ function anchorsRaw(e){const p=container(e);if(!p)return [];return [...p.querySelectorAll('input,select')].filter(x=>/学校|院校|项目名称|公司|企业名称|单位名称|证书名称|与本人关系/.test(label(x))).map(x=>x.tagName==='SELECT'?text(x.selectedOptions[0]):x.value).filter(Boolean).slice(0,12);}
  function kind(e){
   if(e.matches('.x-radio-group,[role=radiogroup]'))return 'custom-radio';if(e.matches('.x-combo,.x-combocheck'))return 'custom-select';if(e.type==='file')return 'file';if(e.type==='radio')return 'radio-group';if(e.type==='month')return 'month';if(e.type==='date')return 'date';
+  if(dateComponent(e))return e.tagName==='SELECT'?e.type:selectWrap(e)?'custom-select':e.type||'text';
   if(e.closest('.ant-picker,.el-date-editor,.fx-form-datetime')||/日期|年月|时间/.test(label(e))&&/yyyy|年|月|日期/i.test(e.placeholder||''))return 'date-picker';
-  if(e.tagName!=='SELECT'&&(e.getAttribute('role')==='combobox'||e.closest('.ant-select,.el-select,.phoenix-select,.ivu-select')))return 'custom-select';return e.type||e.tagName.toLowerCase();
+  if(selectWrap(e))return 'custom-select';return e.type||e.tagName.toLowerCase();
  }
  function val(e){
   if(!e)return '';
@@ -293,13 +398,16 @@
   if(e.type==='radio'||e.type==='checkbox')return e.checked?e.value:'';
   if(e.tagName==='SELECT'&&e.multiple)return [...e.selectedOptions].map(o=>o.value);
   if(kind(e)==='custom-select'){
-   const wrap=e.closest('.ant-select,.el-select,.phoenix-select,.ivu-select');
-   const selected=wrap?.querySelector('.ant-select-selection-item,.el-select__selected-item:not(.is-placeholder),.ivu-select-selected-value,.phoenix-select-selection-selected-value');
+   const wrap=selectWrap(e);
+   const selected=wrap?.querySelector(selectedSelector);
    return selected?text(selected):e.value||'';
   }
   return e.isContentEditable?e.innerText:e.value??'';
  }
  function fieldLabel(e){
+  // Some application forms call the short role input “职责” but also have a separate
+  // “项目中职责” paragraph. Only that explicit pair disambiguates the short input.
+  if(e.tagName==='INPUT'&&label(e)==='职责'&&/项目/.test(section(e))&&[...container(e)?.querySelectorAll('textarea')||[]].some(t=>/^(项目中职责|项目中的职责|项目职责)$/.test(label(t))))return '项目角色';
   if(e.type!=='radio')return label(e);
   const wrap=e.closest(wrappers);
   // A form-level legend ('基本信息') is not the label of every radio group inside it.
@@ -308,13 +416,13 @@
  }
  function datePrecision(e){if(e.type==='date')return 'day';return e.type==='month'||/^(yyyy|YYYY)[-/.](mm|MM)$/.test(e.placeholder||'')||/年月(?!日)/.test(label(e))?'month':'day';}
  async function scanUnsafe(token){
-  refs.clear();radioGroups.clear();repeatGroups.clear();contexts.clear();guards.clear();recordIds.clear();scanMemo={};const fields=[];const seenRadio=new Set();let n=0;
+  captureSnapshot=null;attemptedFields.clear();refs.clear();radioGroups.clear();repeatGroups.clear();contexts.clear();guards.clear();recordIds.clear();scanMemo={};const fields=[];const seenRadio=new Set();let n=0;
   const excluded={hidden:0,disabled:0,readonly:0,secret:0,truncated:0,internal:0};
   for(const root of roots()) {
    const radios=[...root.querySelectorAll('input[type=radio]')];
    for(const e of root.querySelectorAll(controlsSelector)){
    if(token!==generation)throw Error('扫描已取消');
-   if(e.type==='password'||/^(one-time-code|current-password|new-password)$/.test((e.autocomplete||'').split(/\s+/).at(-1))||/验证码|密码|captcha|password/i.test(label(e))){excluded.secret++;continue;}
+   if(e.type==='password'||/^(one-time-code|current-password|new-password)$/.test((e.autocomplete||'').trim().toLowerCase().split(/\s+/).at(-1))||/验证码|密码|captcha|password/i.test(label(e))){excluded.secret++;continue;}
    if(e.closest('.x-radio-group,[role=radiogroup]')&&e.closest('.x-radio-group,[role=radiogroup]')!==e)continue;
    if(e.closest('.x-popup')||e.isContentEditable&&e.closest('.fx-form-file')){excluded.internal++;continue;}
    if(e.isContentEditable&&e.parentElement?.closest('[contenteditable=true],[contenteditable=""],[contenteditable=plaintext-only]')){excluded.internal++;continue;}
@@ -326,7 +434,7 @@
    if(e.getAttribute('role')==='combobox'&&e.querySelector('input'))continue;
    if(n>=1000){excluded.truncated++;continue;}const id='f'+(++n);refs.set(id,e);contexts.set(id,container(e));guards.set(id,captureGuard(e));
    const type=kind(e);const group=radioGroups.get(e);const name=fieldLabel(e);
-   fields.push({id,label:name,rowIndex:e.closest('.fx-subform-row')?[...e.closest('.fx-field').querySelectorAll('.fx-subform-row')].indexOf(e.closest('.fx-subform-row')):null,control:{tag:e.tagName,classes:e.className,readOnly:!!e.readOnly,placeholder:e.placeholder||'',nodes:e.matches('.x-radio-group')?[...e.querySelectorAll('.x-radio,.x-radio-wrapper,.radio-check-icon')].map(x=>({tag:x.tagName,classes:x.className,checked:x.getAttribute('aria-checked')})):undefined},section:section(e),anchors:anchors(e),type,value:val(e),datePrecision:datePrecision(e),action:type==='file'?'upload':/date|month/.test(type)?'date':/select|radio/.test(type)?'select':'text',accept:e.accept||'',multiple:!!e.multiple||e.matches('.x-combocheck'),required:e.required||e.getAttribute('aria-required')==='true'||!!subHead(e)?.closest('.subform-cell')?.querySelector('.required')||!!e.closest('.is-required,.ant-form-item-required')||!!e.closest(wrappers)?.querySelector('.required,.field-required,.ant-form-item-required,[aria-required=true]'),maxLength:e.maxLength>0?e.maxLength:null,options:e.matches('.x-radio-group,[role=radiogroup]')?[...e.querySelectorAll('.x-radio,[role=radio]')].map(r=>({label:text(r.querySelector('.radio-text')||r),value:text(r.querySelector('.radio-text')||r),disabled:r.classList.contains('disabled')||r.getAttribute('aria-disabled')==='true'})):group?group.map(r=>({label:label(r),value:r.value,disabled:r.disabled})):e.tagName==='SELECT'?[...e.options].map(o=>({label:o.text,value:o.value,disabled:o.disabled||o.parentElement?.disabled})):null});
+   fields.push({id,label:name,rowIndex:e.closest('.fx-subform-row')?[...e.closest('.fx-field').querySelectorAll('.fx-subform-row')].indexOf(e.closest('.fx-subform-row')):null,control:{tag:e.tagName,classes:e.className,readOnly:!!e.readOnly,placeholder:e.placeholder||'',nodes:e.matches('.x-radio-group')?[...e.querySelectorAll('.x-radio,.x-radio-wrapper,.radio-check-icon')].map(x=>({tag:x.tagName,classes:x.className,checked:x.getAttribute('aria-checked')})):undefined},section:section(e),anchors:anchors(e),type,value:val(e),datePrecision:datePrecision(e),action:type==='file'?'upload':/date|month/.test(type)?'date':/select|radio/.test(type)?'select':'text',accept:e.accept||'',multiple:!!e.multiple||e.matches('.x-combocheck'),required:e.required||e.getAttribute('aria-required')==='true'||!!subHead(e)?.closest('.subform-cell')?.querySelector('.required')||!!e.closest('.is-required,.ant-form-item-required')||!!e.closest(wrappers)?.querySelector('.required,.field-required,.ant-form-item-required,[aria-required=true]'),maxLength:e.maxLength>=0?e.maxLength:null,options:e.matches('.x-radio-group,[role=radiogroup]')?[...e.querySelectorAll('.x-radio,[role=radio]')].map(r=>({label:text(r.querySelector('.radio-text')||r),value:text(r.querySelector('.radio-text')||r),disabled:r.classList.contains('disabled')||r.getAttribute('aria-disabled')==='true'})):group?group.map(r=>({label:label(r),value:r.value,disabled:r.disabled})):e.tagName==='SELECT'?[...e.options].map(o=>({label:o.text,value:o.value,disabled:o.disabled||o.parentElement?.disabled})):null});
   }
   }
   scanMemo=null;
@@ -345,6 +453,12 @@
     if(token===generation)activate(e);
    }catch{f.options=null;}
   }
+  for(const f of fields){const c=dateComponent(refs.get(f.id));if(c){f.dateLabel=c.dateLabel;f.datePart=c.datePart;}}
+  for(const f of fields){const e=refs.get(f.id),wrap=selectWrap(e);f.recognition={
+   controlFamily:e.tagName==='SELECT'?'native-select':wrap?.matches('.ant-select')?'ant':wrap?.matches('.Select')?'react-select':wrap?'marked-select':'native',
+   selectedDisplay:!!wrap?.querySelector(selectedSelector),searchEmpty:wrap?e.value==='':false,
+   datePart:f.datePart||'none'
+  };}
   for(const group of document.querySelectorAll('.fx-field')){
    const rows=group.querySelectorAll('.fx-subform-row');if(!rows.length)continue;
    const buttons=[...group.querySelectorAll('button,a,[role=button],span,div')].filter(x=>visible(x)&&/^(添加|新增|添加一行|新增一行|增加)$/.test(text(x))&&!x.querySelector('button,a,[role=button]'));
@@ -354,7 +468,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.8.3',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};return lastSnapshot;
+  lastSnapshot={engineVersion:'0.10.2',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -383,16 +497,16 @@
    }
    if(!e?.isConnected||!visible(e)||e.disabled||e.matches(':disabled')||e.getAttribute('aria-disabled')==='true'||container(e)!==contexts.get(p.fieldId)||!guardUnchanged(e,p.fieldId)||(e.readOnly&&!['custom-select','date-picker'].includes(p.kind))||JSON.stringify(val(e))!==JSON.stringify(p.oldValue)||(fieldLabel(e)!==p.label)||(section(e)!==(p.section||''))){results.push({fieldId:p.fieldId,status:'stale'});continue;}
    if(prohibited(e)){results.push({fieldId:p.fieldId,status:'manual'});continue;}
-   if(!empty(val(e))){results.push({fieldId:p.fieldId,status:'preserve'});continue;}
+   if(!empty(val(e))&&p.allowOverwrite!==true){results.push({fieldId:p.fieldId,status:'preserve'});continue;}
    if(!['string','number'].includes(typeof p.value)&&!Array.isArray(p.value)){results.push({fieldId:p.fieldId,status:'manual'});continue;}
    if(['text','email','url','tel','number','date','month','textarea'].includes(p.kind)&&!nativeAccepts(e,p.value)){results.push({fieldId:p.fieldId,status:'invalid',reason:'资料不满足当前控件格式、范围或长度；尚未写入'});continue;}
-   let writeStarted=false;const beginWrite=()=>{writeStarted=true;tick('writesAttempted');};
+   let writeStarted=false;const beginWrite=()=>{writeStarted=true;attemptedFields.add(p.fieldId);tick('writesAttempted');};
    try{
     interactionGuard(e);if(!guardUnchanged(e,p.fieldId)||!alive())throw Error('目标上下文已变化');
     if(p.kind==='custom-radio'){const options=[...e.querySelectorAll('.x-radio,[role=radio]')].filter(r=>text(r.querySelector('.radio-text')||r)===String(p.value)&&!r.classList.contains('disabled')&&r.getAttribute('aria-disabled')!=='true');if(options.length!==1)throw Error('单选候选不唯一');beginWrite();activate(options[0].querySelector('.radio-check-icon')||options[0].querySelector('.x-radio-wrapper')||options[0]);
     }else if(p.kind==='custom-select'){
      const before=new Set(all(menuSelector).filter(visible));
-     const trigger=e.closest('.ant-select')?.querySelector('.ant-select-selector')||e;
+     const trigger=selectWrap(e)?.querySelector('.ant-select-selector,.ant-select-selection,.Select-control')||e;
      if(!(e.getAttribute('aria-expanded')==='true'&&ownedMenus(e).length))activate(trigger);
      const wanted=Array.isArray(p.value)?p.value:[p.value];
      if(!wanted.length||new Set(wanted).size!==wanted.length)throw Error('选项计划无效');
@@ -432,7 +546,7 @@
     }else if(e.type==='radio'){
      const option=radioGroups.get(e)?.find(x=>x.value===p.value&&!x.matches(':disabled'));if(!option||!option.isConnected||!visible(option))throw Error('单选项不匹配');beginWrite();activate(option);
     }else if(e.isContentEditable){beginWrite();e.textContent=p.value;e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:p.value}));}
-    else {if(e.tagName==='SELECT'&&![...e.options].some(o=>o.value===String(p.value)&&!o.disabled&&!o.parentElement?.disabled))throw Error('候选选项已变化');let inputValue=p.value;if(p.kind==='date-picker'){const fmt=e.placeholder||'';if(/yyyy\/mm\/dd/i.test(fmt))inputValue=inputValue.replaceAll('-','/');else if(/yyyy\.mm\.dd/i.test(fmt))inputValue=inputValue.replaceAll('-','.');}const proto=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;beginWrite();Object.getOwnPropertyDescriptor(proto,'value').set.call(e,inputValue);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));e.dispatchEvent(new Event('blur',{bubbles:true}));}
+    else {if(e.tagName==='SELECT'&&![...e.options].some(o=>o.value===String(p.value)&&!o.disabled&&!o.parentElement?.disabled))throw Error('候选选项已变化');let inputValue=p.value;if(p.kind==='date-picker'){const fmt=e.placeholder||'';if(/yyyy\/mm\/dd/i.test(fmt))inputValue=inputValue.replaceAll('-','/');else if(/yyyy\.mm\.dd/i.test(fmt))inputValue=inputValue.replaceAll('-','.');}const proto=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;e.focus({preventScroll:true});await wait(0);if(!alive()||!e.isConnected||!guardUnchanged(e,p.fieldId)||JSON.stringify(val(e))!==JSON.stringify(p.oldValue))throw Error('聚焦后目标已变化');beginWrite();Object.getOwnPropertyDescriptor(proto,'value').set.call(e,inputValue);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(inputValue)}));e.dispatchEvent(new Event('change',{bubbles:true}));await wait(0);e.blur();}
     // Native synchronous rejection must not be hidden until the entire batch is filled.
     if(!/custom|picker/.test(p.kind)&&(!valueMatches(e,p)||e.validity&&!e.validity.valid)){
      results.push({fieldId:p.fieldId,status:e.validity&&!e.validity.valid?'invalid':'needs-user',reason:'网站同步拒绝输入，已停止后续填写'});
@@ -479,7 +593,7 @@
  async function scan(){
   if(busy)throw Error('控件引擎正在执行，请稍候');busy=true;const token=++generation;
   const start=performance.now();activeMetrics={};layoutCache=beginLayoutCache();
-  try{const snapshot=await scanUnsafe(token);if(token!==generation){lastSnapshot=null;throw Error('扫描已取消');}layoutCache?.close();layoutCache=null;snapshot.performance={...activeMetrics,durationMs:performance.now()-start,fieldCount:snapshot.fields.length};return snapshot;}
+  try{const snapshot=await scanUnsafe(token);if(token!==generation){lastSnapshot=null;throw Error('扫描已取消');}layoutCache?.close();layoutCache=null;snapshot.performance={...activeMetrics,durationMs:performance.now()-start,fieldCount:snapshot.fields.length,unlabeledFields:snapshot.coverage.unlabeled,unscopedFields:snapshot.fields.filter(f=>!f.section).length};return snapshot;}
   finally{layoutCache?.close();layoutCache=null;scanMemo=null;activeMetrics=null;busy=false;}
  }
  async function apply(plan){
@@ -487,7 +601,42 @@
   try{const report=await applyUnsafe(plan,token);shapeCache?.close();shapeCache=null;layoutCache?.close();layoutCache=null;report.performance={...activeMetrics,durationMs:performance.now()-start};return report;}
   finally{shapeCache?.close();shapeCache=null;layoutCache?.close();layoutCache=null;activeMetrics=null;busy=false;lastSnapshot=null;}
  }
- function cancel(){generation++;lastSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
+
+ /** Explicit read-on-demand, NOT a keylogger. Only previously empty, unchanged
+  * native fields are considered; plugin-attempted writes are excluded. Values
+  * are returned only to the worker for a trusted extension review, never saved here.
+  */
+ function capture(request){
+  if(busy||!captureSnapshot||request?.snapshotId!==captureSnapshot.id||request.url!==location.href)throw Error('页面或采集起点已变化，请先点击填写简历，再补填');
+  const fields=[];let omitted=0;
+  for(const f of captureSnapshot.fields){
+   if(request.includeExisting!==true&&(!empty(f.value)||attemptedFields.has(f.id)))continue;
+   const e=refs.get(f.id);
+   if(!e||!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)||e.multiple||e.readOnly&&f.type!=='custom-select'||/picker|repeat/.test(f.type)||
+      /^(radio|checkbox|file|password|hidden|button|submit|reset|image)$/.test(e.type)||
+      /验证码|密码|口令|密钥|token|captcha|password|api.?key|同意|承诺|声明|签名|授权|consent|signature/i.test(f.label)||
+      !f.label||f.label==='未标注字段'||e.autocomplete==='one-time-code')continue;
+   const value=val(e);if(empty(value))continue;
+   if(!e.isConnected||!visible(e)||ancestorBlocked(e)||e.matches(':disabled')||e.getAttribute('aria-disabled')==='true'||
+      container(e)!==contexts.get(f.id)||!guardUnchanged(e,f.id)||e.validity&&!e.validity.valid){omitted++;continue;}
+   let displayed=e.tagName==='SELECT'?e.selectedOptions[0]?.textContent?.trim():String(value),capturedLabel=f.label;
+   if(f.datePart){
+    if(f.datePart!=='year')continue;
+    const parts=captureSnapshot.fields.filter(x=>x.dateLabel===f.dateLabel&&contexts.get(x.id)===contexts.get(f.id));
+    const month=parts.find(x=>x.datePart==='month'),day=parts.find(x=>x.datePart==='day');
+    if(!month||parts.filter(x=>x.datePart==='year').length!==1){omitted++;continue;}
+    const read=x=>{const node=refs.get(x.id);return node?.tagName==='SELECT'?node.selectedOptions[0]?.textContent:val(node);};
+    const y=Number(String(read(f)).replace(/年$/,'')),m=Number(String(read(month)).replace(/月$/,'')),d=day?Number(String(read(day)).replace(/日$/,'')):null;
+    if(!Number.isInteger(y)||y<1000||y>9999||!Number.isInteger(m)||m<1||m>12||day&&(!Number.isInteger(d)||d<1||d>new Date(y,m,0).getDate())){omitted++;continue;}
+    displayed=`${y}-${String(m).padStart(2,'0')}`+(day?`-${String(d).padStart(2,'0')}`:'');capturedLabel=f.dateLabel;
+   }
+   if(!displayed||displayed.length>10000||fields.length>=100){omitted++;continue;}
+   fields.push({id:f.id,label:capturedLabel,section:f.section||'',groupId:f.groupId||'',type:f.type,
+     value:displayed,anchors:anchorsRaw(e)});
+  }
+  return {snapshotId:captureSnapshot.id,fields,omitted};
+ }
+ function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.8.3',scan,localScan,apply,upload,locate,cancel};
+ globalThis.__resumeFillEngine={version:'0.10.2',scan,localScan,apply,upload,locate,capture,cancel};
 })();

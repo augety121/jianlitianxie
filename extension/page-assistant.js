@@ -5,7 +5,7 @@
 (()=>{
  if(window!==window.top||!/^https?:$/.test(location.protocol))return;
  const previous=globalThis.__resumeLocalAssistant;
- if(previous?.version==='0.8.3'){previous.open();return;}
+ if(previous?.version==='0.10.2'){previous.open();return;}
  previous?.destroy();
  const host=document.createElement('div');host.id='resume-local-assistant';
  host.style.cssText='all:initial!important;position:fixed!important;right:18px!important;bottom:20px!important;z-index:2147483646!important;display:block!important;';
@@ -14,14 +14,16 @@
  const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
  const b=(label,cls)=>{const e=n('button',label,cls);e.type='button';return e;};
  const panel=n('section',null,'panel'),head=n('div',null,'head'),title=n('div');
- title.append(n('strong','本地简历速填'),n('small','资料已在本机 · 不自动提交'));
+ title.append(n('strong','本地简历速填'),n('small','0.10.2 · 资料已在本机 · 不自动提交'));
  const close=b('收起','close');head.append(title,close);
  const body=n('div',null,'body'),message=n('p','点击下方按钮，直接补全这张简历表。','message');
  message.setAttribute('role','status');message.setAttribute('aria-live','polite');
  const fill=b('填写简历','primary'),counts=n('div',null,'counts'),links=n('div',null,'links');
- const scan=b('仅检查缺项','subtle'),manage=b('我的资料','subtle');links.append(scan,manage);
+ const remember=b('我补完了，记住内容','subtle');remember.style.width='100%';remember.style.marginTop='10px';
+ const saveExisting=b('读取本页已填内容，核对保存','subtle');saveExisting.style.width='100%';saveExisting.style.marginTop='8px';
+ const scan=b('仅检查缺项','subtle'),manage=b('导入 / 核对修正','subtle');links.append(scan,manage);
  const details=n('details'),summary=n('summary','查看待处理项'),problems=n('ul',null,'problem-list');details.append(summary,problems);details.hidden=true;
- body.append(message,fill,n('p','点击即使用已核对的本地资料填写普通空白项；已有内容不覆盖，敏感项另行确认。','note'),counts,details,links);
+ body.append(message,fill,n('p','点击即使用已核对的本地资料填写普通空白项；一致内容保留；差异在“核对修正”中确认，敏感项另行确认。','note'),counts,remember,saveExisting,details,links);
  panel.append(head,body);
  const pill=n('div',null,'pill'),quick=b('填写简历','run'),stop=b('停止','danger'),expand=b('展开','subtle');
  pill.append(quick,expand,stop);pill.hidden=true;stop.hidden=true;
@@ -39,11 +41,11 @@
  }
  function show(){panel.hidden=false;pill.hidden=true;}
  function collapse(){panel.hidden=true;pill.hidden=false;}
- function controls(){fill.disabled=quick.disabled=scan.disabled=manage.disabled=busy;stop.hidden=!busy;quick.textContent=busy?'正在填写…':'填写简历';}
+ function controls(){fill.disabled=quick.disabled=scan.disabled=manage.disabled=remember.disabled=saveExisting.disabled=busy;stop.hidden=!busy;quick.textContent=busy?'正在填写…':'填写简历';}
  function clear(){plan=null;problems.replaceChildren();details.hidden=true;counts.textContent='';}
  function error(e){clear();message.textContent=e.message||'本次没有完成，请先检查网页已填内容。';show();}
  function render(p){
-  plan=p;counts.textContent=`扫描 ${p.total} · 可填 ${p.counts.ready} · 待匹配 ${p.counts.missing} · 人工 ${p.counts.manual} · 保留 ${p.counts.preserve}`;
+  plan=p;counts.textContent=`扫描 ${p.total} · 可填 ${p.counts.ready} · 待匹配 ${p.counts.missing} · 差异 ${p.counts.review||0} · 人工 ${p.counts.manual} · 保留 ${p.counts.preserve}`;
   message.textContent=p.message;problems.replaceChildren();
   for(const f of p.problems||[]){
    const li=n('li',null,'problem'),actions=n('div',null,'problem-actions');
@@ -58,18 +60,18 @@
     try{await send('locate',{planId:plan.id,id:f.id});collapse();}catch(e){error(e);}
    };actions.append(locate);li.append(actions);problems.append(li);
   }
-  details.hidden=!p.problems?.length;details.open=!p.quick.length;summary.textContent=`还有 ${p.problems?.length||0} 项需处理${p.problemMore?'（仅显示前60项）':''}`;
+  details.hidden=!p.problems?.length;details.open=!p.quick.length;summary.textContent=`已跳过 ${p.problems?.length||0} 项（可选查看）${p.problemMore?'（仅显示前60项）':''}`;
   if(p.more)message.textContent+=`\n还有 ${p.more} 项不在本批普通字段内。`;
   // The primary action remains visible/enabled even when automatic matches are zero.
-  fill.textContent='填写简历';controls();
+  fill.textContent=p.quick.length?'填写简历':'重新识别并补填';controls();
  }
  async function open(){
   show();if(busy)return;
   if(observedUrl!==location.href){observedUrl=location.href;clear();}
   const g=++generation;
   try{const s=await send('status');if(dead||g!==generation)return;
-   if(s.mode!=='local'){clear();message.textContent='当前是 MCP 模式；“我的资料”中可切回本地。';}
-   else if(!s.hasProfile){clear();message.textContent='先点“我的资料”导入一次；之后在本页点“填写简历”即可。';}
+   if(s.mode!=='local'){clear();message.textContent='当前是 MCP 模式；“导入 / 核对修正”中可切回本地。';}
+   else if(!s.hasProfile){clear();message.textContent='先点“导入 / 核对修正”导入一次；之后在本页点“填写简历”即可。';}
    else if(!plan)message.textContent='点击“填写简历”，自动识别并填写本页可确认的空白项。无需先点扫描。';
   }catch(e){if(!dead&&g===generation)error(e);}controls();
  }
@@ -86,11 +88,22 @@
    clear();counts.textContent=`保留已有 ${p.counts.preserve} 项 · 待匹配 ${p.counts.missing} 项 · 人工 ${p.counts.manual} 项`;
    const other=Object.entries(r.counts).filter(([k])=>k!=='verified').reduce((n,[,v])=>n+v,0);
    message.textContent=`已填写并回读通过 ${r.counts.verified||0} 项，未提交。`+(other?`\n${other} 项结果需检查，不会自动重试。`:'\n请核对网页，保存和提交由你完成。');
-   if(p.problems?.length)message.textContent+='\n需要补填其余字段时，点“仅检查缺项”，直接在这里选择资料。';
+   if(p.problems?.length)message.textContent+='\n暂缺资料已跳过。你直接在网页补填，完后点“我补完了，记住内容”。';
    if(p.more)message.textContent+='\n本次最多填写60项；下一批需再次点击“填写简历”。';
    show();
   }catch(e){if(!dead&&g===generation)error(e);}finally{busy=false;controls();}
  }
+ remember.onclick=async e=>{
+  if(!validClick(e)||busy)return;busy=true;controls();
+  try{const r=await send('learn');if(r.opened){collapse();message.textContent='已打开补充内容预览；核对后一次保存，下次不必再补。';}
+   else{message.textContent='没有检测到本次新增的有效内容。请先点“填写简历”，然后直接在网页补填，完成后再记住。';show();}}
+  catch(errorValue){error(errorValue);}finally{busy=false;controls();}
+ };
+ saveExisting.onclick=async e=>{
+  if(!validClick(e)||busy)return;busy=true;controls();
+  try{const r=await send('learn-existing');clear();show();message.textContent=r.opened?'已打开本页已填内容的核对窗口。选中正确条目后保存；已有冲突不会覆盖。':'未读取到可保存内容，请导出本次日志检查字段识别。';}
+  catch(err){error(err);}finally{busy=false;controls();}
+ };
  fill.onclick=e=>start(e,true);quick.onclick=e=>start(e,true);scan.onclick=e=>start(e,false);
  manage.onclick=async e=>{if(!validClick(e)||busy)return;try{await send('manage');}catch(e){error(e);}};
  stop.onclick=async e=>{if(!validClick(e))return;generation++;stop.disabled=true;
@@ -102,5 +115,5 @@
  window.addEventListener('popstate',moved);window.addEventListener('hashchange',moved);
  function destroy(){dead=true;generation++;host.remove();window.removeEventListener('popstate',moved);window.removeEventListener('hashchange',moved);}
  function finished(report){clear();message.textContent=report.verified?'这项资料已填写并回读通过。其余空白项可继续点“填写简历”。':'这项未通过回读，请核对网页；未自动重试。';show();}
- globalThis.__resumeLocalAssistant={version:'0.8.3',open,destroy,finished};open();
+ globalThis.__resumeLocalAssistant={version:'0.10.2',open,destroy,finished,remembered:n=>{clear();message.textContent=`已记住 ${n} 条补充资料，仅保存在本地。下次点击填写简历会继续使用。`;show();}};open();
 })();

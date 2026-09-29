@@ -1,5 +1,8 @@
+import {learningPreview,mergeLearned} from './core/learn-profile.mjs';
+import {fieldDiagnostic,profileDiagnostic} from './core/match-diagnostics.mjs';
 import {mappingCandidates} from './core/review-model.mjs';
 import {restricted} from './core/planner.mjs';
+import {chooseText} from './core/text-variants.mjs';
 import {normalizeProfile, normalizeFact, planImport, mergeImport} from './core/profile.mjs';
 import {openVault} from './core/vault.mjs';
 import {readLocalImport} from './core/local-import.mjs';
@@ -10,11 +13,43 @@ import {pageSummary} from './core/page-summary.mjs';
 import {LocalReceipts, receiptReason, exportReceipts} from './core/local-receipts.mjs';
 
 export const LOCAL_PROFILE_KEY='resumePlainLocalV1';
+const LEARNING_CONTEXT_KEY='resumeManualLearningContextV1';
 /** New no-passphrase path. It never imports the bridge API or silently decrypts a vault. */
 export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=> 'local',switchLocal=async()=>{},openAdvanced=async()=>{}}={}) {
   const storage=chrome.storage.local,ready=Promise.all([storage.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}),chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})]);
   let profile={schemaVersion:1,revision:0,facts:[]},accepted=false,active=false,epoch=0,preview=null,activeOwner=null;
-  const pickers=new Map();
+  const pickers=new Map(),learners=new Map();let learning=null,learningWrites=Promise.resolve();
+  const contextHash=async url=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(url))),x=>x.toString(16).padStart(2,'0')).join('');
+  // Session metadata survives worker suspension, but contains no field values or raw URL.
+  // A full browser restart discards it. The live page still owns its read-only baseline.
+  function clearLearning(){
+    learning=null;learners.clear();
+    learningWrites=learningWrites.then(()=>chrome.storage.session.set({[LEARNING_CONTEXT_KEY]:null})).catch(()=>{});
+  }
+  async function retainLearning(context,generation){
+    learning=context;
+    const urlHash=await contextHash(context.url);
+    const {url,...metadata}=context;
+    learningWrites=learningWrites.then(async()=>{
+      if(epoch!==generation||learning!==context)return;
+      await chrome.storage.session.set({[LEARNING_CONTEXT_KEY]:{...metadata,urlHash,version:1}});
+      if(epoch!==generation||learning!==context)await chrome.storage.session.set({[LEARNING_CONTEXT_KEY]:null});
+    }).catch(()=>{});
+    await learningWrites;
+  }
+  async function restoreLearning(){
+    if(learning)return learning;
+    await learningWrites;
+    const t=(await chrome.storage.session.get(LEARNING_CONTEXT_KEY))[LEARNING_CONTEXT_KEY];
+    if(!t||t.version!==1||!Number.isSafeInteger(t.tabId)||t.tabId<1||
+      !Number.isSafeInteger(t.revision)||t.revision!==profile.revision||
+      !Number.isFinite(t.expires)||t.expires<=Date.now()||t.expires>Date.now()+1800000||
+      ![t.owner,t.documentId,t.snapshotId].every(x=>typeof x==='string'&&x.length>0&&x.length<256)||
+      !/^[a-f0-9]{64}$/.test(t.urlHash||''))return null;
+    const tab=await attached(t.tabId);
+    if(await contextHash(tab.url)!==t.urlHash)return null;
+    return learning={owner:t.owner,tabId:t.tabId,url:tab.url,documentId:t.documentId,snapshotId:t.snapshotId,revision:t.revision,expires:t.expires};
+  }
   const holder={get unlocked(){return accepted;},read(){if(!accepted)throw Error('请先导入并确认本地保存');return structuredClone(profile);}};
   const broker=new FrameBroker(chrome),run=new WorkspaceRun(holder,broker),logs=new LocalReceipts(storage);
   async function refresh(){
@@ -29,7 +64,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     const next=normalizeProfile({facts,revision:revision+1});
     if(next.facts.some(f=>secret(f.label)))throw Error('此资料区不保存密码、验证码或密钥');
     await storage.set({[LOCAL_PROFILE_KEY]:{version:1,storage:'plain-local',accepted:true,profile:next}});
-    profile=next;accepted=true;preview=null;await run.stop();return structuredClone(profile);
+    profile=next;accepted=true;preview=null;clearLearning();await run.stop();return structuredClone(profile);
   }
   function owner(sender){if(typeof sender.documentId!=='string'||!sender.documentId)throw Error('无法确认工作台文档，请从工具栏重新打开');return sender.documentId;}
   async function attached(tabId){
@@ -60,14 +95,17 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
   function record(stage,start,data,error,sourceEntries=[]){
     const entries=data?.entries||[],outcomes=data?.results||entries;
     const order=new Map(sourceEntries.map((e,i)=>[e.id,i+1]));
-    const fields=outcomes.map((e,i)=>({index:order.get(e.id)||i+1,status:e.status,code:e.reasonCode}));
+    const fields=outcomes.map((e,i)=>{const original=sourceEntries.find(x=>x.id===e.id)||e;
+      const group=data?.groups?.find(g=>g.fieldIds.includes(e.id));
+      const combined={...original,...e,...(stage==='fill'?{reasonCode:undefined}:{})};
+      return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
+    logs.add({stage,version:'0.10.1',engineVersion:run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
     const type=m.type;
-    if(type==='local-stop') {epoch++;preview=null;const result=await run.stop();logs.add({stage:'stop',ok:true,reason:'none',ms:0,total:0});return result;}
+    if(type==='local-stop') {epoch++;preview=null;clearLearning();const result=await run.stop();logs.add({stage:'stop',ok:true,reason:'none',ms:0,total:0});return result;}
     if(type==='local-state'){
       await ready;if(!active)await refresh();
       const old=(await storage.get('resumeVaultV1')).resumeVaultV1;
@@ -75,7 +113,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       let targetTitle='';try{targetTitle=String((await attached(m.tabId)).title||'').slice(0,160);}catch{}
       return {target,targetTitle,profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
     }
-    if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data),enabled:data.enabled};}
+    if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data,{includeExplanations:false}),enabled:data.enabled};}
     if(type==='local-log-settings'){await ready;await logs.settings(m.enabled,m.clear===true);return {ok:true};}
     // Acquire synchronously before any asynchronous permission/storage check.
     if(active||externalBusy())throw Error('另一项任务正在执行，请先停止并等待回读');
@@ -95,10 +133,17 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         stage='import';const p=preview;
         if(!p||p.owner!==own||p.id!==m.previewId||p.revision!==profile.revision||Date.now()>p.expires)throw Error('导入预览已失效，请重新读取文件');
         if(m.reviewed!==true||!Array.isArray(m.ids)||!m.ids.length||new Set(m.ids).size!==m.ids.length)throw Error('请核对并选择本次要保存的资料');
-        const items=planImport(profile.facts,p.facts),allowed=new Set(items.filter(x=>['new','change'].includes(x.status)).map(x=>x.fact.id));
+        let draftFacts=p.facts;
+        if(m.edits!==undefined){
+          if(!Array.isArray(m.edits)||m.edits.length>1000||new Set(m.edits.map(x=>x.id)).size!==m.edits.length)throw Error('解析结果编辑格式无效');
+          const original=new Map(p.facts.map(f=>[f.id,f]));
+          draftFacts=normalizeProfile({facts:m.edits.map(e=>{const old=original.get(e.id);return {...old,id:e.id,label:e.label,value:e.value,section:e.section,entity:e.entity,source:old?.source||'本人手动补充并核对',confirmed:false};})}).facts;
+          if(draftFacts.some(f=>secret(f.label)))throw Error('不能保存密码或验证码');
+        }
+        const items=planImport(profile.facts,draftFacts),allowed=new Set(items.filter(x=>['new','change','duplicate'].includes(x.status)).map(x=>x.fact.id));
         if(m.ids.some(id=>!allowed.has(id)))throw Error('所选条目不属于当前可导入范围');
         // Withhold every key whose incoming file contains contradictory values.
-        const merged=mergeImport(profile.facts,p.facts,items.filter(x=>x.status==='change'&&m.ids.includes(x.fact.id)).map(x=>x.fact.id));
+        const merged=mergeImport(profile.facts,draftFacts,items.filter(x=>x.status==='change'&&m.ids.includes(x.fact.id)).map(x=>x.fact.id));
         const ids=new Set(merged.addedIds.filter(id=>m.ids.includes(id))),oldIds=new Set(profile.facts.map(f=>f.id));alive();
         if(!ids.size)throw Error('所选条目重复或互相矛盾，请修正后重新预览');
         data=await persist(merged.facts.filter(f=>oldIds.has(f.id)||ids.has(f.id)).map(f=>ids.has(f.id)?{...f,confirmed:true}:f),p.revision,m.acceptPlaintext);return data;
@@ -113,8 +158,37 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         return persist([],m.revision,true);
       }
       if(type==='local-switch'){await switchLocal();alive();return {mode:'local'};}
-      if(type==='local-advanced'){await run.stop();preview=null;await openAdvanced(m.tabId);return {ok:true};}
+      if(type==='local-advanced'){clearLearning();await run.stop();preview=null;await openAdvanced(m.tabId);return {ok:true};}
       if((await mode())!=='local')throw Error('原MCP模式仍开启，请先切回本地');alive();
+      if(type==='local-learn-open'){
+        const context=await restoreLearning();alive();
+        if(!context||context.owner!==own||context.tabId!==m.tabId||context.url!==m.url||context.documentId!==m.documentId||context.revision!==profile.revision||Date.now()>=context.expires)throw Error('请先点击填写简历，再在网页补填；补完后点记住内容');
+        if((await attached(context.tabId)).url!==context.url)throw Error('页面已变化，请重新填写');alive();
+        const capture=(await broker.invoke(context.tabId,{frameId:0,documentId:context.documentId},'capture',{snapshotId:context.snapshotId,url:context.url,includeExisting:m.includeExisting===true})).result;alive();
+        const proposed=learningPreview(capture,profile,new URL(context.url).origin);
+        if(!proposed.items.length)return {opened:false,count:0,omitted:proposed.omitted};
+        for(const [key,t] of learners)if(t.expires<=Date.now())learners.delete(key);
+        if(learners.size>=2)throw Error('请先核对已经打开的保存小窗');
+        const id=crypto.randomUUID(),ticket={...context,id,includeExisting:m.includeExisting===true,items:proposed.items,omitted:proposed.omitted,expires:Math.min(context.expires,Date.now()+300000),pickerTab:null,pickerDocument:null,claimed:false};
+        learners.set(id,ticket);
+        try{const win=await chrome.windows.create({url:chrome.runtime.getURL('learn-review.html')+'?ticket='+id,type:'popup',width:570,height:700,focused:true});alive();
+          if(!Number.isSafeInteger(win.tabs?.[0]?.id))throw Error('保存窗口未打开，请重新尝试');ticket.pickerTab=win.tabs[0].id;
+          return {opened:true,count:proposed.items.length};
+        }catch(e){learners.delete(id);throw e;}
+      }
+      if(type==='local-learn-read'||type==='local-learn-save'){
+        const t=learners.get(m.ticket);
+        if(!t||t.claimed||Date.now()>=t.expires||t.owner!==own||learning?.snapshotId!==t.snapshotId||t.revision!==profile.revision)throw Error('保存预览已失效，请从网页重新打开');
+        if((await attached(t.tabId)).url!==t.url)throw Error('页面已变化，未保存');alive();
+        if(type==='local-learn-read')return {items:structuredClone(t.items),origin:new URL(t.url).origin,omitted:t.omitted};
+        if(m.reviewed!==true)throw Error('请核对内容并确认保存');
+        const current=(await broker.invoke(t.tabId,{frameId:0,documentId:t.documentId},'capture',{snapshotId:t.snapshotId,url:t.url,includeExisting:t.includeExisting===true})).result;alive();
+        if(!Array.isArray(m.selections)||m.selections.some(selected=>{const was=t.items.find(i=>i.id===selected.id),now=current.fields?.find(f=>f.id===selected.id);return !was||!now||was.value!==now.value||was.label!==now.label||was.section!==(now.section||'')||was.groupId!==(now.groupId||'');}))throw Error('网页补充内容已变化，请关闭预览后重新读取');
+        const merged=mergeLearned(profile,t.items,m.selections,new URL(t.url).origin,m.reuse===true);alive();t.claimed=true;
+        stage='learn';await persist(merged.facts,t.revision,false);data={facts:merged.added.map(id=>({id}))};
+        await chrome.scripting.executeScript({target:{tabId:t.tabId,documentIds:[t.documentId]},func:n=>globalThis.__resumeLocalAssistant?.remembered?.(n),args:[merged.added.length]}).catch(()=>{});
+        return {saved:merged.added.length};
+      }
       if(type==='local-picker-open'){
         const j=run.current(own,m.planId);
         const f=j.frames[0],entry=f?.plan.entries.find(e=>`0:${e.fieldId}`===m.id);
@@ -143,7 +217,10 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         const bound=f.entityBindings?.[raw.groupId]||'';
         const choices=mappingCandidates(entry,j.facts,'',bound).filter(c=>!secret(c.fact.label));
         if(type==='local-picker-read')return {label:entry.label,section:entry.section||'',origin:entry.origin,expiresAt:t.expires,
-          facts:choices.map(({fact,exact})=>({id:fact.id,label:fact.label,section:fact.section,entity:fact.entity,value:fact.value,exact}))};
+          facts:choices.map(({fact,exact})=>{
+            const target=f.snapshot.fields.find(x=>x.id===raw.fieldId),chosen=target?chooseText(fact,target):null;
+            return {id:fact.id,label:fact.label,section:fact.section,entity:fact.entity,value:chosen?.value??fact.value,exact,variantName:chosen?.name||'',fitsTextLimit:!!chosen};
+          })};
         if(m.reviewed!==true||!choices.some(c=>c.fact.id===m.factId))throw Error('请选择本次候选资料并核对后确认');
         const updated=run.remap(own,{planId:t.planId,id:t.fieldId,factId:m.factId});t.planId=updated.id;
         const chosen=updated.entries.find(e=>e.id===t.fieldId);
@@ -161,10 +238,15 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         stage='scan';await attached(m.tabId);alive();
         const ids=profile.facts.filter(f=>f.confirmed&&!f.conflict&&!secret(f.label)).map(f=>f.id);
         if(!ids.length)throw Error('请先导入并核对资料');
-        data=await run.scan(own,{tabId:m.tabId,factIds:ids,includeFrames:m.includeFrames===true});alive();return data;
+        data=await run.scan(own,{tabId:m.tabId,factIds:ids,includeFrames:m.includeFrames===true,reviewExisting:true,autoBindEmpty:true});alive();
+        const f=run.job.frames.find(f=>f.frameId===0);
+        await retainLearning({owner:own,tabId:m.tabId,url:run.job.url,documentId:f.documentId,snapshotId:f.snapshot.id,revision:profile.revision,expires:Date.now()+1800000},generation);alive();
+        learners.clear();return data;
       }
       if(type==='local-map'){stage='map';data=run.remap(own,m);return data;}
       if(type==='local-bind'){stage='bind';data=run.bindEntity(own,m);return data;}
+      if(type==='local-order'){stage='bind';data=run.bindInOrder(own,m);return data;}
+      if(type==='local-correct'){stage='map';data=run.approveCorrection(own,m);return data;}
       if(type==='local-locate')return await run.locate(own,m);
       if(type==='local-fill'){
         stage='fill';run.current(own,m.planId);sourceEntries=run.job.frames.flatMap(f=>f.plan.entries.map(e=>({...e,id:`${f.frameId}:${e.fieldId}`})));
@@ -176,7 +258,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
   }
   async function request(m,sender){
     if(!trustedWorkspace(sender,chrome.runtime,'local.html'))throw Error('只有本地填写页可以访问资料');
-    if(m.type.startsWith('local-picker-'))throw Error('请在申请页打开补填小窗');
+    if(m.type.startsWith('local-picker-')||m.type.startsWith('local-learn-'))throw Error('请在申请页打开补填小窗');
     return perform(m,owner(sender));
   }
   async function pickerRequest(m,sender){
@@ -188,6 +270,17 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     if(t.pickerDocument&&t.pickerDocument!==sender.documentId)throw Error('补填窗口已变化，请重新打开');
     t.pickerDocument=sender.documentId;
     if(m.type==='local-picker-close'){pickers.delete(t.id);return {closed:true};}
+    return perform(m,t.owner);
+  }
+  async function learnerRequest(m,sender){
+    if(!trustedWorkspace(sender,chrome.runtime,'learn-review.html')||typeof sender.documentId!=='string')throw Error('只有保存内容小窗可以操作本次预览');
+    if(!['local-learn-read','local-learn-save','local-learn-close'].includes(m.type))throw Error('保存窗口操作无效');
+    const t=learners.get(m.ticket);
+    if(t&&!t.pickerTab)throw Error('保存窗口正在打开，请稍后重试');
+    if(!t||t.claimed||t.expires<=Date.now()||sender.tab?.id!==t.pickerTab)throw Error('保存预览已过期或不属于此窗口');
+    if(t.pickerDocument&&t.pickerDocument!==sender.documentId)throw Error('保存窗口已经改变');
+    t.pickerDocument=sender.documentId;
+    if(m.type==='local-learn-close'){learners.delete(t.id);return {closed:true};}
     return perform(m,t.owner);
   }
   async function attachButton(tabId){
@@ -233,6 +326,15 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       if(run.job?.frames[0]?.documentId!==sender.documentId||run.job?.url!==sender.url){await run.stop();throw Error('扫描时文档改变，请重扫');}
       return pageSummary(p);
     }
+    if(m.type==='page-local-learn'){
+      return perform({type:'local-learn-open',tabId,url:sender.url,documentId:sender.documentId},own);
+    }
+    if(m.type==='page-local-learn-existing'){
+      // A separate explicit action reads the current filled page into a review;
+      // it does not write webpage values or silently modify the local profile.
+      await perform({type:'local-scan',tabId},own);
+      return perform({type:'local-learn-open',includeExisting:true,tabId,url:sender.url,documentId:sender.documentId},own);
+    }
     if(m.type==='page-local-pick'){
       checkDocument();
       return perform({type:'local-picker-open',planId:m.planId,id:m.id,tabId,url:sender.url,documentId:sender.documentId},own);
@@ -256,6 +358,6 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     }
     throw Error('页面入口不允许读取或修改完整资料');
   }
-  async function navigated(id){if(run.job?.tabId===id||run.running?.tabId===id){epoch++;await run.stop();}}
-  return {request,pageRequest,pickerRequest,open,launch,reattach,navigated,get busy(){return active||run.busy;}};
+  async function navigated(id){if(learning?.tabId===id){clearLearning();epoch++;}if(run.job?.tabId===id||run.running?.tabId===id){epoch++;await run.stop();}}
+  return {request,pageRequest,pickerRequest,learnerRequest,open,launch,reattach,navigated,get busy(){return active||run.busy;}};
 }

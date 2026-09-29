@@ -2,3 +2,7 @@
 
 /* Always-visible next action: not hidden below a long import table. */
 .target-strip{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#fff;padding:16px 20px;border:1px solid #dbe5ed;border-radius:14px;margin:18px 0}.target-strip div{flex:1;min-width:180px}.target-strip span{display:block;color:#526675;overflow-wrap:anywhere;font-size:13px;margin-top:6px}.import-next{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#eff8f5;padding:14px;border-radius:10px;margin:12px 0}.match-advice{padding:14px;border-left:4px solid #d58b1a;background:#fff7e8;line-height:1.8;white-space:pre-wrap}.match-advice[hidden]{display:none}@media(max-width:600px){.target-strip>button,.import-next>button{width:100%}}
+
+.variant-editor{padding:12px;border:1px solid var(--line);border-radius:8px;margin:10px 0}.variant-editor textarea{margin:8px 0}.import-value details{margin-top:8px}.import-value details p{white-space:pre-wrap}
+
+.import-row input:not([type=checkbox]),.import-row textarea{width:100%;margin-bottom:6px;font-size:13px}.import-rows{max-height:65vh}.import-row textarea{min-height:85px}

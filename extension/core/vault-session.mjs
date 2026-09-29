@@ -55,12 +55,16 @@ export class VaultSession {
       this.#install(opened); return this.read();
     });
   }
-  save(facts, expectedRevision) {
+  save(facts, expectedRevision) { return this.#save(facts, expectedRevision, null); }
+  savePresets(presets, expectedRevision) { return this.#save(null, expectedRevision, presets); }
+  #save(facts, expectedRevision, presets) {
     const epoch = this.#epoch;
     return this.#queue(async () => {
       this.#assertEpoch(epoch); this.#touch();
       if (expectedRevision !== this.#profile.revision) throw Error('资料已在其他窗口更新，请重新载入后修改');
-      const profile = normalizeProfile({schemaVersion: 1, revision: expectedRevision + 1, facts});
+      const nextFacts=facts??this.#profile.facts, ids=new Set(nextFacts.map(f=>f.id));
+      const nextPresets=presets??this.#profile.presets?.map(p=>({...p,factIds:p.factIds.filter(id=>ids.has(id))}));
+      const profile = normalizeProfile({schemaVersion: 1, revision: expectedRevision + 1, facts:nextFacts,...(nextPresets!==undefined?{presets:nextPresets}:{})});
       const envelope = await sealProfile(profile, this.#key, this.#envelope.kdf.salt);
       this.#assertEpoch(epoch); this.#touch();
       await this.#storage.set({[PREVIOUS_KEY]: this.#envelope, [VAULT_KEY]: envelope});

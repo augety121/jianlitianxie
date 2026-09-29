@@ -5,6 +5,7 @@ const h=localHarness();await h.attach();
 for await(const line of readline.createInterface({input:process.stdin})){
  try{const m=JSON.parse(line);let data;
   if(m.type==='inspect')data={storage:h.local.data,calls:h.calls,values:h.values};
+  else if(m.type==='seed-max-logs'){h.local.data.resumeLocalReceiptsV1=Array.from({length:80},(_,i)=>({at:Date.now()-80+i,seq:i+1,stage:i===79?'learn':'scan',ok:true,reason:'none',total:300,fields:Array.from({length:300},(_,j)=>({index:j+1,status:'missing',code:'no-label-match'}))}));data={ok:true};}
   else if(m.type==='restart'){h.restart();data={ok:true};}
   else if(m.type==='reset-page'){for(const k in h.values)delete h.values[k];data={ok:true};}
   else if(m.type==='scenario'){h.setScenario(m.scenario);data={ok:true};}

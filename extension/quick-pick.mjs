@@ -13,7 +13,7 @@ function render(){
   const button=document.createElement('button');button.type='button';button.className='choice';button.setAttribute('aria-pressed',String(selected===f.id));button.disabled=busy||done;
   const title=document.createElement('strong');title.textContent=f.label;
   const record=document.createElement('small');record.textContent=[f.section,f.entity,f.exact?'字段名匹配':'手动指定'].filter(Boolean).join(' / ');button.append(title,record);
-  button.onclick=e=>{if(!e.isTrusted||busy||done)return;selected=f.id;$('value').textContent=f.value;$('preview').hidden=false;render();};$('choices').append(button);
+  button.onclick=e=>{if(!e.isTrusted||busy||done)return;selected=f.id;$('value').textContent=(f.variantName&&f.variantName!=='原文'?`将使用${f.variantName}（${f.value.length}字）\n\n`:'')+f.value;$('preview').hidden=false;render();if(f.fitsTextLimit===false)notify('现有正文超过上限，请返回资料页补充短版。',true);};$('choices').append(button);
  }
  $('apply').hidden=$('search').hidden=done;document.querySelector('label[for=search]').hidden=done;document.querySelector('.note').hidden=done;
  $('more').textContent=done?'':facts.length>40?`共 ${facts.length} 项，显示前40项；请搜索缩小范围。`:facts.length?`${facts.length} 条可选择资料`:'没有可用资料。请取消返回，手动填写此项或在“我的资料”补充。';

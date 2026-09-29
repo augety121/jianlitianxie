@@ -3,7 +3,7 @@ import json, os, re, shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
-modules = '\n'.join((ROOT/'extension/core'/f).read_text(encoding='utf-8') for f in ['performance.mjs','semantics.mjs','entity-binding.mjs','planner.mjs'])
+modules = '\n'.join((ROOT/'extension/core'/f).read_text(encoding='utf-8') for f in ['performance.mjs','semantics.mjs','entity-binding.mjs','text-variants.mjs','planner.mjs'])
 modules = re.sub(r'^import .*?;\s*$', '', modules, flags=re.M).replace('export {normalize};','').replace('export ','').replace('crypto.randomUUID()', "'fixture-'+String(++globalThis.__testId)")
 modules = 'globalThis.__testId=0;\n'+modules+'\nglobalThis.__makePlan=makePlan;globalThis.__groups=entityGroups;'
 facts=[dict(id=entity+'-'+key,label=label,value=value,entity=entity,section='教育经历',confirmed=True,source='synthetic')

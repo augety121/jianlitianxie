@@ -1,6 +1,8 @@
 import {numericMetrics,sumMetrics} from './performance.mjs';
+import {resolveRecords} from './record-resolver.mjs';
 import {makePlan} from './planner.mjs';
 import {entityGroups,factMatchesBinding} from './entity-binding.mjs';
+import {normalize,semanticLabel} from './semantics.mjs';
 import {PLAN_TTL, selectedFacts, sensitive, redactSnapshot} from './workspace-policy.mjs';
 /** One explicit user task. Private values stay in the trusted worker until selected for a write. */
 export class WorkspaceRun {
@@ -17,7 +19,12 @@ export class WorkspaceRun {
       const observed = await this.broker.scan(request.tabId, request.includeFrames === true);
       if (epoch !== this.epoch || !this.vault.unlocked || this.vault.read().revision !== profile.revision) throw Error('扫描被取消或资料已修改');
       this.job = {...observed, id: crypto.randomUUID(), owner, tabId: request.tabId, revision: profile.revision,
-        facts, expiresAt: this.clock() + PLAN_TTL, frames: observed.frames.map(f => ({...f, mappings: {}, entityBindings: {}}))};
+        facts, reviewExisting:request.reviewExisting===true, expiresAt: this.clock() + PLAN_TTL, frames: observed.frames.map(f => ({...f, mappings: {}, entityBindings: {},corrections:{}}))};
+      if(request.autoBindEmpty===true)for(const frame of this.job.frames){
+        if(frame.frameId!==0)continue;
+        const resolved=resolveRecords(frame.snapshot,facts);
+        frame.entityBindings=resolved.bindings;frame.bindingMethods=resolved.methods;
+      }
       return this.preview();
     } finally { this.busy = false; }
   }
@@ -31,9 +38,9 @@ export class WorkspaceRun {
   preview() {
     const j = this.job, entries = [], groups = [];
     for (const f of j.frames) {
-      f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings, f.entityBindings);
+      f.plan = makePlan(f.snapshot, {facts: j.facts}, f.mappings, f.entityBindings,{reviewExisting:j.reviewExisting,corrections:f.corrections});
       groups.push(...entityGroups(f.snapshot,j.facts,f.entityBindings).map(g=>({...g,id:`${f.frameId}:${g.id}`,
-        frameId:f.frameId,fieldIds:g.fieldIds.map(id=>`${f.frameId}:${id}`),bindable:g.bindable&&f.frameId===0,
+        frameId:f.frameId,bindingMethod:f.bindingMethods?.[g.id]||(g.entity?'manual':'none'),fieldIds:g.fieldIds.map(id=>`${f.frameId}:${id}`),bindable:g.bindable&&f.frameId===0,
         reason:f.frameId===0?g.reason:'嵌入文档仅扫描，请单独打开后绑定'})));
       // The retained executor has no parent-frame hit test. Never send values there.
       if(f.frameId!==0)f.plan.entries=f.plan.entries.map(e=>{
@@ -56,7 +63,37 @@ export class WorkspaceRun {
     const field=f.snapshot.fields.find(e=>e.id===fieldId),entity=f.entityBindings?.[field.groupId];
     if(factId&&entity&&!factMatchesBinding(j.facts.find(x=>x.id===factId),field,entity))throw Error('该资料不属于已绑定的经历和分区');
     if (factId) f.mappings[fieldId] = factId; else delete f.mappings[fieldId];
+    delete f.corrections?.[fieldId];
     j.id = crypto.randomUUID(); return this.preview();
+  }
+  approveCorrection(owner,{planId,id,reviewed}){
+    if(this.busy||reviewed!==true)throw Error('请先核对该字段的旧值和新值');
+    const j=this.current(owner,planId),f=j.frames.find(f=>f.frameId===0&&f.plan.entries.some(e=>`0:${e.fieldId}`===id));
+    const entry=f?.plan.entries.find(e=>`0:${e.fieldId}`===id);
+    if(!entry||entry.status!=='review')throw Error('该字段没有可确认的修正');
+    f.corrections[entry.fieldId]=true;j.id=crypto.randomUUID();return this.preview();
+  }
+  bindInOrder(owner,{planId,reviewed}){
+    if(this.busy||reviewed!==true)throw Error('请核对按简历顺序匹配经历');
+    const j=this.current(owner,planId),f=j.frames.find(f=>f.frameId===0);if(!f)throw Error('没有主页面');
+    const groups=entityGroups(f.snapshot,j.facts,f.entityBindings),used=new Set(Object.values(f.entityBindings));
+      const occupied=x=>x.value!==''&&x.value!=null&&x.value!==false&&(!Array.isArray(x.value)||x.value.length>0);
+      // Reserve existing records before assigning empty cards, even if the empty card
+      // appears earlier in DOM order. Ambiguous existing anchors reserve all possibilities.
+      for(const g of groups){
+        const fields=f.snapshot.fields.filter(x=>g.fieldIds.includes(x.id));if(!g.bindable||!fields.some(occupied))continue;
+        const anchors=fields.filter(x=>occupied(x)&&['学校','公司名称','项目名称','证书名称'].includes(semanticLabel(x.label,x.section)));
+        const possible=g.candidates.filter(c=>anchors.length&&anchors.every(x=>j.facts.some(a=>a.entity===c.entity&&factMatchesBinding(a,x,c.entity)&&semanticLabel(a.label,a.section)===semanticLabel(x.label,x.section)&&normalize(a.value)===normalize(x.value))));
+        for(const c of possible.length?possible:g.candidates)used.add(c.entity);
+      }
+    for(const g of groups){
+      if(!g.bindable||g.entity)continue;
+      const fields=f.snapshot.fields.filter(x=>g.fieldIds.includes(x.id));
+        if(fields.some(occupied))continue;
+      const selected=g.candidates.find(c=>!used.has(c.entity));if(!selected)continue;
+      f.entityBindings[g.id]=selected.entity;used.add(selected.entity);
+    }
+    f.corrections={};j.id=crypto.randomUUID();return this.preview();
   }
   bindEntity(owner,{planId,groupId,entity}) {
     if(this.busy)throw Error('请等待当前操作');
@@ -69,7 +106,8 @@ export class WorkspaceRun {
     if(!group.bindable||entity&&!group.candidates.some(c=>c.entity===entity))throw Error('请选择本次同分区的真实经历');
     f.entityBindings||={};
     if(entity)f.entityBindings[id]=entity;else delete f.entityBindings[id];
-    for(const fieldId of group.fieldIds)delete f.mappings[fieldId];
+    f.bindingMethods||={};f.bindingMethods[id]='manual';
+    for(const fieldId of group.fieldIds){delete f.mappings[fieldId];delete f.corrections?.[fieldId];}
     j.id=crypto.randomUUID();return this.preview();
   }
   async locate(owner, {planId, id}) {
