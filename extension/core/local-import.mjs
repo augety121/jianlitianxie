@@ -1,11 +1,12 @@
+import {tableSchema, tableFacts} from './import-table.mjs';
 import {normalizeFact, normalizeProfile, parseImport, MAX_PROFILE_BYTES} from './profile.mjs';
 import {secret} from './workspace-policy.mjs';
 
-const sections = new Set(['基本信息','教育经历','教育背景','工作经历','实习经历','项目经历','专业技能','语言能力','获奖经历','证书','论文','家庭信息']);
+const sections = new Set(['基本信息','教育经历','教育背景','教育经验','学习经历','工作经历','实习经历','项目经历','项目经验','专业技能','语言能力','获奖经历','奖励荣誉','证书','论文','家庭信息']);
 const sectionTitle=s=>s.replace(/^(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/, '').trim();
 const cleanLabel = s => s.trim().replace(/^\*\*([^*]+)\*\*$/, '$1').replace(/[:：]$/, '').trim();
 const cells = s => s.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(v => v.trim().replace(/\\\|/g, '|'));
-/** Explicit key/value and two-column Markdown tables only. No AI, rendering or guessing. */
+/** Explicit facts and header-driven Markdown tables. No AI, rendering or guessing. */
 export function readLocalImport(input) {
   if (typeof input !== 'string' || new TextEncoder().encode(input).length > MAX_PROFILE_BYTES) throw Error('文件最多2MB，请分批导入');
   const text = input.replace(/^\uFEFF/, '').trim();
@@ -29,7 +30,7 @@ export function readLocalImport(input) {
     if (facts.some(f => secret(f.label))) throw Error('请从JSON中移除密码、验证码或密钥');
     return {facts:normalizeProfile({facts}).facts, skipped};
   }
-  let section = '基本信息', entity = '', fence = false, table = false;
+  let section = '基本信息', entity = '', fence = false, table = null, ignoredTableRows=0, tableRows=0;
   const lines = text.split(/\r?\n/);
   if (lines.length > 5000) throw Error('文字超过5000行，请分批导入');
   for (let i=0;i<lines.length;i++) {
@@ -44,16 +45,18 @@ export function readLocalImport(input) {
       table = false;
       if (sections.has(parts[0])) { section=parts[0];entity=parts.slice(1).join(' | '); }
       else if (heading[1].length >= 3 && section !== '基本信息') entity=title;
-      else skipped.push({line:i+1,text:line});
+      else {section='';entity='';skipped.push({line:i+1,text:line});}
       continue;
     }
     if (sections.has(line)) {section=line;entity='';table=false;continue;}
-    if (line.startsWith('|')) {
-      const row = cells(line);
-      if (row.length===2 && /^(字段|属性|项目|名称|信息项|field)$/i.test(cleanLabel(row[0])) && /^(内容|值|信息|填写内容|个人信息|value)$/i.test(cleanLabel(row[1]))) {table=true;continue;}
-      if (table && row.length===2 && row.every(c=>/^:?-{3,}:?$/.test(c))) continue;
-      if (table && row.length===2 && row[0] && row[1]) add(row[0],row[1].replace(/^\*\*([^*]+)\*\*$/, '$1'),section,entity,i+1);
-      else skipped.push({line:i+1,text:line});
+    if (line.startsWith('|') || line.includes('|') && (table || /^\s*\|?\s*:?-{3,}/.test(lines[i+1]||''))) {
+      const row=cells(line);
+      if(row.length>=2&&row.every(c=>/^:?-{3,}:?$/.test(c)))continue;
+      const schema=tableSchema(row,section);
+      if(schema){table=schema;continue;}
+      const parsed=table&&tableFacts(table,row,section,entity,i+1);
+      if(parsed){for(const f of parsed)add(f.label,f.value,f.section,f.entity,i+1);tableRows++;}
+      else {skipped.push({line:i+1,text:line});ignoredTableRows++;}
       continue;
     }
     table=false;
@@ -64,5 +67,5 @@ export function readLocalImport(input) {
     } else skipped.push({line:i+1,text:line});
   }
   if (!facts.length) throw Error('未识别到字段，请使用示例MD或JSON；普通段落不会被猜成个人信息');
-  return {facts:normalizeProfile({facts}).facts, skipped};
+  return {facts:normalizeProfile({facts}).facts, skipped, warnings:ignoredTableRows?[`有${ignoredTableRows}行表格未按明确表头识别，保留在未归类区；保存条数不代表原文完整导入。`]:[], tableRows};
 }

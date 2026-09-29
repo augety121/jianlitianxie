@@ -87,6 +87,7 @@ function showImport(data){
   $('importHealth').textContent='本次文件基础字段检查：'+['姓名','手机号码','邮箱'].map(k=>k+' '+(present.has(semanticLabel(k))?'已识别':'未识别（请检查格式或未归类区域）')).join(' · ');
   for(const x of data.items)renderImportRow(x);
   data.skipped=[...data.skipped,...resumeNotes];
+  if(data.warnings?.length)$('importHealth').textContent+='。'+data.warnings.join('；');
   $('skippedBox').hidden=!data.skipped.length;$('skippedCount').textContent=`${data.skipped.length} 行没有自动归类，展开核对`;$('skippedText').textContent=data.skipped.map(x=>`第${x.line}行：${x.text}`).join('\n');$('importPreview').hidden=false;view('profile');controls();notice('已识别的资料如下。勾选项保存后立即可用于匹配；未知段落不会猜测。');
 }
 function clearImport(){resumeNotes=[];$('resumeSource').textContent='';$('resumeSourceBox').hidden=true;preview=null;importIds.clear();$('importPreview').hidden=true;$('importRows').replaceChildren();$('importSummary').replaceChildren();$('skippedText').textContent='';controls();}

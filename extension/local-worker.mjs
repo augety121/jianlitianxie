@@ -90,7 +90,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     preview={id:crypto.randomUUID(),owner:own,revision:profile.revision,expires:Date.now()+600000,facts:parsed.facts};
     const safeIds=new Set(mergeImport([],parsed.facts).addedIds);
     const items=planImport(profile.facts,parsed.facts).map(x=>!safeIds.has(x.fact.id)&&x.status!=='duplicate'?{...x,status:'conflict',reason:'同一字段的文件内容互相矛盾，请修正'}:x);
-    return {id:preview.id,revision:preview.revision,items,skipped:parsed.skipped};
+    return {id:preview.id,revision:preview.revision,items,skipped:parsed.skipped,warnings:parsed.warnings||[]};
   }
   function record(stage,start,data,error,sourceEntries=[]){
     const entries=data?.entries||[],outcomes=data?.results||entries;
@@ -100,7 +100,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const combined={...original,...e,...(stage==='fill'?{reasonCode:undefined}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,version:'0.10.1',engineVersion:run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
+    logs.add({stage,version:chrome.runtime.getManifest?.().version||'0.10.3',engineVersion:run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
