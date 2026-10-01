@@ -19,6 +19,8 @@ function notice(text,error=false){$('notice').textContent=text;$('notice').datas
 async function send(action,data={}){const r=await chrome.runtime.sendMessage({type:'local-'+action,...data});if(!r)throw Error('扩展后台未响应，请重新打开。不要重复填写。');if(r.error)throw Error(r.error);return r.data;}
 function view(name){window.scrollTo({top:0,behavior:'instant'});document.querySelectorAll('[data-section]').forEach(n=>n.hidden=n.dataset.section!==name);document.querySelectorAll('[data-view]').forEach(n=>n.classList.toggle('active',n.dataset.view===name));}
 function controls(){
+  for(const id of ['activeResume','newResume','copyResume','renameResume','backupResumes','restoreResumes','saveSite'])if($(id))$(id).disabled=busy;
+
   $('returnTarget').disabled=busy||!tabId;
   $('continueSaved').disabled=busy||!profile.facts.length;
   $('scan').disabled=busy||!profile.facts.length||!tabId||state.mode==='mcp';
@@ -35,9 +37,53 @@ function clearPlan(){plan=null;selected.clear();$('entries').replaceChildren();$
 function setProfile(p){profile=p;const health=storedProfileHealth(p);$('profileHealth').textContent=`教育 ${health.education} 段 · 项目 ${health.projects} 段 · 工作/实习 ${health.work} 段`+(health.projectFragments?' · 检测到项目分段资料，可检查整理':'。条目总数不代表原简历已完整识别。');$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}
 async function refresh(){
   const g=generation,next=await send('state',{tabId});if(disposed||g!==generation)return;
-  state=next;setProfile(next.profile);$('importOld').hidden=!next.encryptedExists;$('modeWarning').hidden=next.mode!=='mcp';$('autoLogs').checked=next.logging;
+  state=next;setProfile(next.profile);renderLibrary();$('importOld').hidden=!next.encryptedExists;$('modeWarning').hidden=next.mode!=='mcp';$('autoLogs').checked=next.logging;
   $('logBadge').textContent=next.logging?'● 自动脱敏日志已开启':'○ 自动日志已关闭';$('target').textContent=next.target||'请在申请页点击插件图标';$('targetSummary').textContent=[next.targetTitle,next.target].filter(Boolean).join(' · ')||'目标不可用，请到正确的申请页再点一次浏览器插件图标';controls();
 }
+function renderLibrary(){
+  const select=$('activeResume');if(!select)return;select.replaceChildren();
+  for(const resume of state.library?.resumes||[]){const option=el('option',`${resume.name} · ${resume.count}条`);option.value=resume.id;option.selected=resume.id===state.library.activeId;select.append(option);}
+  $('siteShow').checked=state.site?.show===true;$('siteAdd').checked=state.site?.add===true;
+  $('saveSite').disabled=!state.target||busy;
+}
+async function libraryChange(action,extra){
+  generation++;fileGeneration++;preview=null;importIds.clear();$('importPreview').hidden=true;$('importText').value='';$('resumeSource').textContent='';clearPlan();
+  await send(action,{revision:profile.revision,...extra});await refresh();
+  notice('当前简历已更新。其他版本没有修改；在申请页点击填写即可重新识别。');
+}
+$('activeResume').onchange=()=>task(()=>libraryChange('library-select',{id:$('activeResume').value}));
+for(const [id,duplicate] of [['newResume',false],['copyResume',true]])click(id,()=>task(async()=>{
+  const name=prompt(duplicate?'给复制后的独立简历命名：':'新建空白简历版本名称：');if(name===null)return;
+  if(!state.accepted&&!confirm('资料仅存当前浏览器，但免口令模式未加密。确认新建？'))return;
+  await libraryChange('library-create',{name,duplicate,reviewed:true,acceptPlaintext:true});
+  if(!duplicate)view('profile');
+}));
+click('renameResume',()=>task(async()=>{const name=prompt('当前简历的新名称：');if(name!==null)await libraryChange('library-rename',{name});}));
+click('backupResumes',()=>task(async()=>{
+  if(!confirm('备份包含全部版本的明文资料，请仅保存在你信任的位置。继续？'))return;
+  const data=await send('library-backup'),url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  const a=document.createElement('a');a.href=url;a.download='resume-versions-local-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}));
+click('restoreResumes',()=>{if(!busy)$('libraryBackupFile').click();});
+$('libraryBackupFile').onchange=()=>task(async()=>{
+  const input=$('libraryBackupFile'),file=input.files?.[0];input.value='';
+  if(!file)return;if(file.size>3*1024*1024)throw Error('版本备份最多3MB');
+  const envelope=JSON.parse(await file.text());
+  if(envelope?.kind!=='jianlitianxie-local-library'||envelope.version!==1)throw Error('这不是完整版本库备份，请用普通简历导入入口');
+  if(!confirm('恢复会替换全部免口令版本。请先导出现有版本；确认使用这个明文备份？'))return;
+  await libraryChange('library-restore',{envelope,reviewed:true,acceptPlaintext:true});
+});
+$('saveSite').onclick=async event=>{
+  if(!event.isTrusted||busy||!state.target)return;
+  const origin=state.target,show=$('siteShow').checked,add=$('siteAdd').checked;
+  // No awaits before this call: optional permissions require an extension-page user gesture.
+  const granted=show?chrome.permissions.request({origins:[origin+'/*']}):Promise.resolve(true);
+  await task(async()=>{
+    if(!await granted)throw Error('未授权；仍可通过工具栏临时打开插件');
+    await send('site-set',{tabId,origin,show,add,reviewed:true});await refresh();
+    $('siteState').textContent=show?'已允许本站常驻，点击才执行':'已关闭常驻；已注入的面板同时移除';
+  });
+};
 async function task(fn){if(busy)return;busy=true;controls();try{await fn();}catch(e){notice(e.message,true);}finally{busy=false;if(plan)renderEntries();renderFacts();controls();}}
 function click(id,fn){$(id).onclick=event=>{if(event.isTrusted)Promise.resolve().then(fn).catch(e=>notice(e.message,true));};}
 function showPlan(p){plan=p;selected=new Set(p.entries.filter(e=>e.status==='ready'&&!e.sensitive).map(e=>e.id));pageIndex=0;$('review').hidden=false;$('firstRun').hidden=true;$('target').textContent=p.origin;

@@ -1,0 +1,36 @@
+name: Refactor installed workflow
+on:
+  pull_request:
+    paths: ['extension/**', 'tests/**', '.github/workflows/refactor-verification.yml']
+  push:
+    branches: ['codex/dameng-local-core-20261001']
+permissions:
+  contents: read
+jobs:
+  installed-record-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test dependencies
+        run: |
+          npm ci --ignore-scripts
+          python -m pip install -r requirements-test.txt
+          python -m playwright install --with-deps chromium
+      - name: Installed record confirmation must really work
+        run: python tests/refactor-mv3.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refactor-installed-evidence
+          path: |
+            test-results/refactor-mv3.json
+            test-results/refactor-installed.png
+            test-results/refactor-manager.png
+          if-no-files-found: error
+          retention-days: 7

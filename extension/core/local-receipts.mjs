@@ -2,14 +2,14 @@ import {numericMetrics} from './performance.mjs';
 import {cleanDiagnostic,cleanProfileDiagnostic,diagnosticCodes,explainDiagnostic} from './match-diagnostics.mjs';
 /** Local-only bounded operation receipts. No URLs, labels, values or raw exceptions. */
 const KEY='resumeLocalReceiptsV1', FLAG='resumeLocalReceiptsEnabled';
-const stages=new Set(['preview','import','scan','fill','bind','map','stop','erase','learn']);
+const stages=new Set(['preview','import','scan','fill','bind','map','stop','erase','learn','task','add']);
 const statuses=new Set(['ready','review','missing','manual','preserve','verified','invalid','stale','needs-user','cancelled','not-attempted']);
 const codes=new Set(Object.keys(diagnosticCodes));
 const reasons=new Set(['none','check-input','target-changed','permission','busy','interrupted','review-required']);
 const int=(v,max)=>Number.isSafeInteger(v)&&v>=0?Math.min(v,max):0;
 function safe(r) {
   if(!r || !stages.has(r.stage))return null;
-  return {seq:int(r.seq,1e9),at:int(r.at,9e15),stage:r.stage,ok:r.ok===true,
+  return {...(typeof r.taskId==='string'&&/^[a-f0-9-]{36}$/.test(r.taskId)?{taskId:r.taskId}:{}),...( ['running','completed','partial','needs-confirmation','no-eligible-fields','cancelled','failed'].includes(r.outcome)?{outcome:r.outcome}:{}),seq:int(r.seq,1e9),at:int(r.at,9e15),stage:r.stage,ok:r.ok===true,
     version:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.version||'')?r.version:'unknown',
     engineVersion:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.engineVersion||'')?r.engineVersion:'unknown',
     ...(cleanProfileDiagnostic(r.profile)?{profile:cleanProfileDiagnostic(r.profile)}:{}),

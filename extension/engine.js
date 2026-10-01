@@ -1,6 +1,6 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.10.4') return;
+ if(globalThis.__resumeFillEngine?.version==='0.11.0') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
  let busy=false,generation=0; const attemptedFields=new Set();
@@ -501,7 +501,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.10.4',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
+  lastSnapshot={engineVersion:'0.11.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -544,11 +544,23 @@
      const wanted=Array.isArray(p.value)?p.value:[p.value];
      if(!wanted.length||new Set(wanted).size!==wanted.length)throw Error('选项计划无效');
      for(const v of wanted){
+      const exactOptions=()=>[...new Set(menusFor(e,before).flatMap(m=>[...m.querySelectorAll(optionSelector)]))]
+        .filter(o=>visible(o)&&(p.datePart&&/^\d{1,4}[年月日]?$/.test(text(o))?String(Number(text(o).replace(/[年月日]$/,'')))===String(v):text(o)===String(v))&&o.getAttribute('aria-disabled')!=='true'&&!o.classList.contains('is-disabled'));
+      // Search only within the recognized logical control, and only for this
+      // already-approved exact value. The editable search text is NOT a selection.
+      const wrap=selectWrap(e),editors=wrap?[...wrap.querySelectorAll('input:not([type=hidden]):not([type=password])')].filter(x=>!x.disabled&&!x.readOnly&&!x.closest(menuSelector)):[];
+      const search=editors.length===1?editors[0]:null;
+      if(!p.datePart&&!p.multiple&&search&&search.value===''&&!exactOptions().length){
+       if(!alive()||!guardUnchanged(e,p.fieldId))throw Error('搜索前目标已变化');
+       search.focus({preventScroll:true});
+       if(!search.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,composed:true,cancelable:true,inputType:'insertText',data:String(v)})))throw Error('网页拒绝搜索输入');
+       beginWrite();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(search,String(v));
+       search.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:String(v)}));
+       tick('selectSearches');
+      }
       const matches=await waitFor(()=>{
        if(!guardUnchanged(e,p.fieldId)||fieldLabel(e)!==p.label||container(e)!==contexts.get(p.fieldId))throw Error('等待期间目标已变化');
-       const found=[...new Set(menusFor(e,before).flatMap(m=>[...m.querySelectorAll(optionSelector)]))]
-        .filter(o=>visible(o)&&(p.datePart&&/^\d{1,4}[年月日]?$/.test(text(o))?String(Number(text(o).replace(/[年月日]$/,'')))===String(v):text(o)===String(v))&&o.getAttribute('aria-disabled')!=='true'&&!o.classList.contains('is-disabled'));
-       return found.length===1?found:null;
+       const found=exactOptions();return found.length===1?found:null;
       },{element:e,stableMs:40,alive:()=>alive()&&e.isConnected});
       if(!alive()||!guardUnchanged(e,p.fieldId))throw Error('操作已停止或目标已变化');
       beginWrite();activate(matches[0]);await wait(0);
@@ -671,5 +683,5 @@
  }
  function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.10.4',scan,localScan,apply,upload,locate,capture,cancel};
+ globalThis.__resumeFillEngine={version:'0.11.0',scan,localScan,apply,upload,locate,capture,cancel};
 })();

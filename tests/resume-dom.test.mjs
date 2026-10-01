@@ -22,7 +22,8 @@ test('semantic section with repeated unmarked cards resolves and fills each actu
  const h=harness(`<form><section><h3>项目经历</h3>${card()}${card()}</section></form>`);
  try{const s=await h.engine.scan();assert.equal(new Set(s.fields.map(f=>f.groupId)).size,2);
   const facts=['甲','乙'].flatMap(entity=>[['项目名称',entity+'项目'],['项目描述',entity+'正文']].map(([label,value])=>({id:entity+label,label,value,entity,section:'项目经历',confirmed:true})));
-  const {bindings}=resolveRecords(s,facts),p=makePlan(s,{facts},{},bindings);assert.equal(p.entries.filter(e=>e.status==='ready').length,4);
+  const resolved=resolveRecords(s,facts);assert.equal(Object.keys(resolved.bindings).length,0,'blank ambiguous cards await explicit record confirmation');
+  const groups=entityGroups(s,facts),bindings=Object.fromEntries(groups.map((g,i)=>[g.id,['甲','乙'][i]])),p=makePlan(s,{facts},{},bindings);assert.equal(p.entries.filter(e=>e.status==='ready').length,4);
   const lifecycle=[];const input=h.w.document.querySelector('input');for(const event of ['focus','input','change','blur'])input.addEventListener(event,()=>lifecycle.push(event));
   const result=await h.engine.apply(p);assert.equal(result.results.filter(r=>r.status==='verified').length,4);
   assert.deepEqual(lifecycle,['focus','input','change','blur']);
