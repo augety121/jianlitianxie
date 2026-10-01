@@ -131,5 +131,21 @@ with sync_playwright() as pw:
   require(page.locator('#edge').input_value()=='edge@example.invalid','independent edge field value mismatch')
   require(page.evaluate('scrollY>0'),'target was not scrolled before writing')
  case('partially-visible-bottom-field-scrolls-before-hit-check-without-penetrating-overlay','<form style="height:2200px"><label for="edge">邮箱</label><input type="email" id="edge"></form><footer style="position:fixed;bottom:0;left:0;right:0;height:12px;background:#ddd;z-index:9999"></footer>',edge_visible)
+ def add_consent_ui(page):
+  load_assistant(page)
+  page.evaluate('''()=>{const original=chrome.runtime.sendMessage;window.addDecisions=[];chrome.runtime.sendMessage=async m=>{
+    if(m.type!=='page-local-run')return original(m);
+    addDecisions.push(m.allowAdd===true);
+    if(!m.allowAdd)return {data:{outcome:'no-eligible-fields',counts:{},expansion:{enabled:false,decision:'consent-required',inventory:[{domain:'education',present:true,current:0,target:2,code:'needs-add'}]}}};
+    return original(m);
+  }}''')
+  click(page,'填写简历');page.wait_for_function("[...testRoot.querySelectorAll('button')].some(b=>!b.hidden&&!b.disabled&&b.textContent==='允许添加经历并继续填写')")
+  require(page.locator('#name').input_value()=='','consent prompt wrote fields')
+  page.evaluate("[...testRoot.querySelectorAll('button')].find(b=>b.textContent==='允许添加经历并继续填写').click()")
+  page.wait_for_timeout(50);require(page.evaluate('addDecisions.length===1'),'synthetic click enabled addition')
+  click(page,'允许添加经历并继续填写');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
+  require(page.evaluate('JSON.stringify(addDecisions)===JSON.stringify([false,true])'),'wrong permission ordering')
+  require(page.locator('#name').input_value()=='SYNTHETIC CANDIDATE','allowed continuation did not run')
+ case('in-page-add-consent-is-visible-and-requires-one-real-user-choice',basic,add_consent_ui)
  report=dict(scope=('layout-only: page assistant UI excluded; about:blank real DOM' if '--layout-only' in sys.argv else 'synthetic screenshot-derived layout and real page-assistant UI/engine/planner; mocked Chrome IPC, not live ATS'),browser=browser.version,passed=sum(c['status']=='passed' for c in cases),failed=sum(c['status']=='failed' for c in cases),cases=cases);browser.close()
 OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n');raise SystemExit(bool(report['failed']))

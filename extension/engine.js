@@ -1,6 +1,6 @@
 /* Runs only in an explicitly selected tab. No network, no submit/save clicks. */
 (()=>{
- if(globalThis.__resumeFillEngine?.version==='0.11.0') return;
+ if(globalThis.__resumeFillEngine?.version==='0.11.1') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
  let busy=false,generation=0; const attemptedFields=new Set();
@@ -233,7 +233,8 @@
   return outer.length===1?outer:[];
  }
  const text=e=>(e?.textContent||'').trim().replace(/\s+/g,' ').slice(0,200);
- const labelText=e=>{if(!e)return '';const c=e.cloneNode(true);c.querySelectorAll('input,textarea,select,button,[contenteditable],'+selectWrappers+','+componentValueSelector+','+placeholderSelector+', [aria-hidden=true]').forEach(n=>n.remove());return text(c);};
+ const labelNoise='[role=alert],[role=tooltip],.ant-form-item-explain,.el-form-item__error,.error-message,.field-error,.validation-error,[data-validation-error],[class*="errorMessage"],[class*="error-message"],[class*="validationMessage"]';
+ const labelText=e=>{if(!e)return '';const c=e.cloneNode(true);c.querySelectorAll('input,textarea,select,button,[contenteditable],'+selectWrappers+','+componentValueSelector+','+placeholderSelector+', [aria-hidden=true],'+labelNoise).forEach(n=>n.remove());return text(c);};
  function subHead(e){
   const cell=e.closest('.subform-cell'),row=e.closest('.fx-subform-row'),field=e.closest('.fx-field');
   if(!cell||!row||!field)return null;
@@ -241,7 +242,7 @@
   return field.querySelector('.subform-head .subform-row')?.children[index]?.querySelector('.subform-title');
  }
  function labelRaw(e){
-  const clean=s=>{const t=s.replace(/^[*\s]+|[：:*\s]+$/g,'');return /^\d+(?:[年月日])?$/.test(t)||!/[\p{L}\p{N}]/u.test(t)?'':t;};
+  const clean=s=>{const t=s.replace(/(?:[\s*]+)?(?:必填项未填写|此项不能为空|该字段不能为空|This field is required)[。.!！]?$/i,'').replace(/^[*\s]+|[：:*\s]+$/g,'');return /^\d+(?:[年月日])?$/.test(t)||!/[\p{L}\p{N}]/u.test(t)?'':t;};
   const component=dateComponent(e);if(component)return labelled(e,component.label,'date-group');
   const sh=subHead(e);if(sh)return labelled(e,clean(sh.getAttribute('title')||labelText(sh)),'label');
   // Resolve the first available source only, preserving the previous precedence.
@@ -250,7 +251,7 @@
   if(clean(native||''))return labelled(e,clean(native),'label');
   const direct=e.getAttribute('aria-label');if(clean(direct||''))return labelled(e,clean(direct),'label');
   const named=e.getAttribute('aria-labelledby'),root=e.getRootNode();
-  const aria=named?named.trim().split(/\s+/).map(id=>text(root.getElementById(id))).filter(Boolean).join(' '):'';
+  const aria=named?named.trim().split(/\s+/).map(id=>labelText(root.getElementById(id))).filter(Boolean).join(' '):'';
   if(clean(aria||''))return labelled(e,clean(aria),'label');
   const dataLabel=e.getAttribute('data-label');if(clean(dataLabel||''))return labelled(e,clean(dataLabel),'label');
   const wrap=e.closest(wrappers),wrapLabel=wrap?.querySelector('label,.ant-form-item-label,.el-form-item__label,.form-item__label,.layui-form-label,.field-name');
@@ -274,7 +275,7 @@
  // Stay within a small, single-field branch; do not take a label from a whole form.
  function nearbyLabel(e){
   let current=controlTarget(e);
-  const valid=n=>{if(!n||n.matches?.('label[for]')&&n.htmlFor!==e.id||n.querySelector?.(controlsSelector)||n.closest?.('nav,aside,button,[role=navigation]')||n.matches?.(componentValueSelector+','+placeholderSelector)||n.closest?.('[aria-hidden=true],[hidden],'+menuSelector))return '';const t=text(n).replace(/^[*\s]+|[：:*\s]+$/g,'');return t&&t.length<=45&&/[\p{L}\p{N}]/u.test(t)&&!/^\d+(?:[年月日])?$/.test(t)&&! /^(请选择|请输入|选填|必填|添加|删除|年|月|日|开始|结束)$/.test(t)?t:'';};
+  const valid=n=>{if(!n||n.matches?.('label[for]')&&n.htmlFor!==e.id||n.querySelector?.(controlsSelector)||n.closest?.('nav,aside,button,[role=navigation]')||n.matches?.(componentValueSelector+','+placeholderSelector)||n.closest?.('[aria-hidden=true],[hidden],'+menuSelector))return '';const t=labelText(n).replace(/^[*\s]+|[：:*\s]+$/g,'');return t&&t.length<=45&&/[\p{L}\p{N}]/u.test(t)&&!/^\d+(?:[年月日])?$/.test(t)&&! /^(请选择|请输入|选填|必填|添加|删除|年|月|日|开始|结束)$/.test(t)?t:'';};
   for(let level=0;level<6&&current?.parentElement;level++,current=current.parentElement){
    const sibling=current.previousElementSibling,value=valid(sibling);if(value)return value;
    const parent=current.parentElement;
@@ -333,7 +334,9 @@
  const recordSelector='[data-entity],.resume-item,.education-item,.project-item,.experience-item,fieldset,section,[data-section]';
  const sectionNames=/^(?:个人基本信息|个人信息|基本信息|求职意向|教育经历|教育背景|教育经验|学习经历|实习经历|工作经历|工作经验|项目经历|项目经验|培训经历|证书|资格证书|奖励荣誉|获奖经历|语言能力|自我评价|自我描述|紧急联系人|家庭信息|家庭情况|家庭成员|Education|Work Experience|Projects|Personal Information)$/i;
  function layoutName(node){
-  const value=(node?.textContent||'').trim();if(!value||value.length>60)return '';
+  const full=(node?.textContent||'').trim();
+  const own=[...node?.childNodes||[]].filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent).join('').trim();
+  const value=sectionNames.test(own)&&!sectionNames.test(full)?own:full;if(!value||value.length>60)return '';
   const clean=value.replace(/^\s*(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/,'').replace(/[\s*：:]/g,' ').replace(/\s*(?:必填|选填|required)\s*$/i,'').trim();
   return sectionNames.test(clean)?clean:'';
  }
@@ -507,7 +510,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.11.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
+  lastSnapshot={engineVersion:'0.11.1',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -687,7 +690,15 @@
   }
   return {snapshotId:captureSnapshot.id,fields,omitted};
  }
+ function repeatMarkers(root,domain){
+  // Count logical identity controls, not guessed array rows. Used only inside this
+  // extension's isolated world; no profile values or DOM nodes cross messages.
+  const names={education:/^(学校|学校名称|毕业学校|毕业院校|院校名称)$/,work:/^(公司名称|企业名称|单位名称|实习单位)$/,project:/^(项目名称|项目题目)$/};
+  if(!names[domain]||root?.ownerDocument!==document||!root.isConnected)return [];
+  const nodes=[...root.querySelectorAll(controlsSelector)].filter(e=>!e.closest(menuSelector)&&!['hidden','file','password','button','submit','checkbox','radio'].includes(e.type)&&controlVisible(e)&&names[domain].test(labelRaw(e)));
+  return [...new Set(nodes.map(controlTarget))];
+ }
  function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.11.0',scan,localScan,apply,upload,locate,capture,cancel};
+ globalThis.__resumeFillEngine={version:'0.11.1',scan,localScan,apply,upload,locate,capture,cancel,repeatMarkers};
 })();

@@ -1,3 +1,4 @@
+import {cleanAddition} from './addition-status.mjs';
 import {numericMetrics} from './performance.mjs';
 import {cleanDiagnostic,cleanProfileDiagnostic,diagnosticCodes,explainDiagnostic} from './match-diagnostics.mjs';
 /** Local-only bounded operation receipts. No URLs, labels, values or raw exceptions. */
@@ -13,6 +14,7 @@ function safe(r) {
     version:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.version||'')?r.version:'unknown',
     engineVersion:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.engineVersion||'')?r.engineVersion:'unknown',
     ...(cleanProfileDiagnostic(r.profile)?{profile:cleanProfileDiagnostic(r.profile)}:{}),
+    ...(cleanAddition(r.addition)?{addition:cleanAddition(r.addition)}:{}),
     reason:reasons.has(r.reason)?r.reason:'check-input',ms:int(r.ms,3600000),total:int(r.total,20000),
     fields:(Array.isArray(r.fields)?r.fields:[]).slice(0,300).filter(x=>statuses.has(x?.status)).map(x=>({index:int(x.index,20000),status:x.status,...(codes.has(x.code)?{code:x.code}:{}),...cleanDiagnostic(x)})),
     omitted:int(r.omitted,20000),performance:{scan:numericMetrics(r.performance?.scan),match:numericMetrics(r.performance?.match),apply:numericMetrics(r.performance?.apply)}};

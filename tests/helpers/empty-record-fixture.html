@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>Synthetic empty resume records</title>
+<style>
+body{font:15px/1.6 system-ui;background:#f5f6fa;padding:30px}form{width:640px;background:white;padding:26px}.blockX{margin:24px 0}.headingX{display:flex;justify-content:space-between;border-bottom:1px solid #ccd7e7;font-weight:bold;margin:15px 0}.addX{color:#06f;cursor:pointer}.cardX{padding:12px;background:#f8f9fc;margin:14px 0}label{display:block;margin:10px}input,textarea{display:block;width:85%;padding:9px;border:1px solid #bdc9d7;border-radius:5px}textarea{height:55px}.error-message{color:#d22}.noteX{background:#eaf3ff;padding:8px}aside{position:fixed;right:10px;top:0}#submit{padding:12px}
+</style>
+<aside><a href="#education">教育背景</a><a href="#project">项目经验</a><span class="addX" id="navAdd">+ 添加</span></aside>
+<form id="application">
+<div class="blockX"><div class="headingX"><span>个人信息</span></div>
+<label>姓名*<input id="person" placeholder="姓名"><span class="error-message" role="alert">必填项未填写</span></label>
+<label>邮箱<input id="email" type="email" placeholder="邮箱"></label><label>手机号码<input id="phone" value="KEEP_EXISTING"></label></div>
+<div class="blockX" id="education"><div class="headingX"><span>教育背景</span><span class="addX">＋ 添加</span></div><div class="noteX">硕士、博士学历需填写本科学历经历</div><div class="rowsX"></div></div>
+<div class="blockX" id="work"><div class="headingX"><span>实习经历</span><span class="addX">＋ 添加</span></div><div class="rowsX"></div></div>
+<div class="blockX" id="project"><div class="headingX"><span>项目经验</span><span class="addX">＋ 添加</span></div><div class="rowsX"></div></div>
+<div class="blockX"><div class="headingX"><span>语言能力</span></div><label>听说<input id="languageLevel"></label></div>
+<div class="blockX"><div class="headingX"><span>自我描述</span></div><label>自我描述<textarea id="summary"></textarea></label></div>
+<div class="blockX"><div class="headingX"><span>家庭情况</span></div><label>姓名<input id="relative"></label></div>
+<label>登录密码<input id="password" type="password"></label><label><input id="consent" type="checkbox" checked>同步更新在线简历</label><button id="submit">预览并提交</button></form>
+<script>
+window.submissions=0;window.navAdds=0;window.added={education:0,work:0,project:0};application.onsubmit=e=>{e.preventDefault();submissions++};navAdd.onclick=()=>navAdds++;
+const input=(label,id,type='text')=>`<label>${label}<input id="${id}" type="${type}"></label>`;
+for(const domain of ['education','work','project']){
+ const section=document.getElementById(domain);section.querySelector('.rowsX').id=domain+'Rows';
+ section.querySelector('.addX').onclick=()=>{
+  const parent=document.getElementById(domain+'Rows'),index=parent.querySelectorAll('.cardX').length,card=document.createElement('div');card.className='cardX';card.dataset.index=index;
+  card.innerHTML=domain==='education'?input('学校名称',domain+index+'name')+input('专业名称',domain+index+'major')+input('入学时间',domain+index+'start','month')+input('毕业时间',domain+index+'end','month'):domain==='work'?input('企业名称',domain+index+'name')+input('所在部门',domain+index+'department')+input('职位名称',domain+index+'role'):input('项目名称',domain+index+'name')+`<label>项目介绍<textarea id="${domain+index+'body'}"></textarea></label>`;
+  parent.append(card);added[domain]++;
+ };
+}
+person.addEventListener('input',()=>{person.parentElement.querySelector('[role=alert]')?.remove()});
+</script>

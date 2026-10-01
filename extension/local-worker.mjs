@@ -1,4 +1,5 @@
 import {observeReviewWindow,bindReviewDocument} from './core/review-window-lifecycle.mjs';
+import {recordTargets,cleanAddition} from './core/addition-status.mjs';
 import {ProfileLibrary,LEGACY_PROFILE_KEY} from './core/profile-library.mjs';
 import {SiteAccess} from './core/site-access.mjs';
 import {scope} from './core/semantics.mjs';
@@ -107,7 +108,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const combined={...original,...e,...(stage==='fill'?{reasonCode:undefined}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.11.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
+    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.11.1',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
@@ -270,27 +271,34 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       }
       if(type==='local-oneclick'){
         stage='task';taskId=crypto.randomUUID();
-        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.11.0'});
+        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.11.1'});
         const tab=await attached(m.tabId);alive();activeTarget={tabId:m.tabId,documentIds:[m.documentId]};
         for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
         if(recordReviews.size)throw Error('请先完成或关闭已打开的经历核对窗口');
-        const prefs=await sites.get(new URL(tab.url).origin);let expansion={added:0,attempted:0,issues:[],complete:true};
+        const origin=new URL(tab.url).origin;
+        const prefs=m.allowAdd===true?await sites.grantAdd(origin):await sites.get(origin);alive();
+        const targets=recordTargets(profile.facts,origin);
+        if(Object.values(targets).some(n=>n>20))throw Error('单类经历超过20段，请在当前简历中选择本次要用的记录');
+        let expansion={added:0,attempted:0,issues:[],complete:true};
         const progress=async label=>{
           await chrome.scripting.executeScript({target:{tabId:m.tabId,documentIds:[m.documentId]},func:s=>globalThis.__resumeLocalAssistant?.progress?.(s),args:[label]}).catch(()=>{});alive();
         };
-        if(prefs.add){
-          const targets={};
-          for(const domain of ['education','work','project'])targets[domain]=new Set(profile.facts.filter(f=>f.confirmed&&!f.conflict&&f.entity&&(!f.origin||f.origin===new URL(tab.url).origin)&&scope(f.section)===domain).map(f=>f.entity)).size;
-          if(Object.values(targets).some(n=>n>20))throw Error('单类经历超过20段，请在当前简历中选择本次要用的记录');
+        await chrome.scripting.executeScript({target:activeTarget,files:['engine.js','vendor/repeat-plan/validate.js','repeat-controller.js']});alive();
+        const inspected=await chrome.scripting.executeScript({target:activeTarget,func:counts=>globalThis.__resumeRepeatController.inspect(counts),args:[targets]});alive();
+        const observed=inspected?.find(x=>x.frameId===0&&x.documentId===m.documentId)?.result;
+        if(!Array.isArray(observed?.inventory))throw Error('未读到经历区域检查结果，请重新打开本页插件');
+        const needsAdd=observed.inventory.some(x=>x.code==='needs-add');
+        expansion={...expansion,enabled:prefs.add,decision:!Object.values(targets).some(Boolean)?'no-source-records':needsAdd&&!prefs.add?'consent-required':'checked',inventory:observed.inventory};
+        if(prefs.add&&needsAdd){
           await progress('adding');
-          await chrome.scripting.executeScript({target:{tabId:m.tabId,documentIds:[m.documentId]},files:['vendor/repeat-plan/validate.js','repeat-controller.js']});alive();
           const response=await chrome.scripting.executeScript({target:{tabId:m.tabId,documentIds:[m.documentId]},func:request=>globalThis.__resumeRepeatController.expand(request),args:[{url:tab.url,targets,expiresAt:Date.now()+300000,reviewed:true}]});alive();
           const result=response?.find(x=>x.frameId===0&&x.documentId===m.documentId)?.result;
           if(!result||!Number.isSafeInteger(result.added)||!Number.isSafeInteger(result.attempted))throw Error('未取得新增记录结果；请核对网页，不重复新增');
-          expansion=result;
-          logs.add({stage:'add',taskId,ok:result.complete===true,total:result.added,ms:Math.round(performance.now()-start),outcome:result.complete?'completed':'partial'});
-          if(!result.complete){data={taskId,outcome:'partial',expansion,counts:{},submitted:false};return data;}
+          expansion={...result,enabled:true,decision:'attempted'};
+          if(result.uncertain){logs.add({stage:'add',taskId,ok:false,total:result.added,addition:cleanAddition(expansion),ms:Math.round(performance.now()-start),outcome:'partial'});data={taskId,outcome:'partial',expansion,counts:{},submitted:false};return data;}
         }
+        expansion={...expansion,...cleanAddition(expansion)};
+        logs.add({stage:'add',taskId,version:chrome.runtime.getManifest?.().version,ok:expansion.decision!=='consent-required',reason:expansion.decision==='consent-required'?'review-required':'none',total:expansion.added,ms:Math.round(performance.now()-start),addition:expansion,outcome:expansion.decision==='consent-required'?'needs-confirmation':expansion.complete?'completed':'partial'});
         await progress('scanning');
         const ids=profile.facts.filter(f=>f.confirmed&&!f.conflict&&!secret(f.label)).map(f=>f.id);
         if(!ids.length)throw Error('请先导入并核对当前简历资料');
@@ -461,7 +469,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     }
     if(m.type==='page-local-run'){
       if(m.reviewed!==true)throw Error('请本人点击填写简历');
-      return perform({type:'local-oneclick',tabId,url:sender.url,documentId:sender.documentId},own);
+      return perform({type:'local-oneclick',tabId,url:sender.url,documentId:sender.documentId,allowAdd:m.allowAdd===true},own);
     }
     if(m.type==='page-local-scan'){
       const p=await perform({type:'local-scan',tabId},own);

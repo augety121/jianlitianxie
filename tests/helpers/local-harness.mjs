@@ -7,6 +7,10 @@ export function localHarness(){
  let scenario='basic',currentUrl=url;
  const chrome={runtime,storage:{local,session},tabs:{get:async()=>({id:11,url:currentUrl}),create:async x=>{calls.push({open:x.url});},update:async()=>{}},permissions:{contains:async()=>true},webNavigation:{getAllFrames:async()=>[]},scripting:{executeScript:async command=>{
   if(command.files)return [{frameId:0,documentId:'target-document'}];
+  if(command.func?.toString().includes('__resumeRepeatController.inspect')){
+    const targets=command.args[0];
+    return [{frameId:0,documentId:'target-document',result:{candidates:[],issues:[],inventory:Object.entries(targets).map(([domain,target])=>({domain,present:scenario==='education'&&domain==='education',current:scenario==='education'&&domain==='education'?2:0,target,code:scenario==='education'&&domain==='education'?'satisfied':target?'section-not-found':'no-source-records'}))}}];
+  }
   const [action,arg]=command.args||[];calls.push({action,arg});
   let result;
   if(action==='scan'){
