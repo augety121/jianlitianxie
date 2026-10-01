@@ -23,7 +23,7 @@ try:
   tmp=Path(d);ext=tmp/'extension';shutil.copytree(ROOT/'extension',ext)
   manifest=json.loads((ext/'manifest.json').read_text(encoding='utf-8'))
   manifest['host_permissions'].append(BASE+'/*');(ext/'manifest.json').write_text(json.dumps(manifest),encoding='utf-8')
-  opts={'headless':True,'args':[f'--disable-extensions-except={ext}',f'--load-extension={ext}'],'viewport':{'width':1300,'height':900}}
+  opts={'headless':True,'chromium_sandbox':True,'args':[f'--disable-extensions-except={ext}',f'--load-extension={ext}'],'viewport':{'width':1300,'height':900}}
   if os.environ.get('CHROMIUM_PATH'):opts['executable_path']=os.environ['CHROMIUM_PATH']
   else:opts['channel']='chromium'
   context=pw.chromium.launch_persistent_context(str(tmp/'browser'),**opts)
@@ -50,6 +50,9 @@ try:
    manager.locator('#returnTarget').click();target.bring_to_front();expect(target.locator('#resume-local-assistant')).to_be_visible()
   step('actual-bold-MD-import-retains-24-facts-and-two-education-one-work-five-projects',imported)
   cdp=context.new_cdp_session(target)
+  arguments=cdp.send('Browser.getBrowserCommandLine')['arguments']
+  require('--no-sandbox' not in arguments,'new installation test must retain Chromium sandbox')
+  report['chromiumSandboxRequested']=True
   def walk(node):
    yield node
    for key in ['children','shadowRoots']:
