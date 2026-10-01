@@ -95,6 +95,20 @@ try:
     if label in text(assistant()):return
     target.wait_for_timeout(80)
    raise AssertionError('Expected page feedback '+label+'; actual '+text(assistant())[:900])
+  def review_navigation():
+   for mode in ['reload-review','navigate-target','close-review']:
+    target.goto(base+'/'+mode);expect(target.locator('#resume-local-assistant')).to_be_visible();wait_text('无需先点扫描')
+    with context.expect_page() as opened:click('填写简历')
+    review=opened.value;expect(review.locator('.record')).to_have_count(4)
+    if mode=='reload-review':
+     review.reload();expect(review.locator('#state')).to_contain_text('失效');require(review.locator('#continue').is_disabled(),'reloaded review can execute')
+    elif mode=='navigate-target':
+     target.goto(base+'/changed-target');review.bring_to_front();review.locator('#continue').click();expect(review.locator('#state')).to_contain_text('失效')
+    review.close();target.bring_to_front()
+    require(target.locator('#email').input_value()=='','revoked popup wrote a value')
+    require(target.evaluate('submissions')==0,'revoked review submitted')
+   target.goto(base+'/apply');expect(target.locator('#resume-local-assistant')).to_be_visible()
+  step('installed-review-reload-target-navigation-and-close-revoke-without-writing',review_navigation)
   def fill():
    wait_text('无需先点扫描')
    with context.expect_page() as opened:click('填写简历')
@@ -121,7 +135,7 @@ try:
   def boundaries():
    for key in ['password','familyName','familyPhone','referral','health','listening']:require(target.locator('#'+key).input_value()=='','unprovided or restricted value written: '+key)
    require(target.locator('#person').input_value()=='保留原姓名','existing value overwritten');require(target.evaluate('submissions')==0,'submitted');require(target.locator('#attachment').input_value()=='','attachment uploaded')
-   click('填写简历');wait_text('没有可自动补全');require(target.evaluate('added')=={'education':1,'project':1},'repeat click added duplicate cards')
+   click('填写简历');wait_text('已有内容与简历不同');require(target.evaluate('added')=={'education':1,'project':1},'repeat click added duplicate cards')
    stored=worker.evaluate('()=>chrome.storage.local.get("resumeLocalReceiptsV1")')['resumeLocalReceiptsV1']
    events=[r for r in stored if r.get('stage')=='task'];require(any(r.get('outcome')=='completed' for r in events),'task completion absent');require(any(r.get('outcome')=='no-eligible-fields' for r in events),'zero-plan terminal missing')
    exported=json.dumps(stored,ensure_ascii=False)
@@ -144,7 +158,11 @@ try:
    global context
    context.close();context=pw.chromium.launch_persistent_context(str(tmp/'browser'),**opts)
    worker2=context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker',timeout=15000)
-   fresh=context.new_page();fresh.goto(base+'/restart');expect(fresh.locator('#resume-local-assistant')).to_be_visible(timeout=10000)
+   fresh=context.new_page();fresh.goto(base+'/restart')
+   try:expect(fresh.locator('#resume-local-assistant')).to_be_visible(timeout=10000)
+   except Exception:
+    # Synthetic fixture metadata only; do not repair permissions or reattach in the test.
+    print('RESTART_METADATA',worker2.evaluate('async o=>({preferences:await chrome.storage.local.get("resumeSiteAccessV1"),scripts:await chrome.scripting.getRegisteredContentScripts(),allowed:await chrome.permissions.contains({origins:[o+"/*"]})})',base),flush=True);raise
    state=worker2.evaluate('()=>chrome.storage.local.get("resumeLocalLibraryV1")')['resumeLocalLibraryV1']
    require(len(state['resumes'])==2,'versions lost across browser restart');require(any(len(x['profile']['facts'])==15 for x in state['resumes']),'facts lost')
    require(fresh.locator('#email').input_value()=='','auto appearance caused unrequested filling')

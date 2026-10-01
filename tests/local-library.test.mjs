@@ -45,7 +45,7 @@ test('site opt-in requires browser origin permission and registers only that sit
  permission=true;await sites.set(origin,true,true);assert.equal(scripts.size,1);assert.deepEqual([...scripts.values()][0].matches,[origin+'/*']);
  assert(await sites.allowed(origin));permission=false;assert.equal(await sites.allowed(origin),false);
  permission=true;await sites.set(origin,false,true);assert.equal(scripts.size,0);assert.equal((await sites.get(origin)).add,false);
- await assert.rejects(sites.set(origin+'/path',true,false),/准确/);assert(storage.data[SITE_ACCESS_KEY]);
+ await assert.rejects(sites.set(origin+'/path',true,false),/准确/);await assert.rejects(sites.set('https://*.example.invalid',true,false),/准确/);assert(storage.data[SITE_ACCESS_KEY]);
 });
 test('two blank education cards require one explicit aggregate binding, never first-record guessing',async()=>{
  const h=localHarness();h.setScenario('education');await h.attach();await importText(h,'## 教育经历 | 硕士记录\n学校：甲大学\n专业：电子工程\n## 教育经历 | 本科记录\n学校：乙大学\n专业：软件工程');
@@ -59,4 +59,23 @@ test('aggregate binding validates every choice before mutating the plan',async()
  assert.throws(()=>run.bindMany('owner',{planId:p.id,bindings:[{groupId:'0:a',entity:'A'},{groupId:'0:b',entity:'A'}],reviewed:true}),/两个/);assert.deepEqual(run.job.frames[0].entityBindings,{});
  const after=run.bindMany('owner',{planId:p.id,bindings:[{groupId:'0:a',entity:'B'},{groupId:'0:b',entity:'A'}],reviewed:true});
  assert.equal(after.entries.find(e=>e.id==='0:am').value,'B专业');assert.equal(after.entries.find(e=>e.id==='0:bm').value,'A专业');assert.notEqual(after.id,p.id);
+});
+
+test('worker restart restores only opted-in origins with existing browser permission',async()=>{
+ const ok='https://approved.example.invalid',denied='https://revoked.example.invalid';
+ const storage=memory({[SITE_ACCESS_KEY]:[{origin:ok,show:true,add:true},{origin:denied,show:true},{origin:'https://disabled.example.invalid',show:false},{origin:ok+'/wrong-path',show:true}]});
+ const before=structuredClone(storage.data),scripts=new Map(),asked=[];
+ const chrome={storage:{local:storage},permissions:{contains:async({origins})=>{asked.push(origins);return origins[0]===ok+'/*';}},scripting:{
+  getRegisteredContentScripts:async({ids})=>ids.filter(id=>scripts.has(id)).map(id=>scripts.get(id)),
+  registerContentScripts:async rows=>rows.forEach(row=>scripts.set(row.id,row)),
+  updateContentScripts:async rows=>rows.forEach(row=>scripts.set(row.id,row)),
+  unregisterContentScripts:async({ids})=>ids.forEach(id=>scripts.delete(id))}};
+ const sites=new SiteAccess(chrome);
+ assert.deepEqual(await sites.restore(),[ok]);assert.equal(scripts.size,1);
+ assert.deepEqual([...scripts.values()][0].matches,[ok+'/*']);
+ assert.deepEqual(storage.data,before,'restoration must not invent or broaden opt-ins');
+ assert(!asked.some(origins=>origins[0].includes('wrong-path')));
+ scripts.clear();assert.deepEqual(await sites.restore(),[ok]);assert.equal(scripts.size,1);
+ await sites.set(ok,false,false);assert.equal(scripts.size,0);
+ assert.deepEqual(await sites.restore(),[]);assert.equal(scripts.size,0);
 });

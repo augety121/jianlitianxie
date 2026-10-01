@@ -70,12 +70,23 @@ with sync_playwright() as pw:
  def load_assistant(page,profile=basics):
   page.evaluate('''facts=>{
    const original=Element.prototype.attachShadow;Element.prototype.attachShadow=function(o){const r=original.call(this,o);if(this.id==='resume-local-assistant')window.testRoot=r;return r;};
-   window.testCalls=[];window.scanDelay=0;let plan;
+   window.testCalls=[];window.scanDelay=0;window.testEngineApplications=0;let plan,generation=0;
    window.chrome={runtime:{sendMessage:async m=>{testCalls.push(m.type);try{
     if(m.type==='page-local-status')return {data:{hasProfile:true,mode:'local'}};
+    if(m.type==='page-local-run'){
+      if(m.reviewed!==true)throw Error('Review required');const epoch=generation;
+      if(scanDelay)await new Promise(r=>setTimeout(r,scanDelay));if(epoch!==generation)throw Error('Cancelled');
+      const s=await __resumeFillEngine.scan();plan=__onePlan(s,{facts});
+      const summary=__oneSummary({...plan,expiresAt:Date.now()+300000,entries:plan.entries.map(e=>({...e,id:e.fieldId,frameId:0}))});
+      if(!summary.quick.length)return {data:{outcome:'no-eligible-fields',summary,counts:{},submitted:false}};
+      if(epoch!==generation)throw Error('Cancelled');const ids=new Set(summary.quick.map(e=>e.id));
+      testEngineApplications++;const r=await __resumeFillEngine.apply({...plan,entries:plan.entries.filter(e=>ids.has(e.fieldId))});
+      const counts={};for(const e of r.results)counts[e.status]=(counts[e.status]||0)+1;
+      return {data:{outcome:r.results.every(e=>e.status==='verified')?'completed':'partial',summary,counts,submitted:false}};
+    }
     if(m.type==='page-local-scan'){if(scanDelay)await new Promise(r=>setTimeout(r,scanDelay));const s=await __resumeFillEngine.scan();plan=__onePlan(s,{facts});return {data:__oneSummary({...plan,expiresAt:Date.now()+300000,entries:plan.entries.map(e=>({...e,id:e.fieldId,frameId:0}))})};}
     if(m.type==='page-local-fill'){const ids=new Set(__oneSummary({...plan,entries:plan.entries.map(e=>({...e,id:e.fieldId,frameId:0}))}).quick.map(e=>e.id));const r=await __resumeFillEngine.apply({...plan,entries:plan.entries.filter(e=>ids.has(e.fieldId))});const counts={};for(const e of r.results)counts[e.status]=(counts[e.status]||0)+1;return {data:{counts}};}
-    if(m.type==='page-local-stop'){__resumeFillEngine.cancel();return {data:{stopping:true}};}
+    if(m.type==='page-local-stop'){generation++;__resumeFillEngine.cancel();return {data:{stopping:true}};}
     return {data:{opened:true}};
    }catch(e){return {error:e.message}}}}};
   }''',profile)
@@ -86,13 +97,13 @@ with sync_playwright() as pw:
   load_assistant(page);require(page.evaluate("testRoot.querySelector('.primary').textContent==='填写简历'"),'no primary')
   click(page,'填写简历');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
   require(page.locator('#name').input_value()=='SYNTHETIC CANDIDATE','name not filled');require(page.locator('#email').input_value()=='candidate@example.invalid','email not filled');require(page.locator('#gender').input_value()=='' and page.locator('#secret').input_value()=='','sensitive write')
-  require(page.evaluate("testCalls.filter(x=>x==='page-local-fill').length===1 && !testCalls.includes('page-local-manage')"),'wrong action route')
+  require(page.evaluate("testCalls.filter(x=>x==='page-local-run').length===1 && testEngineApplications===1 && !testCalls.includes('page-local-manage')"),'wrong action route')
   page.screenshot(path=str(ROOT/'test-results/oneclick-desktop.png'))
   page.set_viewport_size({'width':390,'height':844});require(page.evaluate("testRoot.querySelector('.panel').getBoundingClientRect().width<=innerWidth"),'overflow')
   page.screenshot(path=str(ROOT/'test-results/oneclick-mobile.png'))
  case('one-trusted-click-scans-and-fills-without-management-tab',basic,oneclick)
  def synthetic(page):
-  load_assistant(page);page.evaluate("testRoot.querySelector('.primary').click()");page.wait_for_timeout(100);require(page.locator('#name').input_value()=='','synthetic click wrote');require(page.evaluate("!testCalls.includes('page-local-scan')"),'synthetic click scanned')
+  load_assistant(page);page.evaluate("testRoot.querySelector('.primary').click()");page.wait_for_timeout(100);require(page.locator('#name').input_value()=='','synthetic click wrote');require(page.evaluate("!testCalls.includes('page-local-scan')&&!testCalls.includes('page-local-run')"),'synthetic click started a task')
  case('script-generated-click-cannot-start-oneclick-fill',basic,synthetic)
  def collapsed(page):
   load_assistant(page);click(page,'收起');click(page,'填写简历');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')");require(page.locator('#name').input_value()=='SYNTHETIC CANDIDATE','collapsed button not functional')
@@ -101,14 +112,16 @@ with sync_playwright() as pw:
  def zero(page):
   load_assistant(page);click(page,'填写简历');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('没有可自动补全')")
   require(page.evaluate("testRoot.querySelector('.primary').getClientRects().length>0&&!testRoot.querySelector('.primary').disabled"),'fill disappeared')
-  require(page.evaluate("testRoot.querySelectorAll('.problem').length===7"),'missing fields not explained inline');require(page.evaluate("!testCalls.includes('page-local-fill')&&!testCalls.includes('page-local-manage')"),'zero matched jumped or wrote');require(page.evaluate("testRoot.querySelector('details').open"),'zero-match remediation must be expanded');click(page,'补填这项');require(page.evaluate("testCalls.includes('page-local-pick')"),'no inline remedy')
+  require(page.evaluate("testRoot.querySelectorAll('.problem').length===7"),'missing fields not explained inline');require(page.evaluate("!testCalls.includes('page-local-fill')&&!testCalls.includes('page-local-manage')"),'zero matched jumped or wrote');require(page.evaluate("!testRoot.querySelector('details').open"),'missing details must start collapsed');
+  box=page.evaluate("()=>{const r=testRoot.querySelector('summary').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}")
+  page.mouse.click(box['x'],box['y']);require(page.evaluate("testRoot.querySelector('details').open"),'details cannot be opened');click(page,'补填这项');require(page.evaluate("testCalls.includes('page-local-pick')"),'no inline remedy')
   page.screenshot(path=str(ROOT/'test-results/oneclick-zero-match.png'))
  case('zero-matches-keeps-fill-button-and-shows-remedies-without-auto-navigation',unmatched,zero)
  def inspect(page):
   load_assistant(page);click(page,'仅检查缺项');page.wait_for_function("testRoot.querySelector('.counts').textContent.includes('扫描')");require(page.locator('#name').input_value()=='' and page.evaluate("!testCalls.includes('page-local-fill')"),'inspection filled')
  case('optional-inspection-never-authorizes-writing',basic,inspect)
  def cancel(page):
-  load_assistant(page);page.evaluate('scanDelay=400');click(page,'填写简历');click(page,'停止');page.wait_for_timeout(600);require(page.locator('#name').input_value()=='' and page.evaluate("!testCalls.includes('page-local-fill')"),'stop between scan and fill lost')
+  load_assistant(page);page.evaluate('scanDelay=400');click(page,'填写简历');click(page,'停止');page.wait_for_timeout(600);require(page.locator('#name').input_value()=='' and page.evaluate("testEngineApplications===0"),'stop between scan and fill lost')
  case('stop-during-scan-cancels-the-rest-of-oneclick',basic,cancel)
  report=dict(scope=('layout-only: page assistant UI excluded; about:blank real DOM' if '--layout-only' in sys.argv else 'synthetic screenshot-derived layout and real page-assistant UI/engine/planner; mocked Chrome IPC, not live ATS'),browser=browser.version,passed=sum(c['status']=='passed' for c in cases),failed=sum(c['status']=='failed' for c in cases),cases=cases);browser.close()
 OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n');raise SystemExit(bool(report['failed']))

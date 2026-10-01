@@ -70,7 +70,7 @@ try:
   def logs():
    r=manager.evaluate('()=>chrome.runtime.sendMessage({type:"local-logs"})');require(not r.get('error'),str(r));data=r.get('data',{})
    scans=[r for r in data.get('records',[]) if r.get('stage')=='scan'];fills=[r for r in data.get('records',[]) if r.get('stage')=='fill']
-   require(scans and fills,'scan/fill logs absent');require(scans[-1]['version']=='0.10.4','wrong product version')
+   require(scans and fills,'scan/fill logs absent');require(scans[-1]['version']==manifest['version'],'report does not match installed manifest version')
    require(any(f.get('recognition',{}).get('selectedDisplay') for r in scans for f in r.get('fields',[])),'selected-display evidence not logged')
    serialized=json.dumps(data,ensure_ascii=False)
    for value in ['candidate@example.invalid','示例学院甲','电子工程','PRIVATE_SENTINEL',base]:require(value not in serialized,'private data in receipts')

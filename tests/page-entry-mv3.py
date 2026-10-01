@@ -97,7 +97,11 @@ try:
    b=button('填写简历');require('disabled' not in b.get('attributes',[]),'zero matches hid or disabled main action')
   step('same-origin-navigation-reattaches-and-zero-ready-is-explained-not-retried',no_match)
   def pick_one():
-   detail=next(n for n in walk(assistant()) if n.get('nodeName')=='DETAILS');require('open' in detail.get('attributes',[]),'zero-match remedies should already be open')
+   detail=next(n for n in walk(assistant()) if n.get('nodeName')=='DETAILS');require('open' not in detail.get('attributes',[]),'details should stay collapsed until requested')
+   summary=next(n for n in walk(detail) if n.get('nodeName')=='SUMMARY')
+   box=cdp.send('DOM.getBoxModel',{'backendNodeId':summary['backendNodeId']})['model']['border']
+   target.mouse.click((box[0]+box[4])/2,(box[1]+box[5])/2)
+   detail=next(n for n in walk(assistant()) if n.get('nodeName')=='DETAILS');require('open' in detail.get('attributes',[]),'user cannot open zero-match remedies')
    with context.expect_page() as opened:click('补填这项')
    picker=opened.value;picker.set_viewport_size({'width':470,'height':650});expect(picker.locator('#field')).to_have_text('未知字段0',timeout=10000)
    require(picker.url.startswith(origin+'/quick-pick.html'),'not a trusted extension picker')

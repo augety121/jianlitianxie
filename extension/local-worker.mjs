@@ -1,3 +1,4 @@
+import {observeReviewWindow,bindReviewDocument} from './core/review-window-lifecycle.mjs';
 import {ProfileLibrary,LEGACY_PROFILE_KEY} from './core/profile-library.mjs';
 import {SiteAccess} from './core/site-access.mjs';
 import {scope} from './core/semantics.mjs';
@@ -304,10 +305,11 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
           for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
           if(recordReviews.size)throw Error('请先完成或关闭已有的经历核对窗口');
           const id=crypto.randomUUID(),ticket={id,owner:own,taskId,tabId:m.tabId,documentId:m.documentId,url:m.url,planId:plan.id,revision:profile.revision,
-            groups:pending,expansion,expires:plan.expiresAt,pickerTab:null,pickerDocument:null,claimed:false};
+            groups:pending,expansion,expires:plan.expiresAt,pickerTab:null,pickerDocument:null,claimed:false,initialComplete:false,
+            reviewUrl:chrome.runtime.getURL('record-review.html')+'?ticket='+id};
           recordReviews.set(id,ticket);
           try{
-            const win=await chrome.windows.create({url:chrome.runtime.getURL('record-review.html')+'?ticket='+id,type:'popup',width:650,height:700,focused:true});alive();
+            const win=await chrome.windows.create({url:ticket.reviewUrl,type:'popup',width:650,height:700,focused:true});alive();
             if(!Number.isSafeInteger(win.tabs?.[0]?.id))throw Error('经历核对窗口未打开');ticket.pickerTab=win.tabs[0].id;
           }catch(e){recordReviews.delete(id);throw e;}
           data={taskId,outcome:'needs-confirmation',groups:pending.length,expansion,counts:{},submitted:false};return data;
@@ -394,9 +396,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     if(!trustedWorkspace(sender,chrome.runtime,'record-review.html')||typeof sender.documentId!=='string')throw Error('只有经历核对窗口可以读取候选');
     if(!['local-records-read','local-records-fill','local-records-close'].includes(m.type))throw Error('经历窗口操作无效');
     const t=recordReviews.get(m.ticket);
-    if(!t||t.claimed||Date.now()>=t.expires||!t.pickerTab||t.pickerTab!==sender.tab?.id)throw Error('经历窗口尚未就绪或授权已失效');
-    if(t.pickerDocument&&t.pickerDocument!==sender.documentId)throw Error('经历窗口已改变');
-    t.pickerDocument=sender.documentId;
+    bindReviewDocument(t,sender);
     if(m.type==='local-records-close'){
       recordReviews.delete(t.id);
       if(run.job?.id===t.planId)await run.stop();
@@ -416,6 +416,21 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     await refresh();
     if(!accepted||!profile.facts.length)return open(tab);
     return {attached:true};
+  }
+  async function restoreSiteEntries(){
+    await ready;
+    const origins=await sites.restore();
+    // Query only remembered AND still browser-authorized origins, not unrelated tabs.
+    for(const origin of origins){
+      if(!await sites.allowed(origin))continue;
+      const tabs=await chrome.tabs.query({url:origin+'/*'}).catch(()=>[]);
+      for(const tab of tabs){
+        if(!Number.isSafeInteger(tab.id)||!tab.url||new URL(tab.url).origin!==origin)continue;
+        if(!await sites.allowed(origin))break;
+        await reattach(tab).catch(()=>{});
+      }
+    }
+    return {restored:origins.length};
   }
   async function reattach(tab){
     if(await mode()!=='local')return;
@@ -485,6 +500,21 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     }
     throw Error('页面入口不允许读取或修改完整资料');
   }
-  async function navigated(id){for(const [key,t] of recordReviews)if(t.pickerTab===id&&!t.claimed){recordReviews.delete(key);if(run.job?.id===t.planId)await run.stop();logs.add({stage:'task',taskId:t.taskId,outcome:'cancelled',ok:true,total:0,ms:0});}if(activeTarget?.tabId===id){epoch++;recordReviews.clear();}if(learning?.tabId===id){clearLearning();epoch++;}if(run.job?.tabId===id||run.running?.tabId===id){epoch++;await run.stop();}}
-  return {request,pageRequest,pickerRequest,learnerRequest,recordsRequest,open,launch,reattach,navigated,get busy(){return active||run.busy;}};
+  async function navigated(id, change = {removed:true}, tab = {}) {
+    // onUpdated also fires during the intended first popup load. It is not a reload.
+    // Any subsequent navigation, different URL or close still revokes this exact ticket.
+    for (const [key,t] of recordReviews) {
+      if (t.pickerTab !== id || !observeReviewWindow(t,change,tab)) continue;
+      recordReviews.delete(key);
+      if (activeOwner === t.owner) epoch++;
+      if (run.job?.id === t.planId || run.running?.id === t.planId) await run.stop();
+      logs.add({stage:'task',taskId:t.taskId,outcome:'cancelled',ok:true,total:0,ms:0});
+    }
+    const leaving = change.removed === true || change.status === 'loading' || typeof change.url === 'string';
+    if (!leaving) return;
+    if(activeTarget?.tabId===id){epoch++;recordReviews.clear();}
+    if(learning?.tabId===id){clearLearning();epoch++;}
+    if(run.job?.tabId===id||run.running?.tabId===id){epoch++;await run.stop();}
+  }
+  return {request,pageRequest,pickerRequest,learnerRequest,recordsRequest,open,launch,reattach,restoreSiteEntries,navigated,get busy(){return active||run.busy;}};
 }

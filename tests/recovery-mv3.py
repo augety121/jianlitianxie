@@ -45,7 +45,9 @@ try:
    expect(manager.locator('#importPreview')).to_be_visible()
    require(manager.locator('.import-row').count()>40,'resume structure was not extracted')
    manager.locator('#commitImport').click();expect(manager.locator('#profileHealth')).to_contain_text('教育 2 段 · 项目 5 段 · 工作/实习 1 段')
-   expect(manager.locator('#counts')).to_contain_text('可填 '+str(len(expected)))
+   # Multiple blank records cannot be assigned by source order before user review.
+   expect(manager.locator('#counts')).to_contain_text('缺项')
+   require(manager.locator('.field input:checked').count()<len(expected),'ambiguous records were silently selected')
    require(all(target.locator('#'+key).input_value()=='' for key in expected),'import/scan wrote without fill')
   step('real-DOCX-upload-parser-confirm-store-and-two-education-five-project-inventory',upload)
   def open_page():
@@ -62,7 +64,17 @@ try:
   def click(label):
    n=next(n for n in walk(assistant()) if n.get('nodeName')=='BUTTON' and text(n)==label);r=cdp.send('DOM.getBoxModel',{'backendNodeId':n['backendNodeId']})['model']['border'];target.mouse.click((r[0]+r[4])/2,(r[1]+r[5])/2)
   def filled():
-   click('填写简历')
+   with context.expect_page() as opened:click('填写简历')
+   review=opened.value;expect(review.locator('.record')).to_have_count(7)
+   names=[expected['edu'+str(i)+'name'] for i in range(2)]+[expected['project'+str(i)+'name'] for i in range(5)]
+   for i,name in enumerate(names):
+    select=review.locator('select[data-group]').nth(i)
+    candidates=select.locator('option').evaluate_all('nodes=>nodes.map(n=>({text:n.textContent,value:n.value}))')
+    exact=[option for option in candidates if option['text'].startswith(name)]
+    require(len(exact)==1,'the specified fixture record is not a unique review candidate')
+    select.select_option(value=exact[0]['value'])
+   review.locator('#continue').click();expect(review.locator('#state')).to_contain_text('回读通过 '+str(len(expected))+' 项',timeout=20000)
+   review.close();target.bring_to_front()
    for id_,value in expected.items():expect(target.locator('#'+id_)).to_have_value(value,timeout=15000)
    end=time.monotonic()+10
    while time.monotonic()<end and '回读通过 '+str(len(expected))+' 项' not in text(assistant()):target.wait_for_timeout(80)
@@ -74,7 +86,7 @@ try:
   def logs():
    r=manager.evaluate('()=>chrome.runtime.sendMessage({type:"local-logs"})');require(not r.get('error'),str(r));data=r.get('data',{})
    fills=[r for r in data.get('records',[]) if r.get('stage')=='fill'];require(fills,'fill receipt absent')
-   require(fills[-1]['version']=='0.10.4' and fills[-1]['engineVersion']=='0.10.4','version lost after consuming plan')
+   require(fills[-1]['version']==manifest['version'] and fills[-1]['engineVersion']==manifest['version'],'version lost after consuming plan')
    require(sum(f['status']=='verified' for f in fills[-1]['fields'])==len(expected),'receipt count disagrees with DOM')
    serialized=json.dumps(data,ensure_ascii=False)
    for value in ['recovery@example.invalid','示例学院甲','虚构技术有限公司','PRIVATE_SENTINEL',base]:require(value not in serialized,'private values in logs')

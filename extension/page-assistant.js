@@ -119,7 +119,7 @@
  function destroy(){dead=true;generation++;host.remove();window.removeEventListener('popstate',moved);window.removeEventListener('hashchange',moved);}
  function taskFinished(result){
   clear();show();
-  if(result.summary)render({...result.summary,quick:[],more:0,problems:result.summary.problems.map(p=>({...p,pickable:false}))});
+  if(result.summary)render({...result.summary,quick:[],more:0,problems:result.summary.problems.map(p=>({...p,pickable:result.outcome==='no-eligible-fields'&&p.pickable}))});
   if(result.outcome!=='no-eligible-fields')plan=null;
   const count=result.counts?.verified||0,added=result.expansion?.added||0;
   if(result.outcome==='needs-confirmation'){
@@ -131,6 +131,7 @@
     message.textContent=`本次回读通过 ${count} 项`+(added?`，新增 ${added} 段记录`:'')+'；未提交。';
     if(result.outcome==='partial')message.textContent+='\n部分控件未完成，请查看详情；不会自动重试不确定的写入。';
     if(pending)message.textContent+=`\n${pending} 项尚未尝试，不等于缺少资料。`;
+    if(result.summary?.counts.missing)message.textContent+='\n暂缺资料已跳过。你可在网页补填，然后点“我补完了，记住内容”。';
     if(result.expansion?.complete===false)message.textContent+='\n新增结果需要核对，未继续填写或重复点击。';
   }
   if(details)details.open=false;fill.textContent='填写简历';controls();

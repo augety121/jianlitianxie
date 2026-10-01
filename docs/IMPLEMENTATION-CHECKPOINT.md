@@ -1,33 +1,29 @@
-# Refactor checkpoint - 2026-10-01
+# Refactor checkpoint — PR #12 repair, 2026-10-01
 
-Status: development code saved, NOT an accepted release.
-Spec decisions: B/A/A/A/B/A/B/A/A. Implementation was explicitly authorized.
-Baseline: 0b29f4bb156c19b75e67e0eaa9f2a2ad654af36b, isolated branch codex/dameng-local-core-20261001.
-Original dirty worktree remains unchanged. Source backup exists; it is not a browser-data backup.
+Spec decisions: B/A/A/A/B/A/B/A/A. Implementation and PR repairs explicitly authorized.
+Branch: `codex/dameng-local-core-20261001`; base main `0b29f4bb156c19b75e67e0eaa9f2a2ad654af36b`.
+Initial WIP commit: `2d28ae8320fcd3b4cc3070219cf6e7bd0238ceb7`.
+Use `git status` and the current PR head for the repair SHA and current CI results.
+Original dirty worktree and browser installation remain untouched. Source backup is not a browser-data backup.
 
-## Saved implementation
-- Independent named local resume versions; legacy read compatibility, first-write backup, revision checks, full backup/restore UI.
-- Per-origin opt-in registration; add-record opt-in independent from initial page display.
-- Single page request coordinates add/scan/record matching/fill/receipts; no repeated 60-field clicks.
-- Explicit aggregate record mapping; no silent source-order assignment of ambiguous cards.
-- MIT upstream validatePlan reused with provenance; bounded independent repeat controller.
-- Search-select exact approved query support and committed-display readback.
-- Page/background/engine version checks, local task IDs and terminal outcomes.
+## What the initial WIP saved
 
-## Actual verification and blocker
-- Baseline Node: 250 pass, before changes.
-- Initial remote candidate Node: one old source-order expectation failed; assertion updated to explicit confirmation while keeping all value/readback checks.
-- Release syntax/privacy-pattern check passed (415 files, 112 JS checks) before the final test file was added.
-- New installed test passes MD import and site opt-in, then FAILS: the record-review popup has zero records.
-- Diagnostic evidence: initial popup loading is handled as navigation; its new review ticket is removed. This is a new candidate bug, not proof of the user's old failure cause.
-- Two source-edit requests for that lifecycle fix were blocked by tool safety checks. The denied edits were NOT applied; do not reroute them through another write method.
-- Final Node / existing-local installed rerun is tracked in test-results/refactor-node-final.log and refactor-existing-local.log. Read actual results before reporting counts.
-- No authenticated Dameng page or Tata comparison has been run. Do not offer this candidate as a working replacement.
+Independent named local resumes, version isolation/backup/restore, per-origin opt-in, one-click task coordination, aggregate record review, bounded repeat-card controller, MIT validatePlan reuse, exact search-select actions, version checks and local no-value task receipts.
+The original WIP had Node 258 passed and old local installed 9 passed, but the new installed confirmation test failed with zero record candidates. Packaging success did not mean usable.
 
-Next: inspect exact checked-in state and blocked lifecycle edit; obtain a permitted resolution before repeating the installed aggregate-confirmation test. Keep failing test enabled. Do not overwrite the original install, merge main, or claim completion based on Node/packaging checks.
+## Current repair
 
-## Final observed results before checkpoint commit
-Remote candidate Node rerun: 258 tests passed, 0 failed; log refactor-node-final.log.
-Remote existing local installed workflow: 9 passed, 0 failed; log refactor-existing-local.log.
-New aggregate-record installed workflow: import/site settings passed; popup record list failed (zero instead of four). This failure blocks release regardless of the successful older workflow.
-The new failing installed test is added as its own GitHub workflow; no continue-on-error or disabled assertion.
+- Dedicated popup lifecycle state keeps the first unbound load pending, then requires exact URL/tab/document proof; reload, close, wrong destination, expiration and replay still invalidate.
+- The page can expand collapsed zero-match details and open a valid single-field review; consumed plans stay non-replayable.
+- Worker startup restores only previously opted-in, still browser-authorized site registrations and their page entries. No new hosts or permissions.
+- UI mocks now speak the real task protocol, ambiguous-record tests explicitly choose records, and installed version checks compare to the manifest.
+- New negative tests cover popup refresh, target navigation and closure without writes, plus wrong sender and ticket reuse.
+- Real installed refactor workflow has passed all seven cases locally, including 14 independent field values, record choices, reload/cancel boundaries, version isolation and browser restart.
+- Recovery installation test has passed after explicit selection of seven records; all 40 independent value checks remain.
+- Full command results are in `test-results/pr12-*.log`. Read them instead of assuming tests passed. Local MCP fixture could not bind its own fixed port; no user service was terminated.
+
+## Next and remaining product scope
+
+Complete current-commit CI verification and record results in PR #12. Never disable failing assertions or merge main automatically.
+Authenticated Dameng acceptance and same-workload Tata performance comparison have NOT been performed. Do not label synthetic fixtures as live-site acceptance or install into the original directory without that separate checkpoint.
+See `docs/PR12-FIX-VERIFICATION.md` for the failure-to-fix record and preserved test boundaries.
