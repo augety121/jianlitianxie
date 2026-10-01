@@ -122,7 +122,16 @@ try:
    # Deliberately reverse all records; one confirmation, not per-field mapping.
    choices=['本科记录','硕士记录','项目乙','项目甲']
    for i,v in enumerate(choices):review.locator('select[data-group]').nth(i).select_option(v)
-   review.locator('#continue').click();expect(review.locator('#state')).to_contain_text('回读通过 14 项',timeout=30000)
+   review.locator('#continue').click()
+   try:expect(review.locator('#state')).to_contain_text('回读通过 14 项',timeout=30000)
+   except Exception:
+    # This file creates only synthetic data. Keep enough evidence to diagnose CI-only failures.
+    report['failure_receipts']=worker.evaluate('()=>chrome.storage.local.get("resumeLocalReceiptsV1")')
+    report['failure_fields']=target.locator('input,textarea').evaluate_all('nodes=>nodes.map(n=>({id:n.id,value:n.value}))')
+    report['failure_viewport']=target.evaluate('()=>({width:innerWidth,height:innerHeight,visibility:document.visibilityState,scrollY})')
+    report['failure_selected']=target.locator('.ant-select-selection-item').all_text_contents()
+    target.screenshot(path=str(ROOT/'test-results/refactor-installed-failure.png'))
+    raise
    require(target.locator('#email').input_value()=='refactor@example.invalid','email missing')
    for i,school,major,start,end in [(0,'示例乙大学','软件工程','2020-09','2024-06'),(1,'示例甲大学','电子工程','2024-09','2027-06')]:
     require(target.locator('#school'+str(i)).locator('xpath=..').locator('.ant-select-selection-item').inner_text()==school,'wrong school')
