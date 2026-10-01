@@ -11,7 +11,8 @@ export class FrameBroker {
     if (['locate','capture'].includes(action) && frame.frameId !== 0) throw Error('嵌入文档仅扫描，请单独打开后定位');
     if (!['scan','apply','cancel','locate','capture'].includes(action)) throw Error('不支持的控件操作');
     const target = frame.documentId ? {tabId, documentIds: [frame.documentId]} : {tabId, frameIds: [frame.frameId]};
-    const results = await this.chrome.scripting.executeScript({target, func: async (a, arg) => {
+    const results = await this.chrome.scripting.executeScript({target, func: async (a, arg, expectedVersion) => {
+      if(expectedVersion&&globalThis.__resumeFillEngine?.version!==expectedVersion)throw Error('页面引擎版本不一致，请重新点击工具栏；未执行');
       if(a==='cancel')return globalThis.__resumeFillEngine?.cancel();
       // A hidden same-origin ancestor must not receive personal information.
       let w = window;
@@ -29,7 +30,7 @@ export class FrameBroker {
       } catch { return {unavailable: true}; }
       if(a==='scan')globalThis.__resumeWidget?.destroy?.();
       return globalThis.__resumeFillEngine?.[a](arg);
-    }, args: [action, argument ?? null]});
+    }, args: [action, argument ?? null, this.chrome.runtime?.getManifest?.().version || null]});
     const r = results?.find(x => x.frameId === frame.frameId);
     if (!r?.documentId || frame.documentId && r.documentId !== frame.documentId || r.result === undefined || r.result?.unavailable) {
       throw Error('目标文档已变化、隐藏或不可访问，请重新扫描；未自动重试');

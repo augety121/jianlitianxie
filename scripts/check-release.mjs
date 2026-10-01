@@ -3,7 +3,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 const root=fileURLToPath(new URL('..',import.meta.url)),files=[];
-const ignored=new Set(['.git','legacy','node_modules','dist','test-results','__pycache__']);
+const ignored=new Set(['.git','legacy','node_modules','dist','test-results','__pycache__','.venv-test','.venv']);
 const privateNames=/^(?:profile(?:\.previous)?\.json(?:\.tmp)?|bridge-token\.txt|evidence\.json|experience\.json(?:\.tmp)?|audit\.jsonl|\.env(?:\..*)?)$/i;
 async function walk(dir){
  for(const e of await fs.readdir(dir,{withFileTypes:true})){

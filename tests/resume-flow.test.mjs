@@ -62,7 +62,7 @@ test('matching existing contents stays preserved; missing facts do not become co
 test('explicit ordered binding previews two education records without mixing their values',async()=>{
  const h=localHarness();await h.attach();h.setScenario('education');
  await importText(h,'## 教育经历 | 学位甲\n学校：甲校\n专业：甲专业\n## 教育经历 | 学位乙\n学校：乙校\n专业：乙专业');
- const p=await h.api('scan',{tabId:11});assert.equal(p.entries.filter(e=>e.status==='ready').length,4,'normal local scan resolves empty cards without hidden manual setup');const next=await h.api('order',{planId:p.id,reviewed:true});
+ const p=await h.api('scan',{tabId:11});assert.equal(p.entries.filter(e=>e.status==='ready').length,0,'ambiguous blank cards require the approved one-time record confirmation');const next=await h.api('order',{planId:p.id,reviewed:true});
  assert.equal(next.entries.find(e=>e.fieldId==='aschool').value,'甲校');assert.equal(next.entries.find(e=>e.fieldId==='bmajor').value,'乙专业');
  assert.equal(Object.keys(h.values).length,0);
 });

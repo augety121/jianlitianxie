@@ -1,3 +1,8 @@
+import {observeReviewWindow,bindReviewDocument} from './core/review-window-lifecycle.mjs';
+import {ProfileLibrary,LEGACY_PROFILE_KEY} from './core/profile-library.mjs';
+import {SiteAccess} from './core/site-access.mjs';
+import {scope} from './core/semantics.mjs';
+import {sensitive} from './core/workspace-policy.mjs';
 import {proposeStoredRepair,storedProfileHealth} from './core/stored-profile-repair.mjs';
 import {learningPreview,mergeLearned} from './core/learn-profile.mjs';
 import {fieldDiagnostic,profileDiagnostic} from './core/match-diagnostics.mjs';
@@ -13,13 +18,13 @@ import {trustedWorkspace, secret, secureTarget} from './core/workspace-policy.mj
 import {pageSummary} from './core/page-summary.mjs';
 import {LocalReceipts, receiptReason, exportReceipts} from './core/local-receipts.mjs';
 
-export const LOCAL_PROFILE_KEY='resumePlainLocalV1';
+export const LOCAL_PROFILE_KEY=LEGACY_PROFILE_KEY;
 const LEARNING_CONTEXT_KEY='resumeManualLearningContextV1';
 /** New no-passphrase path. It never imports the bridge API or silently decrypts a vault. */
 export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=> 'local',switchLocal=async()=>{},openAdvanced=async()=>{}}={}) {
   const storage=chrome.storage.local,ready=Promise.all([storage.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}),chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})]);
-  let profile={schemaVersion:1,revision:0,facts:[]},accepted=false,active=false,epoch=0,preview=null,activeOwner=null;
-  const pickers=new Map(),learners=new Map();let learning=null,learningWrites=Promise.resolve();
+  let profile={schemaVersion:1,revision:0,facts:[]},accepted=false,active=false,epoch=0,preview=null,activeOwner=null,activeTarget=null;
+  const pickers=new Map(),learners=new Map(),recordReviews=new Map();let learning=null,learningWrites=Promise.resolve();
   const contextHash=async url=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(url))),x=>x.toString(16).padStart(2,'0')).join('');
   // Session metadata survives worker suspension, but contains no field values or raw URL.
   // A full browser restart discards it. The live page still owns its read-only baseline.
@@ -53,24 +58,25 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
   }
   const holder={get unlocked(){return accepted;},read(){if(!accepted)throw Error('请先导入并确认本地保存');return structuredClone(profile);}};
   const broker=new FrameBroker(chrome),run=new WorkspaceRun(holder,broker),logs=new LocalReceipts(storage);
+  const library=new ProfileLibrary(storage),sites=new SiteAccess(chrome);
   async function refresh(){
-    const value=(await storage.get(LOCAL_PROFILE_KEY))[LOCAL_PROFILE_KEY];
-    if(value==null){accepted=false;profile={schemaVersion:1,revision:0,facts:[]};return;}
-    if(value.version!==1||value.storage!=='plain-local'||value.accepted!==true)throw Error('本地资料格式异常，请保留备份，不会使用旧缓存');
-    const next=normalizeProfile(value.profile);profile=next;accepted=true;
+    profile=await library.load();accepted=library.accepted;
+  }
+  async function changed(next){
+    profile=next;accepted=library.accepted;preview=null;clearLearning();recordReviews.clear();pickers.clear();await run.stop();
+    return structuredClone(profile);
   }
   async function persist(facts,revision,consent){
-    if(revision!==profile.revision)throw Error('资料已改变，请重新预览');
-    if(!accepted&&consent!==true)throw Error('请确认免口令资料将在本浏览器未加密保存');
-    const next=normalizeProfile({facts,revision:revision+1});
-    if(next.facts.some(f=>secret(f.label)))throw Error('此资料区不保存密码、验证码或密钥');
-    await storage.set({[LOCAL_PROFILE_KEY]:{version:1,storage:'plain-local',accepted:true,profile:next}});
-    profile=next;accepted=true;preview=null;clearLearning();await run.stop();return structuredClone(profile);
+    return changed(await library.save(facts,revision,consent));
   }
   function owner(sender){if(typeof sender.documentId!=='string'||!sender.documentId)throw Error('无法确认工作台文档，请从工具栏重新打开');return sender.documentId;}
   async function attached(tabId){
     const tab=await broker.tab(tabId),key='workspace-target-'+tabId;
-    if((await chrome.storage.session.get(key))[key]!==new URL(tab.url).origin)throw Error('请在具体网申页点击工具栏，以授权当前来源');
+    if((await chrome.storage.session.get(key))[key]!==new URL(tab.url).origin){
+      const origin=new URL(tab.url).origin;
+      if(!await sites.allowed(origin))throw Error('请在具体网申页点击工具栏，以授权当前来源');
+      await chrome.storage.session.set({[key]:origin});
+    }
     return tab;
   }
   async function open(tab){
@@ -101,27 +107,49 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const combined={...original,...e,...(stage==='fill'?{reasonCode:undefined}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,version:chrome.runtime.getManifest?.().version||'0.10.4',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
+    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.11.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||0,
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
     const type=m.type;
-    if(type==='local-stop') {epoch++;preview=null;clearLearning();const result=await run.stop();logs.add({stage:'stop',ok:true,reason:'none',ms:0,total:0});return result;}
+    if(type==='local-stop') {epoch++;preview=null;clearLearning();recordReviews.clear();const target=activeTarget;if(target)await chrome.scripting.executeScript({target,func:()=>globalThis.__resumeRepeatController?.cancel()}).catch(()=>{});const result=await run.stop();logs.add({stage:'stop',ok:true,reason:'none',ms:0,total:0});return result;}
     if(type==='local-state'){
       await ready;if(!active)await refresh();
       const old=(await storage.get('resumeVaultV1')).resumeVaultV1;
       let target='';try{target=new URL((await attached(m.tabId)).url).origin;}catch{}
       let targetTitle='';try{targetTitle=String((await attached(m.tabId)).title||'').slice(0,160);}catch{}
-      return {target,targetTitle,health:storedProfileHealth(profile),profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
+      return {library:library.describe(),site:target?await sites.get(target):null,target,targetTitle,health:storedProfileHealth(profile),profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
     }
     if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data,{includeExplanations:false}),enabled:data.enabled};}
     if(type==='local-log-settings'){await ready;await logs.settings(m.enabled,m.clear===true);return {ok:true};}
     // Acquire synchronously before any asynchronous permission/storage check.
     if(active||externalBusy())throw Error('另一项任务正在执行，请先停止并等待回读');
-    active=true;activeOwner=own;const generation=epoch,start=performance.now();let data,stage,sourceEntries=[],sourceVersion;
+    active=true;activeOwner=own;const generation=epoch,start=performance.now();let data,stage,sourceEntries=[],sourceVersion,taskId=null;
     const alive=()=>{if(generation!==epoch)throw Error('操作已取消，请重新扫描');};
     try {
       await ready;await refresh();alive();
+      if(type==='local-library-create'){
+        stage='import';if(m.reviewed!==true)throw Error('请确认创建独立简历');
+        return await changed(await library.create(m.name,m.duplicate===true,m.revision,m.acceptPlaintext));
+      }
+      if(type==='local-library-select'){
+        return await changed(await library.select(m.id,m.revision));
+      }
+      if(type==='local-library-rename')return await changed(await library.rename(m.name,m.revision));
+      if(type==='local-library-backup')return library.backup();
+      if(type==='local-library-restore'){
+        if(m.reviewed!==true)throw Error('请确认替换版本库');
+        return await changed(await library.restore(m.envelope,m.revision,m.acceptPlaintext));
+      }
+      if(type==='local-site-set'){
+        const tab=await attached(m.tabId),origin=new URL(tab.url).origin;
+        if(m.origin!==origin||m.reviewed!==true)throw Error('请确认当前网站设置');
+        alive();const result=await sites.set(origin,m.show,m.add);alive();
+        if(!m.show){await chrome.storage.session.set({['workspace-target-'+m.tabId]:null});
+          await chrome.scripting.executeScript({target:{tabId:m.tabId},func:()=>globalThis.__resumeLocalAssistant?.destroy()}).catch(()=>{});
+        }
+        return result;
+      }
       if(type==='local-return'){await attached(m.tabId);alive();await attachButton(m.tabId);await chrome.tabs.update(m.tabId,{active:true});return {returned:true};}
       if(type==='local-repair-preview'){
         stage='preview';if(!accepted)throw Error('请先保存资料');
@@ -191,7 +219,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         const current=(await broker.invoke(t.tabId,{frameId:0,documentId:t.documentId},'capture',{snapshotId:t.snapshotId,url:t.url,includeExisting:t.includeExisting===true})).result;alive();
         if(!Array.isArray(m.selections)||m.selections.some(selected=>{const was=t.items.find(i=>i.id===selected.id),now=current.fields?.find(f=>f.id===selected.id);return !was||!now||was.value!==now.value||was.label!==now.label||was.section!==(now.section||'')||was.groupId!==(now.groupId||'');}))throw Error('网页补充内容已变化，请关闭预览后重新读取');
         const merged=mergeLearned(profile,t.items,m.selections,new URL(t.url).origin,m.reuse===true);alive();t.claimed=true;
-        stage='learn';await persist(merged.facts,t.revision,false);data={facts:merged.added.map(id=>({id}))};
+        stage='learn';await persist(merged.facts.map(f=>merged.added.includes(f.id)&&/本公司|本单位|我司|贵司|曾经.*面试|加班|出差|竞业|亲属.*任职|利益冲突/.test(f.label)?{...f,origin:new URL(t.url).origin}:f),t.revision,false);data={facts:merged.added.map(id=>({id}))};
         await chrome.scripting.executeScript({target:{tabId:t.tabId,documentIds:[t.documentId]},func:n=>globalThis.__resumeLocalAssistant?.remembered?.(n),args:[merged.added.length]}).catch(()=>{});
         return {saved:merged.added.length};
       }
@@ -240,6 +268,81 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         await chrome.scripting.executeScript({target:{tabId:t.tabId,documentIds:[t.documentId]},func:r=>globalThis.__resumeLocalAssistant?.finished(r),args:[result]}).catch(()=>{});
         return result;
       }
+      if(type==='local-oneclick'){
+        stage='task';taskId=crypto.randomUUID();
+        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.11.0'});
+        const tab=await attached(m.tabId);alive();activeTarget={tabId:m.tabId,documentIds:[m.documentId]};
+        for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
+        if(recordReviews.size)throw Error('请先完成或关闭已打开的经历核对窗口');
+        const prefs=await sites.get(new URL(tab.url).origin);let expansion={added:0,attempted:0,issues:[],complete:true};
+        const progress=async label=>{
+          await chrome.scripting.executeScript({target:{tabId:m.tabId,documentIds:[m.documentId]},func:s=>globalThis.__resumeLocalAssistant?.progress?.(s),args:[label]}).catch(()=>{});alive();
+        };
+        if(prefs.add){
+          const targets={};
+          for(const domain of ['education','work','project'])targets[domain]=new Set(profile.facts.filter(f=>f.confirmed&&!f.conflict&&f.entity&&(!f.origin||f.origin===new URL(tab.url).origin)&&scope(f.section)===domain).map(f=>f.entity)).size;
+          if(Object.values(targets).some(n=>n>20))throw Error('单类经历超过20段，请在当前简历中选择本次要用的记录');
+          await progress('adding');
+          await chrome.scripting.executeScript({target:{tabId:m.tabId,documentIds:[m.documentId]},files:['vendor/repeat-plan/validate.js','repeat-controller.js']});alive();
+          const response=await chrome.scripting.executeScript({target:{tabId:m.tabId,documentIds:[m.documentId]},func:request=>globalThis.__resumeRepeatController.expand(request),args:[{url:tab.url,targets,expiresAt:Date.now()+300000,reviewed:true}]});alive();
+          const result=response?.find(x=>x.frameId===0&&x.documentId===m.documentId)?.result;
+          if(!result||!Number.isSafeInteger(result.added)||!Number.isSafeInteger(result.attempted))throw Error('未取得新增记录结果；请核对网页，不重复新增');
+          expansion=result;
+          logs.add({stage:'add',taskId,ok:result.complete===true,total:result.added,ms:Math.round(performance.now()-start),outcome:result.complete?'completed':'partial'});
+          if(!result.complete){data={taskId,outcome:'partial',expansion,counts:{},submitted:false};return data;}
+        }
+        await progress('scanning');
+        const ids=profile.facts.filter(f=>f.confirmed&&!f.conflict&&!secret(f.label)).map(f=>f.id);
+        if(!ids.length)throw Error('请先导入并核对当前简历资料');
+        const plan=await run.scan(own,{tabId:m.tabId,factIds:ids,reviewExisting:true,autoBindEmpty:true});alive();
+        const frame=run.job.frames.find(f=>f.frameId===0);
+        if(frame.documentId!==m.documentId||run.job.url!==m.url)throw Error('扫描时申请文档已变化，请重新操作');
+        sourceVersion=frame.snapshot.engineVersion;sourceEntries=plan.entries;
+        await retainLearning({owner:own,tabId:m.tabId,url:run.job.url,documentId:frame.documentId,snapshotId:frame.snapshot.id,revision:profile.revision,expires:Date.now()+1800000},generation);alive();
+        record('scan',start,plan,null,plan.entries,sourceVersion);
+        const pending=plan.groups.filter(g=>g.frameId===0&&g.bindable&&!g.entity&&g.scope!=='family'&&g.candidates.length&&plan.entries.some(e=>g.fieldIds.includes(e.id)&&e.status==='missing'&&e.reasonCode==='record-unbound'));
+        if(pending.length){
+          for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
+          if(recordReviews.size)throw Error('请先完成或关闭已有的经历核对窗口');
+          const id=crypto.randomUUID(),ticket={id,owner:own,taskId,tabId:m.tabId,documentId:m.documentId,url:m.url,planId:plan.id,revision:profile.revision,
+            groups:pending,expansion,expires:plan.expiresAt,pickerTab:null,pickerDocument:null,claimed:false,initialComplete:false,
+            reviewUrl:chrome.runtime.getURL('record-review.html')+'?ticket='+id};
+          recordReviews.set(id,ticket);
+          try{
+            const win=await chrome.windows.create({url:ticket.reviewUrl,type:'popup',width:650,height:700,focused:true});alive();
+            if(!Number.isSafeInteger(win.tabs?.[0]?.id))throw Error('经历核对窗口未打开');ticket.pickerTab=win.tabs[0].id;
+          }catch(e){recordReviews.delete(id);throw e;}
+          data={taskId,outcome:'needs-confirmation',groups:pending.length,expansion,counts:{},submitted:false};return data;
+        }
+        const idsToFill=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group').map(e=>e.id);
+        if(!idsToFill.length){data={taskId,outcome:'no-eligible-fields',summary:pageSummary(plan),expansion,counts:{},submitted:false};return data;}
+        await progress('filling');
+        const report=await run.apply(own,{planId:plan.id,ids:idsToFill,reviewed:true});alive();
+        record('fill',start,report,null,sourceEntries,sourceVersion);
+        const counts={};for(const f of report.results)counts[f.status]=(counts[f.status]||0)+1;
+        data={taskId,outcome:report.results.every(f=>f.status==='verified'||f.status==='preserve')?'completed':'partial',counts,
+          summary:pageSummary(plan),expansion,performance:{...plan.performance,apply:report.performance},submitted:false};return data;
+      }
+      if(type==='local-records-read'||type==='local-records-fill'){
+        const t=recordReviews.get(m.ticket);
+        if(!t||t.claimed||t.owner!==own||t.revision!==profile.revision||Date.now()>=t.expires)throw Error('经历确认已失效，请在申请页重新点击填写');
+        const j=run.current(own,t.planId);
+        if(j.tabId!==t.tabId||j.url!==t.url||(await attached(t.tabId)).url!==t.url||j.frames[0]?.documentId!==t.documentId)throw Error('申请页已变化，未填写');alive();
+        if(type==='local-records-read')return {groups:structuredClone(t.groups),origin:new URL(t.url).origin};
+        if(m.reviewed!==true||!Array.isArray(m.bindings)||m.bindings.some(b=>!t.groups.some(g=>g.id===b.groupId)))throw Error('请选择本次待确认的经历');
+        const plan=m.bindings.length?run.bindMany(own,{planId:t.planId,bindings:m.bindings,reviewed:true}):run.preview();
+        t.planId=plan.id;t.claimed=true;
+        stage='fill';sourceEntries=plan.entries;sourceVersion=j.frames[0]?.snapshot.engineVersion;
+        const ids=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group').map(e=>e.id);
+        if(ids.length)data=await run.apply(own,{planId:plan.id,ids,reviewed:true});else data={results:[],submitted:false};
+        const counts={};for(const f of data.results)counts[f.status]=(counts[f.status]||0)+1;
+        const report={taskId:t.taskId,outcome:!ids.length?'no-eligible-fields':data.results.every(f=>f.status==='verified'||f.status==='preserve')?'completed':'partial',
+          counts,summary:pageSummary(plan),expansion:t.expansion,submitted:false};
+        recordReviews.delete(t.id);
+        logs.add({stage:'task',taskId:t.taskId,outcome:report.outcome,ok:true,total:ids.length,ms:Math.round(performance.now()-start)});
+        await chrome.scripting.executeScript({target:{tabId:t.tabId,documentIds:[t.documentId]},func:r=>globalThis.__resumeLocalAssistant?.taskFinished?.(r),args:[report]}).catch(()=>{});
+        return report;
+      }
       if(type==='local-scan'){
         stage='scan';await attached(m.tabId);alive();
         const ids=profile.facts.filter(f=>f.confirmed&&!f.conflict&&!secret(f.label)).map(f=>f.id);
@@ -259,12 +362,12 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         data=await run.apply(own,m);return data;
       }
       throw Error('不支持的操作');
-    } catch(error){if(stage)record(stage,start,null,error,sourceEntries,sourceVersion);stage=null;throw error;}
-    finally{if(stage)record(stage,start,data,null,sourceEntries,sourceVersion);active=false;activeOwner=null;}
+    } catch(error){if(stage)record(stage,start,taskId?{taskId,outcome:generation===epoch?'failed':'cancelled'}:null,error,sourceEntries,sourceVersion);stage=null;throw error;}
+    finally{if(stage)record(stage,start,data,null,sourceEntries,sourceVersion);active=false;activeOwner=null;activeTarget=null;}
   }
   async function request(m,sender){
     if(!trustedWorkspace(sender,chrome.runtime,'local.html'))throw Error('只有本地填写页可以访问资料');
-    if(m.type.startsWith('local-picker-')||m.type.startsWith('local-learn-'))throw Error('请在申请页打开补填小窗');
+    if(m.type.startsWith('local-picker-')||m.type.startsWith('local-learn-')||m.type.startsWith('local-records-')||m.type==='local-oneclick')throw Error('请在申请页打开补填小窗');
     return perform(m,owner(sender));
   }
   async function pickerRequest(m,sender){
@@ -289,6 +392,19 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     if(m.type==='local-learn-close'){learners.delete(t.id);return {closed:true};}
     return perform(m,t.owner);
   }
+  async function recordsRequest(m,sender){
+    if(!trustedWorkspace(sender,chrome.runtime,'record-review.html')||typeof sender.documentId!=='string')throw Error('只有经历核对窗口可以读取候选');
+    if(!['local-records-read','local-records-fill','local-records-close'].includes(m.type))throw Error('经历窗口操作无效');
+    const t=recordReviews.get(m.ticket);
+    bindReviewDocument(t,sender);
+    if(m.type==='local-records-close'){
+      recordReviews.delete(t.id);
+      if(run.job?.id===t.planId)await run.stop();
+      logs.add({stage:'task',taskId:t.taskId,outcome:'cancelled',ok:true,total:0,ms:0});
+      return {closed:true};
+    }
+    return perform(m,t.owner);
+  }
   async function attachButton(tabId){
     await attached(tabId);
     await chrome.scripting.executeScript({target:{tabId},files:['page-assistant.js']});
@@ -301,16 +417,32 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     if(!accepted||!profile.facts.length)return open(tab);
     return {attached:true};
   }
+  async function restoreSiteEntries(){
+    await ready;
+    const origins=await sites.restore();
+    // Query only remembered AND still browser-authorized origins, not unrelated tabs.
+    for(const origin of origins){
+      if(!await sites.allowed(origin))continue;
+      const tabs=await chrome.tabs.query({url:origin+'/*'}).catch(()=>[]);
+      for(const tab of tabs){
+        if(!Number.isSafeInteger(tab.id)||!tab.url||new URL(tab.url).origin!==origin)continue;
+        if(!await sites.allowed(origin))break;
+        await reattach(tab).catch(()=>{});
+      }
+    }
+    return {restored:origins.length};
+  }
   async function reattach(tab){
     if(await mode()!=='local')return;
     const grant=(await chrome.storage.session.get('workspace-target-'+tab.id))['workspace-target-'+tab.id];
-    if(grant===new URL(tab.url).origin)await attachButton(tab.id);
+    if(grant===new URL(tab.url).origin||await sites.allowed(new URL(tab.url).origin))await attachButton(tab.id);
   }
   async function pageRequest(m,sender){
     // Content script capabilities are NOT the trusted management-page capabilities.
     if(sender.id!==chrome.runtime.id||sender.frameId!==0||!Number.isSafeInteger(sender.tab?.id)||
        typeof sender.documentId!=='string'||!sender.documentId||
        sender.documentLifecycle&&sender.documentLifecycle!=='active')throw Error('页面身份无效');
+    if(chrome.runtime.getManifest&&m.clientVersion!==chrome.runtime.getManifest().version)throw Error('页面插件与后台版本不一致，请点击工具栏重新加载当前页助手；尚未填写');
     secureTarget(sender.url);
     const tabId=sender.tab.id,tab=await attached(tabId);
     if(tab.url!==sender.url)throw Error('页面已经变化，请在当前申请页重新点击插件');
@@ -326,6 +458,10 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     if(m.type==='page-local-status'){
       await ready;if(!active)await refresh();
       return {hasProfile:accepted&&profile.facts.length>0,mode:await mode(),busy:active};
+    }
+    if(m.type==='page-local-run'){
+      if(m.reviewed!==true)throw Error('请本人点击填写简历');
+      return perform({type:'local-oneclick',tabId,url:sender.url,documentId:sender.documentId},own);
     }
     if(m.type==='page-local-scan'){
       const p=await perform({type:'local-scan',tabId},own);
@@ -364,6 +500,21 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     }
     throw Error('页面入口不允许读取或修改完整资料');
   }
-  async function navigated(id){if(learning?.tabId===id){clearLearning();epoch++;}if(run.job?.tabId===id||run.running?.tabId===id){epoch++;await run.stop();}}
-  return {request,pageRequest,pickerRequest,learnerRequest,open,launch,reattach,navigated,get busy(){return active||run.busy;}};
+  async function navigated(id, change = {removed:true}, tab = {}) {
+    // onUpdated also fires during the intended first popup load. It is not a reload.
+    // Any subsequent navigation, different URL or close still revokes this exact ticket.
+    for (const [key,t] of recordReviews) {
+      if (t.pickerTab !== id || !observeReviewWindow(t,change,tab)) continue;
+      recordReviews.delete(key);
+      if (activeOwner === t.owner) epoch++;
+      if (run.job?.id === t.planId || run.running?.id === t.planId) await run.stop();
+      logs.add({stage:'task',taskId:t.taskId,outcome:'cancelled',ok:true,total:0,ms:0});
+    }
+    const leaving = change.removed === true || change.status === 'loading' || typeof change.url === 'string';
+    if (!leaving) return;
+    if(activeTarget?.tabId===id){epoch++;recordReviews.clear();}
+    if(learning?.tabId===id){clearLearning();epoch++;}
+    if(run.job?.tabId===id||run.running?.tabId===id){epoch++;await run.stop();}
+  }
+  return {request,pageRequest,pickerRequest,learnerRequest,recordsRequest,open,launch,reattach,restoreSiteEntries,navigated,get busy(){return active||run.busy;}};
 }

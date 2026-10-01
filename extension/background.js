@@ -36,13 +36,17 @@ async function engine(tabId, action, arg) {
 let local;
 const workspace = createWorkspace(chrome, {api, inject, externalBusy:()=>!!local?.busy, pair: async token => {const status = await verifyBridgePairing(token); await chrome.storage.local.set({bridgeToken:token}); return status;}, legacyBusy: () => runs.size > 0});
 local=createLocalWorkflow(chrome,{externalBusy:()=>runs.size>0||workspace.busy,mode:async()=>await workspace.allowsLegacy()?'mcp':'local',switchLocal:()=>workspace.useLocal(),openAdvanced:async tabId=>{if(Number.isSafeInteger(tabId)&&tabId>0){await workspace.open(await chrome.tabs.get(tabId));}else await chrome.tabs.create({url:chrome.runtime.getURL('workspace.html')});}});
+// Unpacked extension updates/restarts may lose registered script entries.
+// Restore only prior opt-ins that still have the exact browser origin permission.
+local.restoreSiteEntries().catch(()=>console.warn('本站入口恢复失败，请从工具栏重新打开'));
 chrome.action.onClicked.addListener(async tab => {
   if (!tab.id || !/^https?:/.test(tab.url || '')) return;
   try { await local.launch(tab); }
   catch (e) { console.warn('Unable to attach resume assistant:', e.message); }
 });
 chrome.tabs.onUpdated.addListener((id, change, tab) => {
-  if (change.status === 'loading') { waits.get(id)?.abort(); waits.delete(id); workspace.navigated(id).catch(()=>{}); local.navigated(id).catch(()=>{}); }
+  if (change.status === 'loading') { waits.get(id)?.abort(); waits.delete(id); workspace.navigated(id).catch(()=>{}); }
+  if (change.status || change.url) local.navigated(id,change,tab).catch(()=>{});
   if (change.status !== 'complete' || !/^https?:/.test(tab.url||'')) return;
   local.reattach({...tab,id}).catch(()=>{});
   chrome.storage.session.get('attach-' + id).then(s => {
@@ -61,6 +65,7 @@ chrome.runtime.onInstalled?.addListener(async () => {
 });
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if(typeof m?.type==='string'&&m.type.startsWith('page-local-')){local.pageRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
+  if(typeof m?.type==='string'&&m.type.startsWith('local-records-')){local.recordsRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if(typeof m?.type==='string'&&m.type.startsWith('local-learn-')){local.learnerRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if(typeof m?.type==='string'&&m.type.startsWith('local-picker-')){local.pickerRequest(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}
   if(typeof m?.type==='string'&&m.type.startsWith('local-')){local.request(m,sender).then(data=>reply({data})).catch(e=>reply({error:e.message}));return true;}

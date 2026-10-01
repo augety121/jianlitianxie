@@ -22,8 +22,10 @@ export function resolveRecords(snapshot,facts,existing={}) {
  for(const g of groups){
   if(!g.bindable||bindings[g.id]||g.scope==='family')continue;
   if(snapshot.fields.some(f=>g.fieldIds.includes(f.id)&&occupied(f)))continue;
-  const next=g.candidates.find(c=>!used.has(c.entity));
-  if(next){bindings[g.id]=next.entity;methods[g.id]='source-order';used.add(next.entity);}
+  const remaining=g.candidates.filter(c=>!used.has(c.entity));
+  const blankPeers=groups.filter(x=>x.bindable&&!bindings[x.id]&&x.scope===g.scope&&!snapshot.fields.some(f=>x.fieldIds.includes(f.id)&&occupied(f)));
+  const next=remaining.length===1&&blankPeers.length===1?remaining[0]:null;
+  if(next){bindings[g.id]=next.entity;methods[g.id]='unique-remaining';used.add(next.entity);}
  }
  return {bindings,methods};
 }

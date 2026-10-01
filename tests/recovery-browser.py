@@ -20,7 +20,16 @@ with sync_playwright() as p:
   except Exception as e:cases.append({'name':name,'passed':False,'error':str(e)[:1200]});print('FAIL',name,str(e),flush=True)
  def fill():
   page,expected=load()
-  plan=page.evaluate('''async text=>{const facts=__recovery.parseResumeText(text).facts.map(f=>({...f,confirmed:true})),s=await __resumeFillEngine.scan();return __recovery.makePlan(s,{facts},{},__recovery.resolveRecords(s,facts).bindings)}''',SOURCE)
+  plan=page.evaluate('''async ({text,names})=>{
+    const facts=__recovery.parseResumeText(text).facts.map(f=>({...f,confirmed:true})),s=await __resumeFillEngine.scan();
+    const bindings=__recovery.resolveRecords(s,facts).bindings;
+    const ids=[...new Set(s.fields.filter(f=>/教育|项目/.test(f.section)).map(f=>f.groupId))];
+    if(ids.length!==names.length)throw Error('Wrong observed record count');
+    // Emulate explicit collective choices from the independently authored fixture.
+    ids.forEach((id,i)=>{const matches=facts.filter(f=>['学校','项目名称'].includes(f.label)&&f.value===names[i]);
+      if(matches.length!==1)throw Error('Missing explicit fixture record');bindings[id]=matches[0].entity;});
+    return __recovery.makePlan(s,{facts},{},bindings);
+   }''',{'text':SOURCE,'names':[expected['edu'+str(i)+'name'] for i in range(2)]+[expected['project'+str(i)+'name'] for i in range(5)]})
   ready=[e for e in plan['entries'] if e['status']=='ready'];require(len(ready)==len(expected),'wrong plan: '+str([(e['label'],e['section'],e['status'],e.get('reasonCode')) for e in plan['entries']]))
   result=page.evaluate('p=>__resumeFillEngine.apply(p)',plan);require(sum(e['status']=='verified' for e in result['results'])==len(expected),'execution: '+str(result))
   for id_,value in expected.items():require(page.locator('#'+id_).input_value()==value,'independent actual value differs: '+id_)
@@ -34,7 +43,16 @@ with sync_playwright() as p:
  case('plain-family-heading-not-treated-as-personal-information',family)
  def stop():
   page,expected=load();page.locator('#email').evaluate("e=>e.addEventListener('input',()=>e.value='')")
-  plan=page.evaluate('''async text=>{const facts=__recovery.parseResumeText(text).facts.map(f=>({...f,confirmed:true})),s=await __resumeFillEngine.scan();return __recovery.makePlan(s,{facts},{},__recovery.resolveRecords(s,facts).bindings)}''',SOURCE)
+  plan=page.evaluate('''async ({text,names})=>{
+    const facts=__recovery.parseResumeText(text).facts.map(f=>({...f,confirmed:true})),s=await __resumeFillEngine.scan();
+    const bindings=__recovery.resolveRecords(s,facts).bindings;
+    const ids=[...new Set(s.fields.filter(f=>/教育|项目/.test(f.section)).map(f=>f.groupId))];
+    if(ids.length!==names.length)throw Error('Wrong observed record count');
+    // Emulate explicit collective choices from the independently authored fixture.
+    ids.forEach((id,i)=>{const matches=facts.filter(f=>['学校','项目名称'].includes(f.label)&&f.value===names[i]);
+      if(matches.length!==1)throw Error('Missing explicit fixture record');bindings[id]=matches[0].entity;});
+    return __recovery.makePlan(s,{facts},{},bindings);
+   }''',{'text':SOURCE,'names':[expected['edu'+str(i)+'name'] for i in range(2)]+[expected['project'+str(i)+'name'] for i in range(5)]})
   result=page.evaluate('p=>__resumeFillEngine.apply(p)',plan)
   require(result['results'][0]['status']=='needs-user','write rejection not detected: '+str(result['results'][:5]));require(all(r['status']=='not-attempted' for r in result['results'][1:]),'unsafe writes after rejection')
   require(all(page.locator('#'+id_).input_value()=='' for id_ in expected),'subsequent values written after abort');page.close()

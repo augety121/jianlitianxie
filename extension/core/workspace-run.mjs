@@ -95,6 +95,26 @@ export class WorkspaceRun {
     }
     f.corrections={};j.id=crypto.randomUUID();return this.preview();
   }
+  bindMany(owner,{planId,bindings,reviewed}) {
+    if(this.busy||reviewed!==true||!Array.isArray(bindings)||!bindings.length||bindings.length>100)throw Error('请一次核对所选经历对应');
+    const j=this.current(owner,planId),f=j.frames.find(x=>x.frameId===0);
+    if(!f)throw Error('没有当前主文档');
+    const groups=entityGroups(f.snapshot,j.facts,f.entityBindings),seen=new Set(),chosen=new Set();
+    const updates=[];
+    for(const b of bindings){
+      const g=groups.find(x=>'0:'+x.id===b?.groupId);
+      if(!g||!g.bindable||seen.has(g.id)||typeof b.entity!=='string'||!g.candidates.some(c=>c.entity===b.entity))throw Error('对应范围无效或来源不属于本次经历');
+      if(g.entity&&g.entity!==b.entity)throw Error('已确认的经历不能由本次空白记录确认覆盖');
+      const key=g.scope+'|'+normalize(b.entity);
+      if(chosen.has(key)||groups.some(x=>x.id!==g.id&&x.entity&&x.scope===g.scope&&normalize(x.entity)===normalize(b.entity)))throw Error('同一段简历不能分配到两个页面记录');
+      seen.add(g.id);chosen.add(key);updates.push([g,b.entity]);
+    }
+    for(const [g,entity] of updates){
+      f.entityBindings[g.id]=entity;f.bindingMethods||={};f.bindingMethods[g.id]='manual';
+      for(const id of g.fieldIds){delete f.mappings[id];delete f.corrections[id];}
+    }
+    j.id=crypto.randomUUID();return this.preview();
+  }
   bindEntity(owner,{planId,groupId,entity}) {
     if(this.busy)throw Error('请等待当前操作');
     const j=this.current(owner,planId);
