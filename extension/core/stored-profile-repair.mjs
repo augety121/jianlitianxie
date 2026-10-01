@@ -3,6 +3,7 @@ import {semanticLabel,scope,normalize} from './semantics.mjs';
 /** Review-only recovery. Originals are retained; origin/entity boundaries cannot merge. */
 const narrative=/^(项目背景|方案设计|训练与优化|低标注研究|模型设计|训练验证|研究到服务|大模型应用|问题与方法|方法与实现|技术实现|设计与实现|结果与指标|结果与验证|结果与能力|研究能力|能力积累|配套代码)$/;
 const responsibility=/^(个人职责|负责内容)$/;
+const fragmentLabel=value=>String(value||'').trim().replace(/^\*\*(.*?)\*\*$/, '$1').replace(/[：:]$/, '').trim();
 export function proposeStoredRepair(profile){
  const buckets=new Map(),facts=[];
  for(const f of profile.facts||[]){
@@ -15,9 +16,9 @@ export function proposeStoredRepair(profile){
   let repaired=false;
   for(const [label,pattern] of [['项目描述',narrative],['项目职责',responsibility]]){
    if(rows.some(f=>semanticLabel(f.label,f.section)===semanticLabel(label,'项目经历')))continue;
-   const fragments=rows.filter(f=>pattern.test(f.label.trim()));if(!fragments.length)continue;
-   if(fragments.some(a=>fragments.some(b=>a.label===b.label&&a.value!==b.value)))continue;
-   const value=[...new Set(fragments.map(f=>f.label+'：'+f.value))].join('\n');if(value.length>10000)continue;
+   const fragments=rows.filter(f=>pattern.test(fragmentLabel(f.label)));if(!fragments.length)continue;
+   if(fragments.some(a=>fragments.some(b=>fragmentLabel(a.label)===fragmentLabel(b.label)&&a.value!==b.value)))continue;
+   const value=[...new Set(fragments.map(f=>fragmentLabel(f.label)+'：'+f.value))].join('\n');if(value.length>10000)continue;
    const first=fragments[0];
    facts.push(normalizeFact({id:crypto.randomUUID(),label,value,section:'项目经历',entity:first.entity,
     origin:first.origin||'',confirmed:false,source:'已存资料逐段整理，原句保留，待本人核对'}));repaired=true;

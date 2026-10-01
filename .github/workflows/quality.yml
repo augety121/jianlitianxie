@@ -46,7 +46,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick && npm run test:recognition && npm run test:learn && python tests/recovery-browser.py && npm run test:empty-records
+        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick && npm run test:recognition && npm run test:learn && python tests/recovery-browser.py && npm run test:empty-records && npm run test:readiness
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -174,6 +174,8 @@ jobs:
           python -m playwright install chromium
       - name: Sandbox-enabled installed zero-card workflow
         run: python tests/empty-record-mv3.py
+      - name: Reviewed legacy profile recovery with real installed extension
+        run: python tests/readiness-mv3.py
       - name: Component strategy browser regressions
         run: python tests/component-adapters-browser.py
       - uses: actions/upload-artifact@v4
@@ -181,6 +183,10 @@ jobs:
         with:
           name: empty-record-windows-verification
           path: |
+            test-results/readiness-mv3.json
+            test-results/readiness-repair-entry.png
+            test-results/readiness-review.png
+            test-results/readiness-completed.png
             test-results/component-adapters-browser.json
             test-results/component-phoenix.png
             test-results/empty-record-mv3.json

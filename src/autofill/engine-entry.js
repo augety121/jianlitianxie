@@ -3,7 +3,7 @@
  /* @component-catalog */
  /* @select-driver */
  const componentObservations=createComponentCatalog({visible:node=>visible(node)});
- if(globalThis.__resumeFillEngine?.version==='0.12.0') return;
+ if(globalThis.__resumeFillEngine?.version==='0.13.0') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
  let busy=false,generation=0; const attemptedFields=new Set();
@@ -254,7 +254,7 @@
   return field.querySelector('.subform-head .subform-row')?.children[index]?.querySelector('.subform-title');
  }
  function labelRaw(e){
-  const clean=s=>{const t=s.replace(/(?:[\s*]+)?(?:必填项未填写|此项不能为空|该字段不能为空|This field is required)[。.!！]?$/i,'').replace(/^[*\s]+|[：:*\s]+$/g,'');return /^\d+(?:[年月日])?$/.test(t)||!/[\p{L}\p{N}]/u.test(t)?'':t;};
+  const clean=s=>{const t=s.replace(/(?:[\s*]+)?(?:必填项未填写|此项不能为空|该字段不能为空|This field is required)[。.!！]?$/i,'').replace(/^[*\s]+|[：:*\s]+$/g,'');return /^(?:请选择|请输入|请填写|搜索|请选择一项|select|search|select an option|search options?|choose an option)(?:[.。…]+)?$/i.test(t)||/^\d+(?:[年月日])?$/.test(t)||!/[\p{L}\p{N}]/u.test(t)?'':t;};
   const component=dateComponent(e);if(component)return labelled(e,component.label,'date-group');
   const sh=subHead(e);if(sh)return labelled(e,clean(sh.getAttribute('title')||labelText(sh)),'label');
   // Resolve the first available source only, preserving the previous precedence.
@@ -525,7 +525,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.12.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
+  lastSnapshot={engineVersion:'0.13.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -690,5 +690,5 @@
  }
  function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.12.0',scan,localScan,apply,upload,locate,capture,cancel,repeatMarkers};
+ globalThis.__resumeFillEngine={version:'0.13.0',scan,localScan,apply,upload,locate,capture,cancel,repeatMarkers};
 })();
