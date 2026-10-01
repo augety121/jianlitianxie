@@ -1,3 +1,4 @@
+import {checkEngine} from './build-engine.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -18,6 +19,7 @@ async function walk(dir){
   if(/\b1[3-9]\d{9}\b|[0-9]+@nwnu\.edu\.cn/.test(text))throw Error('Known private-data pattern in '+p);
  }
 }
+await checkEngine(root);
 await walk(root);
 const scripts=files.filter(p=>/\.m?js$/.test(p));
 for(const p of scripts){

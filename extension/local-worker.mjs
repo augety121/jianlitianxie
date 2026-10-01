@@ -105,10 +105,10 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     const order=new Map(sourceEntries.map((e,i)=>[e.id,i+1]));
     const fields=outcomes.map((e,i)=>{const original=sourceEntries.find(x=>x.id===e.id)||e;
       const group=data?.groups?.find(g=>g.fieldIds.includes(e.id));
-      const combined={...original,...e,...(stage==='fill'?{reasonCode:undefined}:{})};
+      const combined={...original,...e,...(stage==='fill'?{reasonCode:e.reasonCode}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.11.1',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),
+    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.12.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
@@ -271,7 +271,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       }
       if(type==='local-oneclick'){
         stage='task';taskId=crypto.randomUUID();
-        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.11.1'});
+        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.12.0'});
         const tab=await attached(m.tabId);alive();activeTarget={tabId:m.tabId,documentIds:[m.documentId]};
         for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
         if(recordReviews.size)throw Error('请先完成或关闭已打开的经历核对窗口');

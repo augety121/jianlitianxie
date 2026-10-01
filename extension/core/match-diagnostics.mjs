@@ -1,3 +1,4 @@
+import {executionReceipt} from './execution-receipt.mjs';
 import {semanticLabel,scope} from './semantics.mjs';
 // Only known semantic vocabulary is exported. Unknown labels may contain PII.
 const names=['姓名','手机号码','邮箱','性别','出生日期','政治面貌','学校','学院','专业','学历','学位','学习形式','开始月份','结束月份','预计毕业月份','公司名称','职位名称','部门名称','岗位职责','项目名称','项目角色','项目描述','项目职责','项目成果','作品链接','自我评价','证书名称','获奖名称','获奖时间','获得日期','绩点','平均分','专业排名','英语四级成绩','主修课程','教育经历描述','语言类型','掌握程度','听说能力','读写能力','最高学历','所在地','现居住地','期望城市','当前薪资','期望薪资','最近公司','推荐码','获奖级别'];
@@ -18,6 +19,7 @@ export const diagnosticCodes={
  'restricted-control':['policy','附件或声明需要人工操作','在申请页选择附件或确认声明'],
  'not-attempted':['execution','本项尚未执行，不能算写入失败','前一项异常、取消或授权到期后停止；核对后重新扫描'],
  'matched':['matching','字段与具体经历已对应','等待执行或查看填写回读'],
+ 'native-constraint':['validation','资料不满足当前原生控件格式','核对格式和范围；该项未写入'],
  'readback-failed':['readback','写入后的值或有效性未通过检查','查看网页实际内容；不要盲目重试'],
  'target-changed':['execution','执行时页面或字段发生变化','重新扫描，保留本人已修改内容'],
  'verified':['readback','本页回读通过','仍需本人检查；不代表网站已保存或提交'],
@@ -31,7 +33,7 @@ export function fieldDiagnostic(e,facts=[],bindingMethod='none'){
  return {code:code==='no-label-match'&&same.length&&!scoped.length?'scope-mismatch':code,semantic:known.get(key)||'unknown',section:kind||'unknown',binding:bindingMethod,kind:e.kind,optionCount:e.optionCount,required:e.required,
   sourceCount:same.length,scopedCount:scoped.length,confirmedCount:scoped.filter(f=>f.confirmed===true&&!f.conflict).length,
   candidateCount:e.candidateIds?.length??(e.factId?1:0),hasExisting:e.oldValue!==''&&e.oldValue!=null&&e.oldValue!==false,
-  evidenceCode:e.evidenceCode,recognition:e.recognition};
+  evidenceCode:e.evidenceCode,recognition:e.recognition,...executionReceipt(e)};
 }
 export function profileDiagnostic(facts=[]){
  const inventory=new Map();
@@ -47,7 +49,7 @@ export function cleanProfileDiagnostic(value){
 }
 export function cleanDiagnostic(d){
  const n=v=>Number.isSafeInteger(v)&&v>=0?Math.min(v,20000):0;
- return {semantic:[...known.values()].includes(d.semantic)?d.semantic:'unknown',section:['personal','education','work','project','certificate','award','family','language','contact'].includes(d.section)?d.section:'unknown',binding:['anchor','exact-content','source-order','unique-remaining','manual'].includes(d.binding)?d.binding:'none',kind:['text','textarea','email','tel','date','month','number','select','select-one','custom-select','custom-radio','radio-group','file','checkbox','repeat-group','contenteditable'].includes(d.kind)?d.kind:'unknown',optionCount:n(d.optionCount),required:d.required===true,
+ return {...executionReceipt(d),semantic:[...known.values()].includes(d.semantic)?d.semantic:'unknown',section:['personal','education','work','project','certificate','award','family','language','contact'].includes(d.section)?d.section:'unknown',binding:['anchor','exact-content','source-order','unique-remaining','manual'].includes(d.binding)?d.binding:'none',kind:['text','textarea','email','tel','date','month','number','select','select-one','custom-select','custom-radio','radio-group','file','checkbox','repeat-group','contenteditable'].includes(d.kind)?d.kind:'unknown',optionCount:n(d.optionCount),required:d.required===true,
   sourceCount:n(d.sourceCount),scopedCount:n(d.scopedCount),confirmedCount:n(d.confirmedCount),candidateCount:n(d.candidateCount),hasExisting:d.hasExisting===true,
   ...(Object.hasOwn(diagnosticCodes,d.evidenceCode)?{evidenceCode:d.evidenceCode}:{}),
   recognition:{labelSource:['label','nearby','placeholder','autocomplete','date-group','attribute'].includes(d.recognition?.labelSource)?d.recognition.labelSource:'unknown',controlFamily:['native','native-select','ant','react-select','marked-select'].includes(d.recognition?.controlFamily)?d.recognition.controlFamily:'unknown',selectedDisplay:d.recognition?.selectedDisplay===true,searchEmpty:d.recognition?.searchEmpty===true,datePart:['year','month','day'].includes(d.recognition?.datePart)?d.recognition.datePart:'none'}};
@@ -55,5 +57,5 @@ export function cleanDiagnostic(d){
 export function explainDiagnostic(f){
  const [stage,reason,action]=diagnosticCodes[f.code]||diagnosticCodes.unclassified;
  const structure=f.recognition?`\n  读取结构：${f.recognition.controlFamily}；标签来源 ${f.recognition.labelSource||'unknown'}；选中显示节点 ${f.recognition.selectedDisplay?'有':'无'}；搜索框为空 ${f.recognition.searchEmpty?'是':'否'}；日期分量 ${f.recognition.datePart}`:'';
- return `#${f.index} ${f.semantic||'unknown'} / ${f.section||'unknown'} · ${f.status}\n  控件：${f.kind||'unknown'}；候选选项 ${f.optionCount||0}；${f.required?'必填':'未标记必填'}；${f.hasExisting?'已读到现有值':'未读到现有值'}${structure}\n  阶段：${stage}；原因：${reason}\n  资料：同字段 ${f.sourceCount||0} → 同分区 ${f.scopedCount||0} → 已确认 ${f.confirmedCount||0} → 最终候选 ${f.candidateCount||0}；经历对应：${f.binding||'none'}${f.evidenceCode?'；底层原因：'+f.evidenceCode:''}\n  处理：${action}`;
+ return `#${f.index} ${f.semantic||'unknown'} / ${f.section||'unknown'} · ${f.status}\n  控件：${f.kind||'unknown'}；候选选项 ${f.optionCount||0}；${f.required?'必填':'未标记必填'}；${f.hasExisting?'已读到现有值':'未读到现有值'}${structure}${f.executionPhase?'\n  执行位置：'+f.executionPhase+'；'+(f.attempted===true?'已开始输入/选择':f.attempted===false?'尚未写入':'写入状态未知'):''}\n  阶段：${stage}；原因：${reason}\n  资料：同字段 ${f.sourceCount||0} → 同分区 ${f.scopedCount||0} → 已确认 ${f.confirmedCount||0} → 最终候选 ${f.candidateCount||0}；经历对应：${f.binding||'none'}${f.evidenceCode?'；底层原因：'+f.evidenceCode:''}\n  处理：${action}`;
 }
