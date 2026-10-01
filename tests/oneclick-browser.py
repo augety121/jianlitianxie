@@ -123,5 +123,13 @@ with sync_playwright() as pw:
  def cancel(page):
   load_assistant(page);page.evaluate('scanDelay=400');click(page,'填写简历');click(page,'停止');page.wait_for_timeout(600);require(page.locator('#name').input_value()=='' and page.evaluate("testEngineApplications===0"),'stop between scan and fill lost')
  case('stop-during-scan-cancels-the-rest-of-oneclick',basic,cancel)
+ def edge_visible(page):
+  page.locator('#edge').evaluate('e=>{e.style.position="absolute";e.style.top=(innerHeight-6)+"px";e.style.left="40px";e.style.margin="0";e.style.height="38px";}')
+  before=page.locator('#edge').bounding_box();require(before['y']<900 and before['y']+before['height']>900,'fixture must expose only a narrow bottom sliver')
+  data=make(page,[fact('e','邮箱','edge@example.invalid')]);r=page.evaluate('p=>__resumeFillEngine.apply(p)',data['plan'])
+  require(r['results'][0]['status']=='verified','partially visible field was not brought to a usable position: '+str(r['results']))
+  require(page.locator('#edge').input_value()=='edge@example.invalid','independent edge field value mismatch')
+  require(page.evaluate('scrollY>0'),'target was not scrolled before writing')
+ case('partially-visible-bottom-field-scrolls-before-hit-check-without-penetrating-overlay','<form style="height:2200px"><label for="edge">邮箱</label><input type="email" id="edge"></form><footer style="position:fixed;bottom:0;left:0;right:0;height:12px;background:#ddd;z-index:9999"></footer>',edge_visible)
  report=dict(scope=('layout-only: page assistant UI excluded; about:blank real DOM' if '--layout-only' in sys.argv else 'synthetic screenshot-derived layout and real page-assistant UI/engine/planner; mocked Chrome IPC, not live ATS'),browser=browser.version,passed=sum(c['status']=='passed' for c in cases),failed=sum(c['status']=='failed' for c in cases),cases=cases);browser.close()
 OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n');raise SystemExit(bool(report['failed']))

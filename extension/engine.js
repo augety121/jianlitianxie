@@ -84,8 +84,14 @@
  function interactionGuard(e){
   if(!e?.isConnected||!visible(e)||ancestorBlocked(e)||e.matches(':disabled')||e.getAttribute('aria-disabled')==='true')throw Error('控件不可交互');
   let r=e.getBoundingClientRect();
-  if(r.bottom<=0||r.right<=0||r.top>=innerHeight||r.left>=innerWidth){e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});r=e.getBoundingClientRect();}
-  const l=Math.max(0,r.left),t=Math.max(0,r.top),right=Math.min(innerWidth,r.right),bottom=Math.min(innerHeight,r.bottom);
+  // A few pixels at the viewport edge are not a usable target. Include the
+  // layout viewport so browser scrollbars are not mistaken for page hit area.
+  const viewportWidth=Math.min(innerWidth,document.documentElement.clientWidth||innerWidth);
+  const viewportHeight=Math.min(innerHeight,document.documentElement.clientHeight||innerHeight);
+  if(r.top<0||r.left<0||r.bottom>viewportHeight||r.right>viewportWidth){
+   e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});r=e.getBoundingClientRect();
+  }
+  const l=Math.max(0,r.left),t=Math.max(0,r.top),right=Math.min(viewportWidth,r.right),bottom=Math.min(viewportHeight,r.bottom);
   if(right<=l||bottom<=t)throw Error('控件不在可见视区');
   const x=(l+right)/2,y=(t+bottom)/2;tick('hitTests');
   let hit=document.elementFromPoint(x,y),previous;
