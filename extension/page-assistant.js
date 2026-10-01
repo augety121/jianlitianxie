@@ -5,7 +5,7 @@
 (()=>{
  if(window!==window.top||!/^https?:$/.test(location.protocol))return;
  const previous=globalThis.__resumeLocalAssistant;
- if(previous?.version==='0.11.1'){previous.open();return;}
+ if(previous?.version==='0.12.0'){previous.open();return;}
  previous?.destroy();
  const host=document.createElement('div');host.id='resume-local-assistant';
  host.style.cssText='all:initial!important;position:fixed!important;right:18px!important;bottom:20px!important;z-index:2147483646!important;display:block!important;';
@@ -14,7 +14,7 @@
  const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
  const b=(label,cls)=>{const e=n('button',label,cls);e.type='button';return e;};
  const panel=n('section',null,'panel'),head=n('div',null,'head'),title=n('div');
- title.append(n('strong','本地简历速填'),n('small','0.11.1 · 资料已在本机 · 不自动提交'));
+ title.append(n('strong','本地简历速填'),n('small','0.12.0 · 资料已在本机 · 不自动提交'));
  const close=b('收起','close');head.append(title,close);
  const body=n('div',null,'body'),message=n('p','点击下方按钮，直接补全这张简历表。','message');
  message.setAttribute('role','status');message.setAttribute('aria-live','polite');
@@ -37,7 +37,7 @@
   return document.elementFromPoint(e.clientX,e.clientY)===host;
  };
  async function send(type,data={}){
-  const r=await chrome.runtime.sendMessage({type:'page-local-'+type,clientVersion:'0.11.1',...data});
+  const r=await chrome.runtime.sendMessage({type:'page-local-'+type,clientVersion:'0.12.0',...data});
   if(!r)throw Error('插件已更新或后台未响应。请重新点击浏览器工具栏插件图标。');
   if(r.error)throw Error(r.error);return r.data;
  }
@@ -153,5 +153,5 @@
   if(details)details.open=false;fill.textContent='填写简历';controls();
  }
  function finished(report){clear();message.textContent=report.verified?'这项资料已填写并回读通过。其余空白项可继续点“填写简历”。':'这项未通过回读，请核对网页；未自动重试。';show();}
- globalThis.__resumeLocalAssistant={version:'0.11.1',open,destroy,finished,taskFinished,progress:stage=>{const labels={adding:'正在补足已允许的经历卡片…',scanning:'正在识别记录和字段…',filling:'正在填写并回读…'};if(labels[stage]){message.textContent=labels[stage];quick.textContent=labels[stage];}},remembered:n=>{clear();message.textContent=`已记住 ${n} 条补充资料，仅保存在本地。下次点击填写简历会继续使用。`;show();}};open();
+ globalThis.__resumeLocalAssistant={version:'0.12.0',open,destroy,finished,taskFinished,progress:stage=>{const labels={adding:'正在补足已允许的经历卡片…',scanning:'正在识别记录和字段…',filling:'正在填写并回读…'};if(labels[stage]){message.textContent=labels[stage];quick.textContent=labels[stage];}},remembered:n=>{clear();message.textContent=`已记住 ${n} 条补充资料，仅保存在本地。下次点击填写简历会继续使用。`;show();}};open();
 })();

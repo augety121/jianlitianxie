@@ -21,7 +21,7 @@ jobs:
       - name: Bundle tracked active source only
         run: |
           mkdir -p dist
-          git archive --format=zip --output=dist/active-source.zip HEAD README.md LICENSE THIRD_PARTY.md SOURCE-STATE.md .gitignore package.json package-lock.json requirements-test.txt bridge extension tests scripts docs .github
+          git archive --format=zip --output=dist/active-source.zip HEAD README.md LICENSE THIRD_PARTY.md SOURCE-STATE.md .gitignore package.json package-lock.json requirements-test.txt bridge extension src tests scripts docs .github THIRD_PARTY_REUSE.md
           git archive --format=zip --output=dist/extension.zip HEAD extension
       - uses: actions/upload-artifact@v4
         with:

@@ -174,11 +174,15 @@ jobs:
           python -m playwright install chromium
       - name: Sandbox-enabled installed zero-card workflow
         run: python tests/empty-record-mv3.py
+      - name: Component strategy browser regressions
+        run: python tests/component-adapters-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: empty-record-windows-verification
           path: |
+            test-results/component-adapters-browser.json
+            test-results/component-phoenix.png
             test-results/empty-record-mv3.json
             test-results/empty-record-consent-installed.png
             test-results/empty-record-filled-installed.png

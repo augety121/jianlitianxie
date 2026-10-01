@@ -1,3 +1,4 @@
+import {executionReceipt} from './execution-receipt.mjs';
 import {numericMetrics,sumMetrics} from './performance.mjs';
 import {resolveRecords} from './record-resolver.mjs';
 import {makePlan} from './planner.mjs';
@@ -163,8 +164,8 @@ export class WorkspaceRun {
           const known = new Set(['verified','invalid','stale','manual','needs-user','cancelled','not-attempted','preserve']);
           if (!Array.isArray(r.results) || new Set(r.results.map(x => x.fieldId)).size !== r.results.length ||
             r.results.some(x => !entries.some(e => e.fieldId === x.fieldId) || !known.has(x.status))) throw Error('回读不符合所选范围');
-          const byId = new Map(r.results.map(x => [x.fieldId, x.status]));
-          results.push(...entries.map(e => ({id: `${f.frameId}:${e.fieldId}`, status: byId.get(e.fieldId) || 'not-attempted'})));
+          const byId = new Map(r.results.map(x => [x.fieldId, x]));
+          results.push(...entries.map(e => ({id: `${f.frameId}:${e.fieldId}`, status: byId.get(e.fieldId)?.status || 'not-attempted',...executionReceipt(byId.get(e.fieldId))})));
           if (r.results.some(x => x.status !== 'verified' && x.status !== 'preserve') || r.results.length !== entries.length) halt = true;
         } catch { halt = true; results.push(...ids.map(id => ({id, status: 'needs-user'}))); }
       }
