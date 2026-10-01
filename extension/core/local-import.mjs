@@ -2,7 +2,7 @@ import {tableSchema, tableFacts} from './import-table.mjs';
 import {normalizeFact, normalizeProfile, parseImport, MAX_PROFILE_BYTES} from './profile.mjs';
 import {secret} from './workspace-policy.mjs';
 
-const sections = new Set(['基本信息','教育经历','教育背景','教育经验','学习经历','工作经历','实习经历','项目经历','项目经验','科研与项目经历','科研及项目经历','科研和项目经历','专业技能','语言能力','获奖经历','奖励荣誉','证书','论文','家庭信息']);
+const sections = new Set(['基本信息','教育经历','教育背景','教育经验','学习经历','工作经历','实习经历','项目经历','项目经验','科研与项目经历','科研及项目经历','科研和项目经历','专业技能','语言能力','获奖经历','奖励荣誉','证书','论文','家庭信息','家庭情况','家庭成员','紧急联系人','求职意向','自我评价','自我描述','社团干部经历','软件著作权','专利']);
 const sectionTitle=s=>s.replace(/^(?:[一二三四五六七八九十]+[、.．]|\d+[、.．])\s*/, '').trim();
 const cleanLabel = s => s.trim().replace(/^\*\*([^*]+)\*\*$/, '$1').replace(/[:：]$/, '').trim();
 const cells = s => s.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(v => v.trim().replace(/\\\|/g, '|'));
@@ -38,17 +38,37 @@ export function readLocalImport(input) {
     if (!line) continue;
     if (/^```|^~~~/.test(line)) { fence=!fence; skipped.push({line:i+1,text:line}); continue; }
     if (fence) { skipped.push({line:i+1,text:line}); continue; }
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(line)) { skipped.push({line:i+1,text:line}); continue; }
     const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
     if (heading) {
       const title = sectionTitle(heading[2]), parts = title.split(/\s*[|｜]\s*/);
       if(['个人信息','个人基本信息','联系方式'].includes(parts[0]))parts[0]='基本信息';
       table = false;
       if (sections.has(parts[0])) { section=parts[0];entity=parts.slice(1).join(' | '); }
-      else if (heading[1].length >= 3 && section !== '基本信息') entity=title;
+      else if (heading[1].length === 2) {section=title;entity='';}
+      else if (heading[1].length >= 3 && section && section !== '基本信息') entity=title;
       else {section='';entity='';skipped.push({line:i+1,text:line});}
       continue;
     }
     if (sections.has(line)) {section=line;entity='';table=false;continue;}
+    // Explicit standalone Markdown field headings own their entire value block.
+    // Do not re-parse colons inside a project paragraph as separate profile facts.
+    const block=line.match(/^\*\*([^*\n：:]{1,160})[：:]?\*\*\s*[：:]?$/);
+    if(block){
+      let end=i+1;const value=[];
+      while(end<lines.length){
+        const next=lines[end].trim();
+        const boldNext=next.match(/^\*\*([^*\n：:]{1,160})([：:]?)\*\*(.*)$/);
+        const fieldBoundary=boldNext&&(!boldNext[3].trim()||boldNext[2]||/^[：:]/.test(boldNext[3].trim()));
+        if(/^#{1,6}\s|^```|^~~~/.test(next)||sections.has(next)||fieldBoundary||/^(?:-{3,}|\*{3,}|_{3,})$/.test(next))break;
+        value.push(lines[end]);end++;
+      }
+      const body=value.join('\n').trim();
+      if(body)add(block[1],body,section,entity,i+1);
+      else skipped.push({line:i+1,text:line});
+      i=end-1;table=false;continue;
+    }
+    if(!section&&/^(更新日期|文档版本|使用说明)[：:]/.test(line)){skipped.push({line:i+1,text:line});continue;}
     if (line.startsWith('|') || line.includes('|') && (table || /^\s*\|?\s*:?-{3,}/.test(lines[i+1]||''))) {
       const row=cells(line);
       if(row.length>=2&&row.every(c=>/^:?-{3,}:?$/.test(c)))continue;

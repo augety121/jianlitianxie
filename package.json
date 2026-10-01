@@ -1,6 +1,6 @@
 {
   "name": "jianlitianxie",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -28,7 +28,9 @@
     "test:recognition": "python tests/recognition-repair-browser.py",
     "test:recognition-mv3": "python tests/recognition-repair-mv3.py",
     "test:recovery": "node --test tests/recovery.test.mjs && python tests/recovery-browser.py",
-    "test:recovery-mv3": "python tests/recovery-mv3.py"
+    "test:recovery-mv3": "python tests/recovery-mv3.py",
+    "test:empty-records": "python tests/empty-record-browser.py",
+    "test:empty-mv3": "python tests/empty-record-mv3.py"
   },
   "devDependencies": {
     "jsdom": "^26.1.0"

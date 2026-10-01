@@ -2,7 +2,7 @@
 export const normalize=s=>String(s??'').normalize('NFKC').toLowerCase().replace(/[\s*：:（）()\-_]/g,'');
 const groups=[
  ['姓名','真实姓名','full name','candidate name','your name'],['手机号码','手机号','移动电话','mobile','mobile phone','phone number','phone'],['邮箱','电子邮箱','电子邮件','联系邮箱','默认邮箱','email','email address','e-mail'],
- ['出生日期','出生年月日','生日','date of birth','birth date'],['政治面貌','政治面目'],['生源地','生源所在地'],['户口所在地','现户口所在地','户籍所在地'],
+ ['出生日期','出生日期（年龄）','出生年月日','生日','date of birth','birth date'],['政治面貌','政治面目'],['生源地','生源所在地'],['户口所在地','现户口所在地','户籍所在地'],
  ['现居住地','现住址','当前所在地区','所在地','当前所在地'],['身高','身高厘米','身高(cm)','身高（厘米）'],['体重','体重公斤','体重(kg)','体重（公斤）'],
  ['证件号码','身份证号码','身份证号'],['学校','学校名称','毕业学校','毕业院校','院校名称','university','school name','university name','institution name'],['学院','学院名称','院系'],
  ['专业','所学专业','专业名称','major','field of study'],['学习形式','学习方式'],['导师','导师姓名','实验室/课题组导师'],

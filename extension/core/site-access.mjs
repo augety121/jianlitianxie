@@ -43,7 +43,19 @@ export class SiteAccess {
     canonicalOrigin(origin);
     const raw=(await this.chrome.storage.local.get(SITE_ACCESS_KEY))[SITE_ACCESS_KEY];
     const entry=Array.isArray(raw)?raw.find(x=>x.origin===origin):null;
-    return {origin,show:entry?.show===true,add:entry?.show===true&&entry?.add===true};
+    return {origin,show:entry?.show===true,add:entry?.add===true&&(entry?.show===true||entry?.manualAdd===true)};
+  }
+  grantAdd(origin) {
+    canonicalOrigin(origin);
+    return this.enqueue(async()=>{
+      // Called only after an authenticated, explicit page action. It grants no
+      // Chrome host permission and does not enable automatic script registration.
+      const raw=(await this.chrome.storage.local.get(SITE_ACCESS_KEY))[SITE_ACCESS_KEY];
+      const rows=Array.isArray(raw)?raw:[],old=rows.find(x=>x.origin===origin);
+      if(!old&&rows.length>=100)throw Error('网站设置已达100项');
+      await this.chrome.storage.local.set({[SITE_ACCESS_KEY]:[...rows.filter(x=>x.origin!==origin),{origin,show:old?.show===true,add:true,manualAdd:true}]});
+      return this.get(origin);
+    });
   }
   async allowed(origin) {
     const pref=await this.get(origin);
@@ -54,7 +66,7 @@ export class SiteAccess {
     if(typeof show!=='boolean'||typeof add!=='boolean')throw Error('网站设置格式无效');
     if(show&&!await this.chrome.permissions.contains({origins:[origin+'/*']}))throw Error('请先通过浏览器授权这个网站');
     const raw=(await this.chrome.storage.local.get(SITE_ACCESS_KEY))[SITE_ACCESS_KEY];
-    const rows=(Array.isArray(raw)?raw:[]).filter(x=>x.origin!==origin).map(x=>({origin:x.origin,show:x.show===true,add:x.add===true}));
+    const rows=(Array.isArray(raw)?raw:[]).filter(x=>x.origin!==origin).map(x=>({origin:x.origin,show:x.show===true,add:x.add===true,manualAdd:x.manualAdd===true}));
     if(rows.length>=100)throw Error('网站设置已达100项，请先关闭不再使用的网站');
     await this.syncScript(origin,show);
     await this.chrome.storage.local.set({[SITE_ACCESS_KEY]:[...rows,{origin,show,add:show&&add}]});

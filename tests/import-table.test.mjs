@@ -25,7 +25,7 @@ test('unknown table headers and inconsistent cell counts remain visible instead 
 });
 test('new top-level headings cannot leak a previous project entity into subsequent facts',()=>{
  const p=readLocalImport('## 项目经历\n### 项目甲\n项目名称：示例项目\n## 其他资料\n邮箱：hello@example.invalid');
- assert.equal(p.facts[0].entity,'项目甲');assert.equal(p.facts[1].entity,'');assert.equal(p.facts[1].section,'');
+ assert.equal(p.facts[0].entity,'项目甲');assert.equal(p.facts[1].entity,'');assert.equal(p.facts[1].section,'其他资料'); // Preserve explicit heading, never inherit project identity.
 });
 test('no outer pipes, escaped pipes and bold headers preserve explicit values',()=>{
  const p=readLocalImport('## 基本信息\n**字段** | **内容** | 备注\n---|---|---\n自我评价|甲\\|乙|原文');
