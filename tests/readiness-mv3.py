@@ -48,7 +48,7 @@ try:
    expect(manager.locator('.import-row')).to_have_count(7)
    manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text('7')
    expect(manager.locator('#profileHealth')).to_contain_text('项目 0 段')
-   expect(manager.locator('#profileHealth')).to_contain_text('2 段旧项目片段')
+   expect(manager.locator('#profileHealth')).to_contain_text('2 段旧资料可整理')
    require(target.locator('#person').input_value()=='','import wrote without consent')
    target.evaluate("()=>{const a=document.querySelector('aside');a.replaceWith(Object.assign(document.createElement('div'),{innerHTML:'<div>教育背景</div><div>实习经历</div><div>项目经验</div>'}))}")
    manager.locator('#returnTarget').click();target.bring_to_front();expect(target.locator('#resume-local-assistant')).to_be_visible()
@@ -81,19 +81,19 @@ try:
     target.wait_for_timeout(80)
    raise AssertionError('Expected '+value+'; actual '+message())
   def first_fill():
-   wait_message('无需先点扫描');click('填写简历');wait_message('回读通过 3 项')
-   for key,value in EXPECTED.items():require(target.locator('#'+key).input_value()==value,'base value missing '+key)
+   wait_message('无需先点扫描')
+   require(target.locator('#person').input_value()=='','recovery suggestion wrote the form')
    require(target.evaluate('added')=={'education':0,'work':0,'project':0},'invented records before review')
-   b=button('整理已存项目资料');attrs=dict(zip(b.get('attributes',[])[::2],b.get('attributes',[])[1::2]))
+   b=button('整理已有资料');attrs=dict(zip(b.get('attributes',[])[::2],b.get('attributes',[])[1::2]))
    require('hidden' not in attrs and 'disabled' not in attrs,'recovery entry absent after partial fill')
    more=next(n for n in walk(assistant()) if n.get('nodeName')=='DETAILS' and 'more-tools' in dict(zip(n.get('attributes',[])[::2],n.get('attributes',[])[1::2])).get('class',''))
    require('open' not in more.get('attributes',[]),'secondary tools unexpectedly expanded')
    target.screenshot(path=str(ROOT/'test-results/readiness-repair-entry.png'))
-  step('one-click-fills-three-known-values-and-offers-recovery-without-more-clutter',first_fill)
+  step('recoverable-profile-offers-primary-recovery-without-writing',first_fill)
   def repair_saved():
    global repairPage
    before=worker.evaluate('()=>chrome.storage.local.get("resumeLocalLibraryV1")')
-   click('整理已存项目资料');until=time.monotonic()+15;repairPage=None
+   click('整理已有资料');until=time.monotonic()+15;repairPage=None
    while time.monotonic()<until:
     repairPage=next((p for p in context.pages if 'view=repair' in p.url),None)
     if repairPage:break
@@ -101,7 +101,7 @@ try:
    require(repairPage is not None,'repair manager did not open')
    expect(repairPage.locator('.import-row')).to_have_count(2)
    require(worker.evaluate('()=>chrome.storage.local.get("resumeLocalLibraryV1")')==before,'opening repair silently persisted values')
-   expect(repairPage.locator('#notice')).to_contain_text('原句保留')
+   expect(repairPage.locator('#notice')).to_contain_text('旧片段保留')
    repairPage.screenshot(path=str(ROOT/'test-results/readiness-review.png'))
    repairPage.locator('#commitImport').click();expect(repairPage.locator('#savedCount')).to_have_text('9')
    expect(repairPage.locator('#profileHealth')).to_contain_text('项目 2 段')
@@ -111,26 +111,20 @@ try:
    require(all(BODIES[f['entity']]==f['value'] for f in descriptions),'rewrote source paragraphs')
    require(sum(f['label'] in ['项目背景','方案设计'] for f in facts)==4,'originals removed')
    require(not any(f['label'] in ['项目名称','开始时间','结束时间'] for f in facts),'invented identity/date')
-   repairPage.locator('#returnTarget').click();target.bring_to_front();wait_message('无需先点扫描')
+   target.bring_to_front();wait_message('回读通过 3 项')
   step('page-recovery-opens-two-drafts-and-only-explicit-save-adds-canonical-descriptions',repair_saved)
   def add_and_fill():
-   click('填写简历');wait_message('没有可自动补全')
-   attrs=dict(zip(button('允许添加经历并继续填写').get('attributes',[])[::2],button('允许添加经历并继续填写').get('attributes',[])[1::2]))
+   attrs=dict(zip(button('按简历顺序添加经历并填写').get('attributes',[])[::2],button('按简历顺序添加经历并填写').get('attributes',[])[1::2]))
    require('hidden' not in attrs and 'disabled' not in attrs,'add consent is not available after reviewed recovery')
-   with context.expect_page() as popup:click('允许添加经历并继续填写')
-   review=popup.value;expect(review.locator('.record')).to_have_count(2,timeout=15000)
+   click('按简历顺序添加经历并填写');wait_message('回读通过 2 项')
    require(target.evaluate('added')=={'education':0,'work':0,'project':2},'did not add exact two projects')
-   require(target.locator('#project0body').input_value()=='','filled ambiguous cards before choice')
-   for i,value in enumerate(['恢复乙','恢复甲']):review.locator('select[data-group]').nth(i).select_option(value)
-   review.locator('#continue').click();expect(review.locator('#state')).to_contain_text('回读通过 2 项',timeout=30000)
-   for i,key in enumerate(['恢复乙','恢复甲']):
-    require(target.locator('#project'+str(i)+'body').input_value()==BODIES[key],'wrong bound description')
+   for i,key in enumerate(['恢复甲','恢复乙']):
+    require(target.locator('#project'+str(i)+'body').input_value()==BODIES[key],'wrong source-order description')
     require(target.locator('#project'+str(i)+'name').input_value()=='','invented project name')
-   review.close();target.bring_to_front();wait_message('回读通过 2 项')
    target.screenshot(path=str(ROOT/'test-results/readiness-completed.png'))
   step('unmarked-navigation-does-not-block-two-additions-and-exact-reviewed-descriptions',add_and_fill)
   def repeat_and_feedback():
-   click('填写简历');wait_message('没有可自动补全')
+   repairPage.evaluate('tab=>chrome.runtime.sendMessage({type:"local-resume-task",tabId:tab,reviewed:true})',tab)
    require(target.evaluate('added')=={'education':0,'work':0,'project':2},'repeat duplicated records')
    for key,value in EXPECTED.items():require(target.locator('#'+key).input_value()==value,'changed base content')
    for key in ['password','relative','languageLevel']:require(target.locator('#'+key).input_value()=='','invented restricted/missing value')

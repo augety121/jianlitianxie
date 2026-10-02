@@ -19,9 +19,9 @@ test('successful selected subset is partial if any ordinary field remains unreso
  assert.equal(taskOutcome({entries:[filled]},verified,{inventory:[{target:1,code:'section-not-found'}]}),'partial');
  assert.equal(taskOutcome({entries:[filled]},[]),'no-eligible-fields');
 });
-test('schema 3 retains Moka evidence and old records without exporting arbitrary runtime strings',()=>{
+test('schema 4 retains Moka evidence and old records without exporting arbitrary runtime strings',()=>{
  const report=exportReceipts({records:[{stage:'scan',fields:[{status:'preserve',recognition:{controlFamily:'moka',selectedDisplay:true}}]},{stage:'fill',fields:[{status:'verified',recognition:{controlFamily:'PRIVATE'}}]}]});
- assert.equal(report.schemaVersion,3);assert.equal(report.records[0].fields[0].recognition.controlFamily,'moka');assert(!JSON.stringify(report).includes('PRIVATE'));
+ assert.equal(report.schemaVersion,4);assert.equal(report.records[0].fields[0].recognition.controlFamily,'moka');assert(!JSON.stringify(report).includes('PRIVATE'));
 });
 test('one-click scan, fill and final task receipts share one task identity',async()=>{
  const h=localHarness();await h.attach();await importText(h,'姓名：虚构人\n邮箱：moka@example.invalid\n性别：虚构值');

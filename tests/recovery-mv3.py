@@ -44,7 +44,7 @@ try:
    manager.locator('#importFile').set_input_files({'name':'synthetic-source-shaped.docx','mimeType':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','buffer':data.getvalue()})
    expect(manager.locator('#importPreview')).to_be_visible()
    require(manager.locator('.import-row').count()>40,'resume structure was not extracted')
-   manager.locator('#commitImport').click();expect(manager.locator('#profileHealth')).to_contain_text('教育 2 段 · 项目 5 段 · 工作/实习 1 段')
+   manager.locator('#commitImport').click();expect(manager.locator('#profileHealth')).to_contain_text('教育 2 段 · 实习/工作 1 段 · 项目 5 段')
    # Multiple blank records cannot be assigned by source order before user review.
    expect(manager.locator('#counts')).to_contain_text('缺项')
    require(manager.locator('.field input:checked').count()<len(expected),'ambiguous records were silently selected')

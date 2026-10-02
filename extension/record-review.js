@@ -1,3 +1,5 @@
+import {acknowledgeUi} from './ui-ready.mjs';
+await acknowledgeUi();
 const $=id=>document.getElementById(id),ticket=new URLSearchParams(location.search).get('ticket');
 let groups=[],busy=false,done=false;
 async function send(action,extra={}) {

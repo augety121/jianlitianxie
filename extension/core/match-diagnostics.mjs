@@ -3,6 +3,7 @@ import {semanticLabel,scope} from './semantics.mjs';
 // Only known semantic vocabulary is exported. Unknown labels may contain PII.
 const names=['姓名','手机号码','邮箱','性别','出生日期','政治面貌','学校','学院','专业','学历','学位','学习形式','开始月份','结束月份','预计毕业月份','公司名称','职位名称','部门名称','岗位职责','项目名称','项目角色','项目描述','项目职责','项目成果','作品链接','自我评价','证书名称','获奖名称','获奖时间','获得日期','绩点','平均分','专业排名','英语四级成绩','主修课程','教育经历描述','语言类型','掌握程度','听说能力','读写能力','最高学历','所在地','现居住地','期望城市','当前薪资','期望薪资','最近公司','推荐码','获奖级别'];
 const known=new Map(names.map(n=>[semanticLabel(n),n]));
+const kinds=new Set(['text','textarea','email','tel','date','month','number','select','select-one','custom-select','custom-radio','radio-group','file','checkbox','repeat-group','contenteditable','date-picker']);
 export const diagnosticCodes={
  'field-unrecognized':['recognition','没有识别出稳定的字段含义','这是页面识别问题；检查控件标签、分区和版本，不要反复导入资料'],
  'scope-mismatch':['matching','同名资料不属于目标分区','核对来源分区；不能把本人姓名、电话用于家庭成员'],
@@ -31,6 +32,7 @@ export function fieldDiagnostic(e,facts=[],bindingMethod='none'){
  const scoped=same.filter(f=>(kind==='family'||kind==='contact')?scope(f.section)===kind:!kind||!scope(f.section)||scope(f.section)===kind);
  const code=e.reasonCode==='no-label-match'&&!known.has(key)&&!['label','nearby','placeholder','autocomplete','date-group'].includes(e.recognition?.labelSource)?'field-unrecognized':e.reasonCode||({'not-attempted':'not-attempted',ready:'matched',verified:'verified',invalid:'readback-failed',stale:'target-changed','needs-user':'readback-failed'}[e.status])||'unclassified';
  return {code:code==='no-label-match'&&same.length&&!scoped.length?'scope-mismatch':code,semantic:known.get(key)||'unknown',section:kind||'unknown',binding:bindingMethod,kind:e.kind,optionCount:e.optionCount,required:e.required,
+  semanticState:known.has(key)?'canonical':same.length&&key?'custom-exact':'unrecognized',controlKindState:kinds.has(e.kind)?'known':e.kind?'redacted':'undetermined',
   sourceCount:same.length,scopedCount:scoped.length,confirmedCount:scoped.filter(f=>f.confirmed===true&&!f.conflict).length,
   candidateCount:e.candidateIds?.length??(e.factId?1:0),hasExisting:e.oldValue!==''&&e.oldValue!=null&&e.oldValue!==false,
   evidenceCode:e.evidenceCode,recognition:e.recognition,...executionReceipt(e)};
@@ -42,6 +44,11 @@ export function profileDiagnostic(facts=[]){
  }
  return {total:facts.length,inventory:[...inventory.values()]};
 }
+export function profileStateDiagnostic(profile,accepted,readiness){
+ const facts=profile.facts||[],canonical=facts.filter(f=>known.has(semanticLabel(f.label,f.section))).length;
+ // Custom labels are only classed as exact when a page match supplies evidence.
+ return {accepted:accepted===true,activeVersionState:accepted?'available':'uninitialized',revision:profile.revision,total:facts.length,canonical,customExact:0,unrecognized:facts.length-canonical,usable:readiness?.usable,repairable:readiness?.repairable};
+}
 export function cleanProfileDiagnostic(value){
  if(!value||!Array.isArray(value.inventory))return undefined;
  const n=v=>Number.isSafeInteger(v)&&v>=0?Math.min(v,20000):0;
@@ -49,10 +56,11 @@ export function cleanProfileDiagnostic(value){
 }
 export function cleanDiagnostic(d){
  const n=v=>Number.isSafeInteger(v)&&v>=0?Math.min(v,20000):0;
- return {...executionReceipt(d),semantic:[...known.values()].includes(d.semantic)?d.semantic:'unknown',section:['personal','education','work','project','certificate','award','family','language','contact'].includes(d.section)?d.section:'unknown',binding:['anchor','exact-content','source-order','unique-remaining','manual'].includes(d.binding)?d.binding:'none',kind:['text','textarea','email','tel','date','month','number','select','select-one','custom-select','custom-radio','radio-group','file','checkbox','repeat-group','contenteditable'].includes(d.kind)?d.kind:'unknown',optionCount:n(d.optionCount),required:d.required===true,
+ return {...executionReceipt(d),semantic:[...known.values()].includes(d.semantic)?d.semantic:'unknown',section:['personal','education','work','project','certificate','award','family','language','contact'].includes(d.section)?d.section:'unknown',binding:['anchor','exact-content','source-order','unique-remaining','manual'].includes(d.binding)?d.binding:'none',kind:kinds.has(d.kind)?d.kind:'unknown',optionCount:n(d.optionCount),required:d.required===true,
+  semanticState:['canonical','custom-exact','unrecognized'].includes(d.semanticState)?d.semanticState:'undetermined',controlKindState:['known','redacted','unsupported','undetermined'].includes(d.controlKindState)?d.controlKindState:'undetermined',
   sourceCount:n(d.sourceCount),scopedCount:n(d.scopedCount),confirmedCount:n(d.confirmedCount),candidateCount:n(d.candidateCount),hasExisting:d.hasExisting===true,
   ...(Object.hasOwn(diagnosticCodes,d.evidenceCode)?{evidenceCode:d.evidenceCode}:{}),
-  recognition:{labelSource:['label','nearby','placeholder','autocomplete','date-group','attribute'].includes(d.recognition?.labelSource)?d.recognition.labelSource:'unknown',controlFamily:['native','native-select','ant','react-select','marked-select','moka','phoenix','phoenix-autocomplete','atsx','element','ivu'].includes(d.recognition?.controlFamily)?d.recognition.controlFamily:'unknown',selectedDisplay:d.recognition?.selectedDisplay===true,searchEmpty:d.recognition?.searchEmpty===true,datePart:['year','month','day'].includes(d.recognition?.datePart)?d.recognition.datePart:'none'}};
+  recognition:{requiredEvidence:['native','aria','subform-header','moka-field-title','single-field-marker','none'].includes(d.recognition?.requiredEvidence)?d.recognition.requiredEvidence:'undetermined',labelSource:['label','nearby','placeholder','autocomplete','date-group','attribute'].includes(d.recognition?.labelSource)?d.recognition.labelSource:'unknown',controlFamily:['native','native-select','ant','react-select','marked-select','moka','phoenix','phoenix-autocomplete','atsx','element','ivu'].includes(d.recognition?.controlFamily)?d.recognition.controlFamily:'unknown',selectedDisplay:d.recognition?.selectedDisplay===true,searchEmpty:d.recognition?.searchEmpty===true,datePart:['year','month','day'].includes(d.recognition?.datePart)?d.recognition.datePart:'none'}};
 }
 export function explainDiagnostic(f){
  const [stage,reason,action]=diagnosticCodes[f.code]||diagnosticCodes.unclassified;

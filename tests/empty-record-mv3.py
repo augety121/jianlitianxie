@@ -6,7 +6,12 @@ Not an authenticated recruiting site or browser permission-dialog acceptance tes
 from pathlib import Path
 import contextlib,json,os,shutil,tempfile,time
 from playwright.sync_api import sync_playwright,expect
-from helpers.empty_record_profile import SOURCE,CHOICES,EXPECTED
+from helpers.empty_record_profile import SOURCE,RECORDS,EXPECTED
+EXPECTED=dict(EXPECTED)
+for domain,section,prefix in [("education","教育经历","education"),("project","项目经历","project")]:
+ for i,record in enumerate(r for r in RECORDS if r[0]==section):
+  keys={"学校":"name","专业":"major","入学时间":"start","毕业时间":"end","项目名称":"name","项目描述":"body"}
+  for label,value in record[2]:EXPECTED[prefix+str(i)+keys[label]]=value
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'test-results/empty-record-mv3.json';OUT.parent.mkdir(exist_ok=True)
 MARKUP=(ROOT/'tests/helpers/empty-record-fixture.html').read_text(encoding='utf-8')
@@ -44,7 +49,7 @@ try:
    manager.locator('#importFile').set_input_files({'name':'synthetic-bold-records.md','mimeType':'text/markdown','buffer':SOURCE.encode()})
    expect(manager.locator('.import-row')).to_have_count(24)
    manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text('24')
-   expect(manager.locator('#profileHealth')).to_contain_text('教育 2 段 · 项目 5 段 · 工作/实习 1 段')
+   expect(manager.locator('#profileHealth')).to_contain_text('教育 2 段 · 实习/工作 1 段 · 项目 5 段')
    require(target.locator('#person').input_value()=='','import or scan wrote without consent')
    require(target.evaluate('added')=={'education':0,'work':0,'project':0},'import added cards')
    manager.locator('#returnTarget').click();target.bring_to_front();expect(target.locator('#resume-local-assistant')).to_be_visible()
@@ -80,7 +85,7 @@ try:
    wait_message('无需先点扫描');click('填写简历');wait_message('回读通过 3 项')
    for key in ['person','email','summary']:require(target.locator('#'+key).input_value()==EXPECTED[key],'missing '+key)
    require(target.evaluate('added')=={'education':0,'work':0,'project':0},'cards created before add opt-in')
-   node=button('允许添加经历并继续填写');attrs=dict(zip(node.get('attributes',[])[::2],node.get('attributes',[])[1::2]))
+   node=button('按简历顺序添加经历并填写');attrs=dict(zip(node.get('attributes',[])[::2],node.get('attributes',[])[1::2]))
    require('hidden' not in attrs and 'disabled' not in attrs,'in-page add consent is not available')
    obj=cdp.send('DOM.resolveNode',{'backendNodeId':node['backendNodeId']})['object']['objectId']
    cdp.send('Runtime.callFunctionOn',{'objectId':obj,'functionDeclaration':'function(){this.click()}'});target.wait_for_timeout(100)
@@ -88,22 +93,19 @@ try:
    target.screenshot(path=str(ROOT/'test-results/empty-record-consent-installed.png'))
   step('name-error-label-fills-and-inline-add-consent-does-not-enable-itself',before_permission)
   def add_and_fill():
-   with context.expect_page() as popup:click('允许添加经历并继续填写')
-   review=popup.value;expect(review.locator('.record')).to_have_count(7,timeout=15000)
+   click('按简历顺序添加经历并填写');wait_message('回读通过 21 项')
    require(target.evaluate('added')=={'education':2,'work':1,'project':5},'zero-card expansion count mismatch')
-   require(target.locator('#education0name').input_value()=='','record values written before aggregate choice')
-   for index,value in enumerate(CHOICES):review.locator('select[data-group]').nth(index).select_option(value)
-   review.locator('#continue').click();expect(review.locator('#state')).to_contain_text('回读通过 21 项',timeout=30000)
+   require(not any('record-review.html' in p.url for p in context.pages),'new empty records prompted unnecessarily')
    for key,value in EXPECTED.items():require(target.locator('#'+key).input_value()==value,'independent value mismatch '+key)
    require(target.locator('#phone').input_value()=='KEEP_EXISTING','overwrote phone')
    for key in ['password','relative','languageLevel']:require(target.locator('#'+key).input_value()=='','invented or protected value '+key)
    require(target.locator('#consent').is_checked(),'changed existing consent')
    require(target.evaluate('submissions===0 && navAdds===0'),'submitted or clicked navigation')
-   review.close();target.bring_to_front();wait_message('回读通过 21 项')
+   target.bring_to_front();wait_message('回读通过 21 项')
    target.screenshot(path=str(ROOT/'test-results/empty-record-filled-installed.png'))
-  step('one-inline-permission-creates-eight-cards-and-one-choice-fills-21-record-fields',add_and_fill)
+  step('one-inline-permission-creates-eight-cards-and-automatically-fills-21-record-fields',add_and_fill)
   def repeat_and_logs():
-   click('填写简历');wait_message('没有可自动补全')
+   manager.evaluate('tab=>chrome.runtime.sendMessage({type:"local-resume-task",tabId:tab,reviewed:true})',tab);wait_message('没有可自动补全')
    require(target.evaluate('added')=={'education':2,'work':1,'project':5},'repeat task duplicated records')
    for key,value in EXPECTED.items():require(target.locator('#'+key).input_value()==value,'repeat changed '+key)
    response=manager.evaluate('()=>chrome.runtime.sendMessage({type:"local-logs"})')

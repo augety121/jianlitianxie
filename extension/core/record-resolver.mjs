@@ -4,7 +4,7 @@ const occupied=f=>f.value!==''&&f.value!=null&&f.value!==false&&(!Array.isArray(
 const anchors=new Set(['学校','公司名称','项目名称','证书名称','获奖名称','语言类型']);
 /** Resolve whole records before individual fields. Existing records reserve their source
  * even when a blank card appears first. Never infer relatives or conflicting records. */
-export function resolveRecords(snapshot,facts,existing={}) {
+export function resolveRecords(snapshot,facts,existing={},orderedEmptyDomains=[]) {
  const bindings={...existing},methods={},groups=entityGroups(snapshot,facts,bindings),used=new Set(Object.values(bindings));
  for(const g of groups){
   if(!g.bindable||g.entity||g.scope==='family')continue;
@@ -26,6 +26,15 @@ export function resolveRecords(snapshot,facts,existing={}) {
   const blankPeers=groups.filter(x=>x.bindable&&!bindings[x.id]&&x.scope===g.scope&&!snapshot.fields.some(f=>x.fieldIds.includes(f.id)&&occupied(f)));
   const next=remaining.length===1&&blankPeers.length===1?remaining[0]:null;
   if(next){bindings[g.id]=next.entity;methods[g.id]='unique-remaining';used.add(next.entity);}
+ }
+ // Only newly created, previously empty domains authorized in this task can use
+ // source order. Existing cards, mixed domains and ambiguous candidates stay reviewable.
+ for(const domain of orderedEmptyDomains){
+  const peers=groups.filter(g=>g.scope===domain);
+  if(!peers.length||peers.some(g=>!g.bindable||snapshot.fields.some(f=>g.fieldIds.includes(f.id)&&occupied(f))))continue;
+  const candidates=peers[0].candidates;
+  if(candidates.length!==peers.length||peers.some(g=>g.candidates.length!==candidates.length||candidates.some(c=>!g.candidates.some(x=>x.entity===c.entity))))continue;
+  peers.forEach((g,i)=>{bindings[g.id]=candidates[i].entity;methods[g.id]='source-order';});
  }
  return {bindings,methods};
 }

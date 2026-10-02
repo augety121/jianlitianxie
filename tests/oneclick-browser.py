@@ -142,11 +142,11 @@ with sync_playwright() as pw:
     if(!m.allowAdd)return {data:{outcome:'no-eligible-fields',counts:{},expansion:{enabled:false,decision:'consent-required',inventory:[{domain:'education',present:true,current:0,target:2,code:'needs-add'}]}}};
     return original(m);
   }}''')
-  click(page,'填写简历');page.wait_for_function("[...testRoot.querySelectorAll('button')].some(b=>!b.hidden&&!b.disabled&&b.textContent==='允许添加经历并继续填写')")
+  click(page,'填写简历');page.wait_for_function("[...testRoot.querySelectorAll('button')].some(b=>!b.hidden&&!b.disabled&&b.textContent==='按简历顺序添加经历并填写')")
   require(page.locator('#name').input_value()=='','consent prompt wrote fields')
-  page.evaluate("[...testRoot.querySelectorAll('button')].find(b=>b.textContent==='允许添加经历并继续填写').click()")
+  page.evaluate("[...testRoot.querySelectorAll('button')].find(b=>b.textContent==='按简历顺序添加经历并填写').click()")
   page.wait_for_timeout(50);require(page.evaluate('addDecisions.length===1'),'synthetic click enabled addition')
-  click(page,'允许添加经历并继续填写');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
+  click(page,'按简历顺序添加经历并填写');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
   require(page.evaluate('JSON.stringify(addDecisions)===JSON.stringify([false,true])'),'wrong permission ordering')
   require(page.locator('#name').input_value()=='SYNTHETIC CANDIDATE','allowed continuation did not run')
  case('in-page-add-consent-is-visible-and-requires-one-real-user-choice',basic,add_consent_ui)

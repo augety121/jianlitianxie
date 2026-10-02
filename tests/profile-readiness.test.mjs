@@ -4,6 +4,13 @@ import {profileReadiness,readinessText} from '../extension/core/profile-readines
 import {proposeStoredRepair} from '../extension/core/stored-profile-repair.mjs';
 import {localHarness,importText} from './helpers/local-harness.mjs';
 const fact=(label,value,entity='记录甲',extra={})=>({id:crypto.randomUUID(),label,value,entity,section:'项目经历',confirmed:true,...extra});
+
+test('legacy language facts become one usable record only after reviewed grouping',()=>{
+ const profile={facts:['语言类型','掌握程度','听说','读写'].map((label,i)=>fact(label,i?'良好':'英语','',{section:'语言能力',source:'fixture'}))};
+ assert.equal(profileReadiness(profile).usable.language,0);assert.equal(profileReadiness(profile).repairable.language,1);
+ const repair=proposeStoredRepair(profile);assert.equal(repair.facts.length,4);assert(repair.facts.every(f=>!f.confirmed&&f.entity==='英语'));
+ const saved={facts:[...profile.facts,...repair.facts.map(f=>({...f,confirmed:true}))]};assert.equal(profileReadiness(saved).usable.language,1);assert.equal(proposeStoredRepair(saved).facts.length,0);
+});
 test('old fragments are repairable but never presented as already fillable records',()=>{
  const p={facts:[fact('项目背景','虚构段落甲'),fact('方案设计','虚构段落乙')]};
  const r=profileReadiness(p);assert.equal(r.usable.project,0);assert.equal(r.repairableProjects,1);assert.equal(r.repairableFields,1);

@@ -3,6 +3,7 @@ Checks that the selected private value and confirmation stay visible together.
 No extension installation, ATS page or private user data is used in this fixture.
 """
 from pathlib import Path
+from helpers.bundle_modules import bundle
 import argparse, json, os, re, shutil, time
 from playwright.sync_api import sync_playwright, expect
 
@@ -51,7 +52,7 @@ try:
               : {verified: true}};
           }}};
         }''')
-        page.add_script_tag(type='module', content=(ROOT / 'extension/quick-pick.mjs').read_text())
+        page.add_script_tag(content=bundle(ROOT / 'extension/quick-pick.mjs'))
         expect(page.locator('#choices .choice')).to_have_count(40)
 
         def case(name, fn):

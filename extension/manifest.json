@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "简历填写 · 本地速填",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "上传PDF/Word简历、本地解析与逐条核对、补填空白项、确认后修正已有内容；保留资料与自动脱敏日志。",
   "permissions": [
     "activeTab",

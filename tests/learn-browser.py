@@ -76,7 +76,7 @@ with sync_playwright() as p:
   page.set_viewport_size({'width':width,'height':650});page.set_content(html);page.add_style_tag(path=str(ROOT/'extension/learn-review.css'))
   # CSP is intact in shipped page; this about:blank test loads scripts programmatically.
   page.evaluate("""()=>{window.calls=[];window.chrome={runtime:{sendMessage:async m=>{calls.push(m);if(m.type==='local-learn-read')return {data:{items:[{id:'h',label:'兴趣爱好',section:'基本信息',value:'SYNTHETIC LEARNED',entity:'',state:'new',recordRequired:false,sensitive:false},{id:'s',label:'家庭地址',section:'基本信息',value:'SENSITIVE_TEST',state:'new',recordRequired:false,sensitive:true}],omitted:0,origin:'https://jobs.example.invalid'}};return {data:{saved:1}};}}}}""")
-  page.add_script_tag(content=(ROOT/'extension/learn-review.mjs').read_text());page.wait_for_selector('.item')
+  page.add_script_tag(content=bundle(ROOT/'extension/learn-review.mjs'));page.wait_for_selector('.item')
   require(page.locator('.item input[type=checkbox]:checked').count()==1,'sensitive default checked')
   require(page.locator('#save').bounding_box()['y']<650,'save offscreen');require(page.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'horizontal overflow')
   require(not page.evaluate("calls.some(x=>x.type==='local-learn-save')"),'saved without review')
