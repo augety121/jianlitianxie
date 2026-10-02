@@ -12,6 +12,6 @@ export function profileReadiness(profile, origin='') {
 export function readinessText(r) {
   if(!r)return '';
   const u=r.usable;
-  return `可填写记录：教育 ${u.education} 段 · 实习/工作 ${u.work} 段 · 项目 ${u.project} 段`+
+  return `可填写记录：教育 ${u.education} 段 · 实习/工作 ${u.work} 段 · 项目 ${u.project} 段 · 语言 ${u.language||0} 项 · 获奖 ${u.award||0} 项`+
     (r.repairableProjects?`；另有 ${r.repairableProjects} 段旧项目片段可整理，核对保存后即可使用。`:r.confirmed&&!r.hasUsableRecords?'。已存条目中尚无可匹配的经历；请核对原文件的解析结果。':'。');
 }

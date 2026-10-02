@@ -3,7 +3,7 @@
  /* @component-catalog */
  /* @select-driver */
  const componentObservations=createComponentCatalog({visible:node=>visible(node)});
- if(globalThis.__resumeFillEngine?.version==='0.13.0') return;
+ if(globalThis.__resumeFillEngine?.version==='0.14.0') return;
  globalThis.__resumeFillEngine?.cancel?.();
  const refs=new Map(),radioGroups=new Map(),repeatGroups=new Map(),contexts=new Map(),recordIds=new Map(); let lastSnapshot,captureSnapshot=null;
  let busy=false,generation=0; const attemptedFields=new Set();
@@ -29,7 +29,7 @@
  function anchorRecords(e){
   const p=container(e);if(!p)return [];
   return memo('anchorRecords',p,()=>[...p.querySelectorAll('input,select')]
-   .filter(x=>/学校|院校|项目名称|公司|企业名称|单位名称|证书名称|与本人关系/.test(label(x))&&!empty(val(x)))
+   .filter(x=>/学校|院校|项目名称|公司|企业名称|单位名称|证书名称|奖项名称|获奖名称|语言类型|语种|与本人关系/.test(label(x))&&!empty(val(x)))
    .map(node=>({node,value:JSON.stringify(val(node)),label:label(node)})));
  }
  const formState=f=>f?JSON.stringify(['action','method','target'].map(a=>f.getAttribute(a))):'';
@@ -185,13 +185,13 @@
  };
  function roots(root=document){tick('rootWalks');const out=[root];const nodes=root.querySelectorAll('*');tick('nodesVisited',nodes.length);for(const el of nodes)if(el.shadowRoot)out.push(...roots(el.shadowRoot));return out;}
  const all=selector=>(queryRoots||roots()).flatMap(root=>[...root.querySelectorAll(selector)]);
- const menuSelector='[role=listbox],.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown,.Select-menu-outer,[class$="-menu"]';
+ const menuSelector='[role=listbox],.ant-select-dropdown,.el-select-dropdown,.ivu-select-dropdown,.x-combo-dropdown,.Select-menu-outer,[class$="-menu"],'+componentObservations.menuSelector;
  const optionSelector='[role=option],.ant-select-item-option,.ant-select-dropdown-menu-item,.el-select-dropdown__item,.ivu-select-item,.x-combo-dropdown-item,.Select-option,[class$="-option"]';
  const selectWrappers='.ant-select,.el-select,.phoenix-select,.ivu-select,.Select,.react-select__control,[role=combobox]';
  const selectedSelector='.ant-select-selection-item,.ant-select-selection-selected-value,.el-select__selected-item:not(.is-placeholder),.ivu-select-selected-value,.phoenix-select-selection-selected-value,.Select-value-label,[class*="singleValue"],[class*="single-value"],[class*="selectedValue"]';
  // A custom select is one logical field; its search input is only an editor.
  // Recognize a bounded component from structural markers, not the selected text.
- const componentValueSelector=selectedSelector+',.select-value,.select-selected-value,[data-selected-label],[class*="_value_"],[class*="-value_"],[class*="__value"],[class*="_selected_"],[class*="__single-value"]';
+ const componentValueSelector=selectedSelector+',.select-value,.select-selected-value,[data-selected-label],[class*="_value_"],[class*="-value_"],[class*="__value"],[class*="_selected_"],[class*="__single-value"],'+componentObservations.displaySelector;
  const placeholderSelector='.Select-placeholder,[class*="placeholder" i]';
  const fieldInputs=p=>[...p.querySelectorAll('input,select,textarea')].filter(x=>!['hidden','button','submit','checkbox','radio'].includes(x.type)&&!x.closest(menuSelector));
  function selectedNodes(wrap){
@@ -205,6 +205,8 @@
   const approved=approvedComponentRoots.get(e),observed=approved?componentObservations.identify(e):null;
   if(approved&&observed?.root===approved.root&&observed.contract.id===approved.family&&approved.root.isConnected&&approved.root.contains(e))return approved.root;
   if(e.tagName==='SELECT'||!e.matches('input,[role=combobox]')||e.closest(menuSelector))return null;
+  const component=componentObservations.identify(e);
+  if(component&&componentObservations.canonical(e)===e)return component.root;
   const known=e.closest(selectWrappers.replace(',[role=combobox]',''));if(known)return known;
   // Limit to a single editor branch; stop before the neighboring field/record.
   for(let p=e.parentElement,n=0;p&&n<6;n++,p=p.parentElement){
@@ -222,13 +224,13 @@
  });}
  function controlTarget(e){return selectWrap(e)||e;}
  function controlVisible(e){return visible(controlTarget(e));}
- function controlDisabled(e){const w=selectWrap(e);return !!(e.disabled||e.matches(':disabled')||e.getAttribute('aria-disabled')==='true'||w?.matches('[aria-disabled=true],.is-disabled,.ant-select-disabled,.el-select--disabled'));}
+ function controlDisabled(e){const w=selectWrap(e);return !!(e.disabled||e.matches(':disabled')||e.getAttribute('aria-disabled')==='true'||componentObservations.disabled(e)||w?.matches('[aria-disabled=true],.is-disabled,.ant-select-disabled,.el-select--disabled'));}
  function selectedValue(e){
   const wrap=selectWrap(e),nodes=selectedNodes(wrap),node=nodes.length===1?nodes[0]:null;
   if(nodes.length>1)return nodes.map(n=>n.getAttribute('data-selected-label')||text(n));
   if(node)return node.getAttribute('data-selected-label')||text(node);
   const adapter=componentObservations.identify(e);
-  if(adapter?.root===wrap){const reading=componentObservations.read(e);if(reading.displayed||adapter.contract.readonlyValue&&e.readOnly)return reading.value;}
+  if(adapter?.root===wrap){const reading=componentObservations.read(e);if(reading.known)return reading.value;}
   // A displayed placeholder or separate input-only editor means no committed choice.
   if(wrap?.querySelector(placeholderSelector)||wrap&&wrap!==e&&(wrap.matches('.ant-select,.el-select,.phoenix-select,.ivu-select,.Select')||/(?:select|combobox)/i.test(wrap.className||'')))return '';
   return e.value||'';
@@ -302,16 +304,17 @@
  function dateComponentRaw(e){
   // A range is one labelled row but two independent dates. Ignore the "to
   // present" checkbox and require exactly four/six real select components.
-  for(let p=e.parentElement,n=0;p&&n<5;n++,p=p.parentElement){
+  for(let p=e.parentElement,n=0;p&&n<9;n++,p=p.parentElement){
    const inputs=[...p.querySelectorAll('input,select,textarea')].filter(x=>!['hidden','checkbox','radio','button','submit'].includes(x.type));
    if(inputs.length>6)break;
-   if(![4,6].includes(inputs.length)||!inputs.includes(e))continue;
+   const present=[...p.querySelectorAll('input[type=checkbox]')].some(c=>c.checked&&/至今/.test(c.parentElement?.textContent||''));
+   if(!([4,6].includes(inputs.length)||present&&inputs.length===2)||!inputs.includes(e))continue;
    const names=[...p.querySelectorAll('*')].filter(x=>!x.children.length&&!x.matches('input,select,option')).map(x=>text(x).replace(/[*：:\s]/g,''));
    if(!names.some(t=>/^(起止时间|起止日期|项目起止时间|工作起止时间|就读时间|在校时间|就读日期|实习时间|工作时间|项目时间)$/.test(t)))continue;
    if(!inputs.every(x=>x.tagName==='SELECT'||selectWrap(x)))continue;
    // Separate explicit start/end labels take precedence over a shared range.
    if(names.some(t=>/^(开始时间|结束时间|入学时间|毕业时间)$/.test(t)))continue;
-   const half=inputs.length/2,index=inputs.indexOf(e),dateLabel=index<half?'开始时间':'结束时间',datePart=['year','month','day'][index%half];
+   const half=present&&inputs.length===2?2:inputs.length/2,index=inputs.indexOf(e),dateLabel=index<half?'开始时间':'结束时间',datePart=['year','month','day'][index%half];
    return {label:dateLabel+'（'+{year:'年',month:'月',day:'日'}[datePart]+'）',dateLabel,datePart};
   }
   const sw=selectWrap(e);
@@ -321,7 +324,7 @@
   if(!resolvedPart&&sw){
    // Filled selects often remove the year/month placeholder. Infer components
    // only inside an explicitly labelled date row with exactly two/three controls.
-   for(let p=sw.parentElement,n=0;p&&n<4;n++,p=p.parentElement){
+   for(let p=sw.parentElement,n=0;p&&n<8;n++,p=p.parentElement){
     const inputs=[...p.querySelectorAll('input,select')].filter(x=>x.type!=='hidden');
     if(inputs.length>3)break;
     const leaves=[...p.querySelectorAll('*')].filter(x=>!x.children.length&&!x.matches('input,select,option'));
@@ -331,7 +334,7 @@
    }
   }
   if(!resolvedPart)return null;
-  for(let p=e.parentElement,n=0;p&&n<5;n++,p=p.parentElement){
+  for(let p=e.parentElement,n=0;p&&n<9;n++,p=p.parentElement){
    if(p.querySelectorAll(controlsSelector).length>3)break;
    const nodes=[...p.children].flatMap(c=>[c,...c.children]);
    const names=[...new Set(nodes.filter(c=>!c.querySelector(controlsSelector)&&!c.matches(controlsSelector)).map(c=>text(c).replace(/[*：:\s]/g,'')).filter(t=>/^(开始时间|开始日期|起始时间|结束时间|结束日期|入学时间|入学日期|毕业时间|毕业日期|获奖时间|获奖日期|获得日期)$/.test(t)))];
@@ -384,7 +387,7 @@
  }
  function layoutRegion(e){
   return memo('layoutRegions',e,()=>{
-   for(let p=e.parentElement,depth=0;p&&p!==document.body&&p!==document.documentElement&&depth<9;p=p.parentElement,depth++){
+   for(let p=e.parentElement,depth=0;p&&p!==document.body&&p!==document.documentElement&&depth<13;p=p.parentElement,depth++){
     const headings=memo('layoutHeadings',p,()=>{
      const nodes=layoutCache?layoutCache.read(p):layoutCandidates(p);
      // Keep innermost title: a title wrapper and its h2 describe the same heading.
@@ -420,18 +423,18 @@
  }
  function inferredRecord(e){return memo('inferredRecords',e,()=>{
   let candidate=null;const boundary=layoutRegion(e)?.node;
-  for(let p=e.parentElement,level=0;p&&level<7&&p.tagName!=='FORM';p=p.parentElement,level++){
+  for(let p=e.parentElement,level=0;p&&level<12&&p.tagName!=='FORM';p=p.parentElement,level++){
    const fields=[...p.querySelectorAll(controlsSelector)].filter(n=>!['hidden','button','submit','file'].includes(n.type));
    if(fields.length<2)continue;if(fields.length>24)break;
    const names=fields.map(label).filter(n=>n&&n!=='未标注字段'&&!/^(年|月|日|请选择|开始|结束)$/.test(n));
    if(new Set(names).size!==names.length)break;
-   if(names.some(n=>/^(项目名称|学校|学校名称|院校名称|公司名称|企业名称|单位名称|奖项名称|获奖名称|证书名称)$/.test(n)))candidate=p;
+   if(names.some(n=>/^(项目名称|学校|学校名称|院校名称|公司名称|企业名称|单位名称|奖项名称|获奖名称|证书名称|语言类型|语种|语言名称)$/.test(n)))candidate=p;
    if(p===boundary)break;
   }
   return candidate;
  });}
- function sectionRaw(e){const inferred=e.closest(recordSelector)?null:layoutRegion(e);if(inferred&&(inferred.node===container(e)||inferred.node.contains(container(e))))return inferred.name;if(e.closest('.fx-subform-row'))return text(e.closest('.fx-field')?.querySelector('.field-name'));const parent=container(e);if(parent?.tagName==='FORM'&&parent.querySelectorAll('legend,h2,h3,h4,caption').length>1)return '';const outer=parent?.parentElement?.closest('section,[data-section],fieldset');const own=parent?.getAttribute('data-section')||text(parent?.querySelector('legend,h2,h3,h4,caption'))||text(e.closest('table')?.querySelector('caption'));const inherited=outer?.getAttribute('data-section')||text(outer?.querySelector(':scope > legend,:scope > h2,:scope > h3,:scope > h4'));const typed=parent?.matches('.education-item')?'教育经历':parent?.matches('.project-item')?'项目经历':parent?.matches('.experience-item')?'工作经历':'';const group=parent?.getAttribute('data-section')||inherited||typed||own;return [group,own&&own!==group?own:'',parent?.getAttribute('data-entity')].filter(Boolean).join(' ');}
- function anchorsRaw(e){const p=container(e);if(!p)return [];return [...p.querySelectorAll('input,select')].filter(x=>/学校|院校|项目名称|公司|企业名称|单位名称|证书名称|与本人关系/.test(label(x))).map(x=>x.tagName==='SELECT'?text(x.selectedOptions[0]):val(x)).filter(Boolean).slice(0,12);}
+ function sectionRaw(e){const inferred=e.closest(recordSelector)?null:layoutRegion(e);if(inferred&&(inferred.node===container(e)||inferred.node.contains(container(e))))return inferred.name;if(e.closest('.fx-subform-row'))return text(e.closest('.fx-field')?.querySelector('.field-name'));const parent=container(e);if(parent?.tagName==='FORM'&&parent.querySelectorAll('legend,h2,h3,h4,caption').length>1)return '';const outer=parent?.parentElement?.closest('section,[data-section],fieldset');const own=parent?.getAttribute('data-section')||text(parent?.querySelector('legend,h2,h3,h4,caption'))||text(e.closest('table')?.querySelector('caption'));const inherited=outer?.getAttribute('data-section')||text(outer?.querySelector(':scope > legend,:scope > h2,:scope > h3,:scope > h4'));const typed=parent?.matches('.education-item')?'教育经历':parent?.matches('.project-item')?'项目经历':parent?.matches('.experience-item')?'工作经历':'';const group=parent?.getAttribute('data-section')||inherited||typed||own||layoutRegion(e)?.name;return [group,own&&own!==group?own:'',parent?.getAttribute('data-entity')].filter(Boolean).join(' ');}
+ function anchorsRaw(e){const p=container(e);if(!p)return [];return [...p.querySelectorAll('input,select')].filter(x=>/学校|院校|项目名称|公司|企业名称|单位名称|证书名称|奖项名称|获奖名称|语言类型|语种|与本人关系/.test(label(x))).map(x=>x.tagName==='SELECT'?text(x.selectedOptions[0]):val(x)).filter(Boolean).slice(0,12);}
  function kind(e){
   if(e.matches('.x-radio-group,[role=radiogroup]'))return 'custom-radio';if(e.matches('.x-combo,.x-combocheck'))return 'custom-select';if(e.type==='file')return 'file';if(e.type==='radio')return 'radio-group';if(e.type==='month')return 'month';if(e.type==='date')return 'date';
   if(dateComponent(e))return e.tagName==='SELECT'?e.type:selectWrap(e)?'custom-select':e.type||'text';
@@ -512,7 +515,7 @@
    if(wrap&&component?.root===wrap)approvedComponentRoots.set(e,{root:wrap,family:component.contract.id});
    f.recognition={
    labelSource:labelSources.get(e)||'unknown',
-   controlFamily:e.tagName==='SELECT'?'native-select':wrap?.matches('.ant-select')?'ant':wrap?.matches('.Select')?'react-select':wrap?'marked-select':'native',
+   controlFamily:e.tagName==='SELECT'?'native-select':componentObservations.identify(e)?.contract.id|| (wrap?'marked-select':'native'),
    selectedDisplay:!!selectedNode(wrap),searchEmpty:wrap?e.value==='':false,
    datePart:f.datePart||'none'
   };}
@@ -525,7 +528,7 @@
   }
   const coverage={fields:fields.length,excluded,unlabeled:fields.filter(f=>f.label==='未标注字段').length,attachments:fields.filter(f=>f.type==='file').length,customControls:fields.filter(f=>/custom|picker/.test(f.type)).length,frames:document.querySelectorAll('iframe').length,collapsed:document.querySelectorAll('[aria-expanded=false],details:not([open])').length};
   for(const f of fields){const record=recordNode(refs.get(f.id));if(!record)continue;if(!recordIds.has(record))recordIds.set(record,uuid());f.groupId=recordIds.get(record);f.groupLabel=f.section;}
-  lastSnapshot={engineVersion:'0.13.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
+  lastSnapshot={engineVersion:'0.14.0',id:uuid(),url:location.href,fields,coverage,limitations:[...(document.querySelector('iframe')?['含iframe：当前仅扫描主文档，嵌入表单请单独打开后扫描']:[]),'仅扫描当前已展开且可编辑的字段；折叠/下一页需展开后重新扫描']};captureSnapshot=lastSnapshot;return lastSnapshot;
  }
  function nativeAccepts(e,value){
   if(!['INPUT','TEXTAREA'].includes(e.tagName)||e.type==='radio')return true;
@@ -683,12 +686,12 @@
  function repeatMarkers(root,domain){
   // Count logical identity controls, not guessed array rows. Used only inside this
   // extension's isolated world; no profile values or DOM nodes cross messages.
-  const names={education:/^(学校|学校名称|毕业学校|毕业院校|院校名称)$/,work:/^(公司名称|企业名称|单位名称|实习单位)$/,project:/^(项目名称|项目题目)$/};
+  const names={education:/^(学校|学校名称|毕业学校|毕业院校|院校名称)$/,work:/^(公司名称|企业名称|单位名称|实习单位)$/,project:/^(项目名称|项目题目)$/,language:/^(语言类型|语言名称|语种)$/,award:/^(奖项名称|获奖名称)$/};
   if(!names[domain]||root?.ownerDocument!==document||!root.isConnected)return [];
   const nodes=[...root.querySelectorAll(controlsSelector)].filter(e=>!e.closest(menuSelector)&&!['hidden','file','password','button','submit','checkbox','radio'].includes(e.type)&&controlVisible(e)&&names[domain].test(labelRaw(e)));
   return [...new Set(nodes.map(controlTarget))];
  }
  function cancel(){generation++;lastSnapshot=null;captureSnapshot=null;clearHighlight();for(const abort of [...abortWaits])abort();return {cancelled:true};}
  async function localScan(){globalThis.__resumeWidget?.destroy?.();return scan();}
- globalThis.__resumeFillEngine={version:'0.13.0',scan,localScan,apply,upload,locate,capture,cancel,repeatMarkers};
+ globalThis.__resumeFillEngine={version:'0.14.0',scan,localScan,apply,upload,locate,capture,cancel,repeatMarkers};
 })();

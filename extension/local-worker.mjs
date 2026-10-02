@@ -1,5 +1,6 @@
 import {observeReviewWindow,bindReviewDocument} from './core/review-window-lifecycle.mjs';
 import {profileReadiness} from './core/profile-readiness.mjs';
+import {taskOutcome} from './core/task-outcome.mjs';
 import {cleanAddition} from './core/addition-status.mjs';
 import {ProfileLibrary,LEGACY_PROFILE_KEY} from './core/profile-library.mjs';
 import {SiteAccess} from './core/site-access.mjs';
@@ -59,7 +60,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     return learning={owner:t.owner,tabId:t.tabId,url:tab.url,documentId:t.documentId,snapshotId:t.snapshotId,revision:t.revision,expires:t.expires};
   }
   const holder={get unlocked(){return accepted;},read(){if(!accepted)throw Error('请先导入并确认本地保存');return structuredClone(profile);}};
-  const broker=new FrameBroker(chrome),run=new WorkspaceRun(holder,broker),logs=new LocalReceipts(storage);
+  const broker=new FrameBroker(chrome),run=new WorkspaceRun(holder,broker),logs=new LocalReceipts(storage,Date.now,{extensionId:chrome.runtime.id,buildId:'moka-20261002.1'});
   const library=new ProfileLibrary(storage),sites=new SiteAccess(chrome);
   async function refresh(){
     profile=await library.load();accepted=library.accepted;
@@ -110,7 +111,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const combined={...original,...e,...(stage==='fill'?{reasonCode:e.reasonCode}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.13.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),
+    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.14.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
@@ -273,7 +274,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       }
       if(type==='local-oneclick'){
         stage='task';taskId=crypto.randomUUID();
-        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.13.0'});
+        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.14.0'});
         const tab=await attached(m.tabId);alive();activeTarget={tabId:m.tabId,documentIds:[m.documentId]};
         for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
         if(recordReviews.size)throw Error('请先完成或关闭已打开的经历核对窗口');
@@ -304,33 +305,51 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         await progress('scanning');
         const ids=profile.facts.filter(f=>f.confirmed&&!f.conflict&&!secret(f.label)).map(f=>f.id);
         if(!ids.length)throw Error('请先导入并核对当前简历资料');
-        const plan=await run.scan(own,{tabId:m.tabId,factIds:ids,reviewExisting:true,autoBindEmpty:true});alive();
+        let plan=await run.scan(own,{tabId:m.tabId,factIds:ids,reviewExisting:true,autoBindEmpty:true});alive();
         const frame=run.job.frames.find(f=>f.frameId===0);
         if(frame.documentId!==m.documentId||run.job.url!==m.url)throw Error('扫描时申请文档已变化，请重新操作');
         sourceVersion=frame.snapshot.engineVersion;sourceEntries=plan.entries;
         await retainLearning({owner:own,tabId:m.tabId,url:run.job.url,documentId:frame.documentId,snapshotId:frame.snapshot.id,revision:profile.revision,expires:Date.now()+1800000},generation);alive();
-        record('scan',start,plan,null,plan.entries,sourceVersion);
-        const pending=plan.groups.filter(g=>g.frameId===0&&g.bindable&&!g.entity&&g.scope!=='family'&&g.candidates.length&&plan.entries.some(e=>g.fieldIds.includes(e.id)&&e.status==='missing'&&e.reasonCode==='record-unbound'));
+        record('scan',start,{...plan,taskId},null,plan.entries,sourceVersion);
+        const awaiting=p=>p.groups.filter(g=>g.frameId===0&&g.bindable&&!g.entity&&g.scope!=='family'&&g.candidates.length&&p.entries.some(e=>g.fieldIds.includes(e.id)&&e.status==='missing'&&e.reasonCode==='record-unbound'));
+        let pending=awaiting(plan),priorCounts={};
+        const independent=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group').map(e=>e.id);
+        if(pending.length&&independent.length){
+          await progress('filling');
+          const first=await run.apply(own,{planId:plan.id,ids:independent,reviewed:true});alive();
+          for(const r of first.results)priorCounts[r.status]=(priorCounts[r.status]||0)+1;
+          record('fill',start,{...first,taskId},null,plan.entries,sourceVersion);
+          if(first.results.some(r=>r.status!=='verified'&&r.status!=='preserve')){
+            const counts={};for(const r of first.results)counts[r.status]=(counts[r.status]||0)+1;
+            data={taskId,outcome:'partial',counts,summary:pageSummary(plan),readiness,expansion,submitted:false};return data;
+          }
+          // Applying consumes the plan. Re-scan before constructing a review ticket.
+          plan=await run.scan(own,{tabId:m.tabId,factIds:ids,reviewExisting:true,autoBindEmpty:true});alive();
+          if(run.job.frames[0]?.documentId!==m.documentId||run.job.url!==m.url)throw Error('填写后申请文档已变化');
+          sourceEntries=plan.entries;pending=awaiting(plan);
+          await retainLearning({owner:own,tabId:m.tabId,url:run.job.url,documentId:m.documentId,snapshotId:run.job.frames[0].snapshot.id,revision:profile.revision,expires:Date.now()+1800000},generation);alive();
+          record('scan',start,{...plan,taskId},null,plan.entries,sourceVersion);
+        }
         if(pending.length){
           for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
           if(recordReviews.size)throw Error('请先完成或关闭已有的经历核对窗口');
           const id=crypto.randomUUID(),ticket={id,owner:own,taskId,tabId:m.tabId,documentId:m.documentId,url:m.url,planId:plan.id,revision:profile.revision,
-            groups:pending,expansion,expires:plan.expiresAt,pickerTab:null,pickerDocument:null,claimed:false,initialComplete:false,
+            groups:pending,expansion,priorCounts,expires:plan.expiresAt,pickerTab:null,pickerDocument:null,claimed:false,initialComplete:false,
             reviewUrl:chrome.runtime.getURL('record-review.html')+'?ticket='+id};
           recordReviews.set(id,ticket);
           try{
             const win=await chrome.windows.create({url:ticket.reviewUrl,type:'popup',width:650,height:700,focused:true});alive();
             if(!Number.isSafeInteger(win.tabs?.[0]?.id))throw Error('经历核对窗口未打开');ticket.pickerTab=win.tabs[0].id;
           }catch(e){recordReviews.delete(id);throw e;}
-          data={taskId,outcome:'needs-confirmation',groups:pending.length,readiness,expansion,counts:{},submitted:false};return data;
+          data={taskId,outcome:'needs-confirmation',groups:pending.length,readiness,expansion,counts:priorCounts,submitted:false};return data;
         }
         const idsToFill=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group').map(e=>e.id);
         if(!idsToFill.length){data={taskId,outcome:'no-eligible-fields',summary:pageSummary(plan),readiness,expansion,counts:{},submitted:false};return data;}
         await progress('filling');
         const report=await run.apply(own,{planId:plan.id,ids:idsToFill,reviewed:true});alive();
-        record('fill',start,report,null,sourceEntries,sourceVersion);
+        record('fill',start,{...report,taskId},null,sourceEntries,sourceVersion);
         const counts={};for(const f of report.results)counts[f.status]=(counts[f.status]||0)+1;
-        data={taskId,outcome:report.results.every(f=>f.status==='verified'||f.status==='preserve')?'completed':'partial',counts,
+        data={taskId,outcome:taskOutcome(plan,report.results,expansion),counts,
           summary:pageSummary(plan),readiness,expansion,performance:{...plan.performance,apply:report.performance},submitted:false};return data;
       }
       if(type==='local-records-read'||type==='local-records-fill'){
@@ -341,12 +360,14 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         if(type==='local-records-read')return {groups:structuredClone(t.groups),origin:new URL(t.url).origin};
         if(m.reviewed!==true||!Array.isArray(m.bindings)||m.bindings.some(b=>!t.groups.some(g=>g.id===b.groupId)))throw Error('请选择本次待确认的经历');
         const plan=m.bindings.length?run.bindMany(own,{planId:t.planId,bindings:m.bindings,reviewed:true}):run.preview();
-        t.planId=plan.id;t.claimed=true;
+        t.planId=plan.id;t.claimed=true;taskId=t.taskId;
+        record('bind',start,{...plan,taskId},null,plan.entries,j.frames[0]?.snapshot.engineVersion);
         stage='fill';sourceEntries=plan.entries;sourceVersion=j.frames[0]?.snapshot.engineVersion;
         const ids=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group').map(e=>e.id);
         if(ids.length)data=await run.apply(own,{planId:plan.id,ids,reviewed:true});else data={results:[],submitted:false};
-        const counts={};for(const f of data.results)counts[f.status]=(counts[f.status]||0)+1;
-        const report={taskId:t.taskId,outcome:!ids.length?'no-eligible-fields':data.results.every(f=>f.status==='verified'||f.status==='preserve')?'completed':'partial',
+        data={...data,taskId};
+        const counts={...t.priorCounts};for(const f of data.results)counts[f.status]=(counts[f.status]||0)+1;
+        const report={taskId:t.taskId,outcome:taskOutcome(plan,data.results,t.expansion),
           counts,summary:pageSummary(plan),readiness:profileReadiness(profile,new URL(t.url).origin),expansion:t.expansion,submitted:false};
         recordReviews.delete(t.id);
         logs.add({stage:'task',taskId:t.taskId,outcome:report.outcome,ok:true,total:ids.length,ms:Math.round(performance.now()-start)});

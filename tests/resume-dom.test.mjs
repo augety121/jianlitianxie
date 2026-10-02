@@ -17,6 +17,32 @@ function harness(html){
  w.eval(source);return {w,engine:w.__resumeFillEngine,close:()=>w.close()};
 }
 const field=(label,control='<input>')=>`<div class="field_abc"><div class="label_abc">${label}</div><div class="input_abc">${control}</div></div>`;
+const moka=value=>`<div class="item-test"><div class="sd-Tooltip-container-test"><div class="sd-Dropdown-container-test"><label class="sd-Input-container-test sd-Select-container-test"><span class="sd-Input-display-value-test">${value}</span><input><span class="sd-Input-addon-test">⌄</span></label></div></div></div>`;
+test('Moka uncommitted search is blank while a disabled menu option does not disable the field',async()=>{
+ const h=harness(`<form>${field('专业',moka(''))}</form>`);
+ try{const input=h.w.document.querySelector('input');input.value='仅输入搜索';const menu=h.w.document.createElement('div');menu.className='sd-Dropdown-dropdown-test';menu.innerHTML='<div class="sd-Menu-content-item-test" aria-disabled="true">无结果</div>';input.closest('[class*="sd-Dropdown-container"]').append(menu);
+ const s=await h.engine.scan();assert.equal(s.fields.length,1);assert.equal(s.fields[0].value,'');assert.equal(s.fields[0].type,'custom-select');}finally{h.close();}
+});
+test('Moka label shells, nested ranges and ten award cards preserve canonical values and record boundaries',async()=>{
+ const card=(i)=>`<div class="card-test">${field('获奖时间','<div><span>'+moka('2024')+moka('5')+'</span></div>')}${field('奖项名称',`<label class="sd-Input-container-test"><input value="虚构奖项${i}"></label>`)}</div>`;
+ const h=harness(`<form><div><div><span>获奖经历</span><button type="button">添加</button></div></div>${Array.from({length:10},(_,i)=>card(i)).join('')}</form><aside>获奖经历</aside>`);
+ try{const s=await h.engine.scan();assert.equal(s.fields.length,30);assert.equal(new Set(s.fields.map(f=>f.groupId)).size,10);
+ assert.deepEqual(Array.from(s.fields.slice(0,3),f=>[f.label,f.value]),[['获奖时间（年）','2024'],['获奖时间（月）','5'],['奖项名称','虚构奖项0']]);
+ assert(s.fields.filter(f=>f.type==='custom-select').every(f=>f.recognition.controlFamily==='moka'));
+ assert(s.fields.every(f=>f.section==='获奖经历'));
+ assert.equal(h.engine.repeatMarkers(h.w.document.querySelector('form'),'award').length,10);
+ }finally{h.close();}
+});
+test('Moka present range identifies start only and never toggles present checkbox',async()=>{
+ const range=field('起止时间','<div><span>'+moka('2026')+moka('5')+'</span><label><input type="checkbox" checked>至今</label></div>');
+ const h=harness(`<form><div><h3>项目经验</h3></div><div>${range}${field('项目名称','<input value="虚构项目">')}</div></form>`);
+ try{const s=await h.engine.scan();assert.deepEqual(Array.from(s.fields.slice(0,2),f=>[f.dateLabel,f.datePart,f.value]),[['开始时间','year','2026'],['开始时间','month','5']]);assert(h.w.document.querySelector('[type=checkbox]').checked);}finally{h.close();}
+});
+test('language records use their own identity and preserve levels independently',async()=>{
+ const card=(v)=>`<div>${field('语言类型',`<input value="${v}">`)}${field('掌握程度',moka('良好'))}${field('听说',moka('熟练'))}${field('读写',moka('一般'))}</div>`;
+ const h=harness(`<form><div><h3>语言能力</h3></div>${card('英语')}${card('日语')}</form>`);
+ try{const s=await h.engine.scan();assert.equal(new Set(s.fields.map(f=>f.groupId)).size,2);assert(s.fields.every(f=>f.section==='语言能力'));assert.equal(h.engine.repeatMarkers(h.w.document.querySelector('form'),'language').length,2);}finally{h.close();}
+});
 test('semantic section with repeated unmarked cards resolves and fills each actual record',async()=>{
  const card=()=>`<div class="card_xyz">${field('项目名称')}${field('项目描述','<textarea></textarea>')}</div>`;
  const h=harness(`<form><section><h3>项目经历</h3>${card()}${card()}</section></form>`);

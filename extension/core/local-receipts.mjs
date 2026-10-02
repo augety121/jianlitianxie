@@ -8,10 +8,14 @@ const statuses=new Set(['ready','review','missing','manual','preserve','verified
 const codes=new Set(Object.keys(diagnosticCodes));
 const reasons=new Set(['none','check-input','target-changed','permission','busy','interrupted','review-required']);
 const int=(v,max)=>Number.isSafeInteger(v)&&v>=0?Math.min(v,max):0;
+function runtimeIdentity(r={}){
+  return {extensionId:/^[a-p]{32}$/.test(r.extensionId||'')?r.extensionId:'unknown',
+    buildId:r.buildId==='moka-20261002.1'?r.buildId:'unknown'};
+}
 function safe(r) {
   if(!r || !stages.has(r.stage))return null;
   return {...(typeof r.taskId==='string'&&/^[a-f0-9-]{36}$/.test(r.taskId)?{taskId:r.taskId}:{}),...( ['running','completed','partial','needs-confirmation','no-eligible-fields','cancelled','failed'].includes(r.outcome)?{outcome:r.outcome}:{}),seq:int(r.seq,1e9),at:int(r.at,9e15),stage:r.stage,ok:r.ok===true,
-    version:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.version||'')?r.version:'unknown',
+    version:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.version||'')?r.version:'unknown',runtime:runtimeIdentity(r.runtime),
     engineVersion:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.engineVersion||'')?r.engineVersion:'unknown',
     ...(cleanProfileDiagnostic(r.profile)?{profile:cleanProfileDiagnostic(r.profile)}:{}),
     ...(cleanAddition(r.addition)?{addition:cleanAddition(r.addition)}:{}),
@@ -29,12 +33,12 @@ export function receiptReason(error) {
   return 'check-input';
 }
 export class LocalReceipts {
-  constructor(storage,clock=Date.now){this.storage=storage;this.clock=clock;this.tail=Promise.resolve();this.epoch=0;this.dropped=0;this.pending=0;}
+  constructor(storage,clock=Date.now,runtime={}){this.storage=storage;this.clock=clock;this.runtime=runtimeIdentity(runtime);this.tail=Promise.resolve();this.epoch=0;this.dropped=0;this.pending=0;}
   queue(fn){const p=this.tail.then(fn);this.tail=p.catch(()=>{this.dropped++;});return p;}
   async rows(){const raw=(await this.storage.get(KEY))[KEY];return (Array.isArray(raw)?raw:[]).slice(-80).map(safe).filter(r=>r&&r.at>this.clock()-86400000&&r.at<=this.clock());}
   add(r){
     if(this.pending>=16){this.dropped++;return;}
-    const epoch=this.epoch,projected=safe({...r,at:this.clock()});if(!projected)return;
+    const epoch=this.epoch,projected=safe({...r,runtime:this.runtime,at:this.clock()});if(!projected)return;
     this.pending++;
     this.queue(async()=>{
       if(epoch!==this.epoch||(await this.storage.get(FLAG))[FLAG]===false)return;
@@ -53,5 +57,5 @@ export class LocalReceipts {
 }
 export function exportReceipts(data,{includeExplanations=true}={}){
   const records=(data.records||[]).map(safe).filter(Boolean),base=records[0]?.at||0;
-  return {schemaVersion:2,containsPersonalValues:false,dropped:int(data.dropped,1e9),legend:diagnosticCodes,limitations:['仅记录固定规范字段名，不含原始标签、个人值、网址或简历正文','verified仅表示页面回读，不表示保存或提交','旧版记录缺少诊断上下文，升级后重新扫描'],records:records.map(({at,...r})=>({...r,offsetMs:at-base,...(includeExplanations?{diagnosis:r.fields.map(explainDiagnostic)}:{})}))};
+  return {schemaVersion:3,containsPersonalValues:false,dropped:int(data.dropped,1e9),legend:diagnosticCodes,limitations:['仅记录固定规范字段名，不含原始标签、个人值、网址或简历正文','verified仅表示页面回读，不表示保存或提交','旧版记录缺少诊断上下文，升级后重新扫描'],records:records.map(({at,...r})=>({...r,offsetMs:at-base,...(includeExplanations?{diagnosis:r.fields.map(explainDiagnostic)}:{})}))};
 }

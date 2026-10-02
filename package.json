@@ -1,6 +1,6 @@
 {
   "name": "jianlitianxie",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -34,7 +34,9 @@
     "build:engine": "node scripts/build-engine.mjs",
     "test:components": "python tests/component-adapters-browser.py",
     "test:readiness": "python tests/readiness-browser.py",
-    "test:readiness-mv3": "python tests/readiness-mv3.py"
+    "test:readiness-mv3": "python tests/readiness-mv3.py",
+    "test:moka": "python tests/moka-browser.py",
+    "test:moka-mv3": "python tests/moka-mv3.py"
   },
   "devDependencies": {
     "jsdom": "^26.1.0"

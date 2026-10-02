@@ -46,7 +46,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick && npm run test:recognition && npm run test:learn && python tests/recovery-browser.py && npm run test:empty-records && npm run test:readiness
+        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick && npm run test:recognition && npm run test:learn && python tests/recovery-browser.py && npm run test:empty-records && npm run test:readiness && npm run test:components && npm run test:moka
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -101,12 +101,14 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: Installed extension and local-only MCP fixture
-        run: npm run test:mv3 && npm run test:local-mv3 && npm run test:page-mv3 && npm run test:recognition-mv3 && npm run test:recovery-mv3
+        run: npm run test:mv3 && npm run test:local-mv3 && npm run test:page-mv3 && npm run test:recognition-mv3 && npm run test:recovery-mv3 && npm run test:moka-mv3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: installed-mv3-verification
           path: |
+            test-results/moka-mv3.json
+            test-results/moka-installed.png
             test-results/recovery-mv3.json
             test-results/recovery-installed.png
             test-results/recovery-preview-installed.png

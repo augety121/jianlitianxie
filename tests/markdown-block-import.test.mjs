@@ -12,7 +12,7 @@ test('standalone bold labels keep identity, full paragraphs and record sections'
  assert.equal(p.facts[5].label,'项目描述');assert(p.facts[5].value.includes('\n\n第二段也保留。'));
  assert(!p.facts.some(f=>f.label==='项目背景'||f.label==='更新日期'));
  assert(p.facts.every(f=>f.confirmed===false));
- assert.deepEqual(recordTargets(p.facts.map(f=>({...f,confirmed:true})),'https://example.invalid'),{education:1,work:0,project:1});
+ assert.deepEqual(recordTargets(p.facts.map(f=>({...f,confirmed:true})),'https://example.invalid'),{education:1,work:0,project:1,language:0,award:0});
 });
 test('hundreds of bold-labelled facts retain every explicit pair without colon fragmentation',()=>{
  const expected=Array.from({length:376},(_,i)=>['测试字段'+i,'正文'+i+'\n备注：仍然属于正文。']);
@@ -34,7 +34,7 @@ test('addition metadata distinguishes missing source, missing consent and unsupp
 });
 test('unclassified project fragments cannot generate unfillable empty cards',()=>{
  const facts=[{id:'a',label:'项目背景',value:'some text',section:'项目经历',entity:'甲',confirmed:true},{id:'b',label:'学校',value:'A',section:'教育经历',entity:'E',confirmed:false}];
- assert.deepEqual(recordTargets(facts,'https://example.invalid'),{education:0,work:0,project:0});
+ assert.deepEqual(recordTargets(facts,'https://example.invalid'),{education:0,work:0,project:0,language:0,award:0});
 });
 test('explicit add consent is independent from automatic host access and survives reload',async()=>{
  const {SiteAccess}=await import('../extension/core/site-access.mjs');const store=memory();
