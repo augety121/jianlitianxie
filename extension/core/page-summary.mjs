@@ -12,6 +12,7 @@ const reasons={
  'existing-difference':'已有内容与简历不同，请到核对页确认是否修正',
  'restricted-control':'请直接在网页处理附件、声明或验证码',
  'existing-unverified':'已有内容已保留，但尚未与资料核实；可按经历整组核对',
+ 'readback-failed':'未能确认写入结果，请核对网页当前内容；不会自动重试',
  'sensitive-review':'敏感资料需要逐项确认'
 };
 /** The page receives its own labels, bounded counts and fixed codes, not profile values. */

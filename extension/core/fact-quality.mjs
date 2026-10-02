@@ -7,5 +7,5 @@ export function factQuality(f,origin=''){
  const canonical=fieldDiagnostic({label:f.label,section:f.section}).semantic!=='unknown';
  const date=!/出生|开始|结束|毕业|获得|获奖|日期|时间|月份/.test(semantic)?'unspecified':/^\d{4}$/.test(f.value)?'year':/^\d{4}[-/.]\d{1,2}$/.test(f.value)?'month':/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(f.value)?'day':/^(至今|目前|present|ongoing)$/i.test(f.value)?'ongoing':'unspecified';
  const usability=f.conflict?'conflict':!inOrigin(f,origin)?'out-of-scope':!f.confirmed?'needs-confirmation':RECORD_DOMAINS[domain]&&!f.entity?'needs-record':!canonical?'needs-classification':'usable';
- return {canonicalSemantic:canonical?semantic:'unknown',semanticState:canonical?'canonical':'unrecognized',fieldRole:RECORD_DOMAINS[domain]?.identity.includes(semantic)?'identity':'detail',datePrecision:date,sourceKind:f.sourceKind||'legacy',sourceRefs:f.sourceRefs||[f.id],usability};
+ return {domain,canonicalSemantic:canonical?semantic:'unknown',semanticState:canonical?'canonical':'unrecognized',fieldRole:RECORD_DOMAINS[domain]?.identity.includes(semantic)?'identity':'detail',datePrecision:date,sourceKind:f.sourceKind||'legacy',sourceRefs:f.sourceRefs||[f.id],usability,exclusionReason:usability==='usable'?'none':usability};
 }

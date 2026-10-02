@@ -38,6 +38,7 @@ test('source order is limited to explicitly authorized newly created empty domai
 test('post-execution summary removes verified fields from pending without hiding unresolved targets',()=>{
  const plan={entries:[{id:'a',frameId:0,label:'姓名',status:'ready'},{id:'b',frameId:0,label:'学校',status:'missing',reasonCode:'record-unbound'}]};
  const result=resultSummary(plan,[{id:'a',status:'verified'}]);assert.equal(result.counts.ready,0);assert.equal(result.written,1);assert.equal(result.counts.missing,1);assert.equal(plan.entries[0].status,'ready');
+ const failed=resultSummary(plan,[{id:'a',status:'needs-user'}]);assert.equal(failed.problems[0].code,'readback-failed');assert.match(failed.problems[0].hint,/不会自动重试/);assert.equal(failed.problems[0].pickable,false);
 });
 test('custom exact matches remain distinguishable from redacted unknown labels',()=>{
  const d=cleanDiagnostic(fieldDiagnostic({label:'自定义岗位意向',kind:'custom-select',status:'ready',factId:'f'},[{label:'自定义岗位意向',id:'f',confirmed:true}]));

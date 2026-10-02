@@ -9,8 +9,8 @@ export function profileReadiness(profile, origin='') {
   const usable=recordTargets(facts,origin);
   const repair=proposeStoredRepair({facts});
   const repairable=Object.fromEntries(Object.keys(RECORD_DOMAINS).map(domain=>[domain,new Set(repair.facts.filter(f=>scope(f.section)===domain).map(f=>JSON.stringify([f.entity,f.origin||'']))).size]));
-  const quality=(profile?.facts||[]).map(f=>factQuality(f,origin)),reasons={};for(const q of quality)reasons[q.usability]=(reasons[q.usability]||0)+1;
-  return {storedFacts:profile?.facts?.length||0,canonicalFacts:quality.filter(q=>q.semanticState==='canonical').length,unresolvedFacts:quality.filter(q=>q.usability!=='usable').length,reasons,confirmed:facts.length,usable,repairable,repairableRecords:Object.values(repairable).reduce((a,b)=>a+b,0),repairableProjects:repairable.project,repairableFields:repair.facts.length,
+  const quality=(profile?.facts||[]).map(f=>factQuality(f,origin)),reasons={},reasonsByDomain={};for(const q of quality){reasons[q.usability]=(reasons[q.usability]||0)+1;const group=reasonsByDomain[q.domain||'unknown']??={};group[q.usability]=(group[q.usability]||0)+1;}
+  return {storedFacts:profile?.facts?.length||0,canonicalFacts:quality.filter(q=>q.semanticState==='canonical').length,unresolvedFacts:quality.filter(q=>q.usability!=='usable').length,reasons,reasonsByDomain,confirmed:facts.length,usable,repairable,repairableRecords:Object.values(repairable).reduce((a,b)=>a+b,0),repairableProjects:repairable.project,repairableFields:repair.facts.length,
     needsRepair:repair.facts.length>0,hasUsableRecords:Object.values(usable).some(Boolean)};
 }
 export function readinessText(r) {
