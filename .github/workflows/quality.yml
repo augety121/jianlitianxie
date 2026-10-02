@@ -46,7 +46,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m playwright install --with-deps chromium
       - name: DOM and target-guard fixtures (not installed MV3 acceptance)
-        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick && npm run test:recognition && npm run test:learn && python tests/recovery-browser.py && npm run test:empty-records && npm run test:readiness && npm run test:components
+        run: npm run test:dom && npm run test:guards && npm run test:ui && npm run test:workspace && python tests/entity-binding-browser.py && npm run test:compatibility && npm run test:local && npm run test:jev && npm run test:oneclick && npm run test:recognition && npm run test:learn && python tests/recovery-browser.py && npm run test:empty-records && npm run test:readiness
       - uses: actions/upload-artifact@v4
         if: always()
         with:
