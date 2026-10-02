@@ -99,10 +99,10 @@ try:
    source='## 科研与项目经历\n### 旧片段演示记录\n项目背景：这段旧资料已经保存在本机。\n方案设计：只整理原句，核对后保存。'
    manager.locator('#importFile').set_input_files({'name':'stored-fragments.md','mimeType':'text/markdown','buffer':source.encode()})
    expect(manager.locator('.import-row')).to_have_count(2);manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text(str(oldcount+2))
-   manager.locator('#repairStored').click();expect(manager.locator('.import-row')).to_have_count(1)
+   manager.locator('#repairStored').click();expect(manager.locator('.import-row')).to_have_count(2)
    expect(manager.locator('#savedCount')).to_have_text(str(oldcount+2))
    manager.screenshot(path=str(ROOT/'test-results/recovery-preview-installed.png'),full_page=False)
-   manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text(str(oldcount+3))
+   manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text(str(oldcount+4))
    require(all(target.locator('#'+key).input_value()==value for key,value in expected.items()),'repair modified website without fill action')
   step('stored-fragment-repair-preview-requires-review-preserves-originals-and-does-not-write-page',repair)
 except Exception as e:

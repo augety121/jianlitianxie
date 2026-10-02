@@ -99,28 +99,29 @@ try:
     if repairPage:break
     target.wait_for_timeout(80)
    require(repairPage is not None,'repair manager did not open')
-   expect(repairPage.locator('.import-row')).to_have_count(2)
+   expect(repairPage.locator('.import-row')).to_have_count(4)
    require(worker.evaluate('()=>chrome.storage.local.get("resumeLocalLibraryV1")')==before,'opening repair silently persisted values')
    expect(repairPage.locator('#notice')).to_contain_text('旧片段保留')
    repairPage.screenshot(path=str(ROOT/'test-results/readiness-review.png'))
-   repairPage.locator('#commitImport').click();expect(repairPage.locator('#savedCount')).to_have_text('9')
+   repairPage.locator('#commitImport').click();expect(repairPage.locator('#savedCount')).to_have_text('11')
    expect(repairPage.locator('#profileHealth')).to_contain_text('项目 2 段')
    state=repairPage.evaluate('()=>chrome.runtime.sendMessage({type:"local-state"})')['data']
    facts=state['profile']['facts'];descriptions=[f for f in facts if f['label']=='项目描述']
    require(len(descriptions)==2,'wrong recovered field count')
    require(all(BODIES[f['entity']]==f['value'] for f in descriptions),'rewrote source paragraphs')
    require(sum(f['label'] in ['项目背景','方案设计'] for f in facts)==4,'originals removed')
-   require(not any(f['label'] in ['项目名称','开始时间','结束时间'] for f in facts),'invented identity/date')
+   require({f['value'] for f in facts if f['label']=='项目名称'}==set(BODIES),'name did not come from existing explicit entity')
+   require(not any(f['label'] in ['开始时间','结束时间'] for f in facts),'invented date')
    target.bring_to_front();wait_message('回读通过 3 项')
   step('page-recovery-opens-two-drafts-and-only-explicit-save-adds-canonical-descriptions',repair_saved)
   def add_and_fill():
    attrs=dict(zip(button('按简历顺序添加经历并填写').get('attributes',[])[::2],button('按简历顺序添加经历并填写').get('attributes',[])[1::2]))
    require('hidden' not in attrs and 'disabled' not in attrs,'add consent is not available after reviewed recovery')
-   click('按简历顺序添加经历并填写');wait_message('回读通过 2 项')
+   click('按简历顺序添加经历并填写');wait_message('回读通过 4 项')
    require(target.evaluate('added')=={'education':0,'work':0,'project':2},'did not add exact two projects')
    for i,key in enumerate(['恢复甲','恢复乙']):
     require(target.locator('#project'+str(i)+'body').input_value()==BODIES[key],'wrong source-order description')
-    require(target.locator('#project'+str(i)+'name').input_value()=='','invented project name')
+    require(target.locator('#project'+str(i)+'name').input_value()==key,'wrong reviewed project name')
    target.screenshot(path=str(ROOT/'test-results/readiness-completed.png'))
   step('unmarked-navigation-does-not-block-two-additions-and-exact-reviewed-descriptions',add_and_fill)
   def repeat_and_feedback():
@@ -146,7 +147,7 @@ try:
    additions=[r.get('addition',{}) for r in data['records'] if r['stage']=='add']
    require(any(a.get('added')==2 for a in additions),'missing actual add receipt')
    require(not outside,'unexpected external network')
-   state=logsPage.evaluate('()=>chrome.runtime.sendMessage({type:"local-state"})')['data'];require(len(state['profile']['facts'])==9,'filling changed source facts')
+   state=logsPage.evaluate('()=>chrome.runtime.sendMessage({type:"local-state"})')['data'];require(len(state['profile']['facts'])==11,'filling changed source facts')
   step('repeat-is-idempotent-and-page-feedback-retains-redacted-diagnostics',repeat_and_feedback)
   report['scope']='Real installed MV3, explicit Chromium sandbox; local reserved .invalid page and synthetic fragments. Initial test origin/tool permission pregranted. No logged-in ATS, real application submission or vendor speed comparison.'
 except Exception as error:
@@ -157,3 +158,4 @@ finally:
  report.update(passed=sum(c['status']=='passed' for c in cases),failed=sum(c['status']=='failed' for c in cases),cases=cases)
  OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 if report.get('error') or report['failed']:raise SystemExit(1)
+

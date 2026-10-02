@@ -2,7 +2,7 @@ import {normalizeFact} from './profile.mjs';
 import {semanticLabel,scope,normalize} from './semantics.mjs';
 import {RECORD_DOMAINS,recordAnchors} from './record-model.mjs';
 /** Review-only recovery. Originals are retained; origin/entity boundaries cannot merge. */
-const narrative=/^(项目背景|方案设计|训练与优化|低标注研究|模型设计|训练验证|研究到服务|大模型应用|问题与方法|方法与实现|技术实现|设计与实现|结果与指标|结果与验证|结果与能力|研究能力|能力积累|配套代码)$/;
+const narrative=/^(项目背景|方案设计|前后端实现|证据链路|任务与记忆|人工干预|质量与成本|工程验证|接口联调|数据与资源|可靠性验证|研究问题|方法设计|训练与实验|研究积累|验证方法|解决方法|训练与优化|低标注研究|模型设计|训练验证|研究到服务|大模型应用|问题与方法|方法与实现|技术实现|设计与实现|结果与指标|结果与验证|结果与能力|研究能力|能力积累|配套代码)$/;
 const responsibility=/^(个人职责|负责内容)$/;
 const fragmentLabel=value=>String(value||'').trim().replace(/^\*\*(.*?)\*\*$/, '$1').replace(/[：:]$/, '').trim();
 export function proposeStoredRepair(profile){
@@ -24,8 +24,22 @@ export function proposeStoredRepair(profile){
    // A difference is a review proposal (planImport defaults changes to unselected).
    const first=fragments[0];
    facts.push(normalizeFact({id:crypto.randomUUID(),label,value,section:'项目经历',entity:first.entity,
-    recordId:rows.find(f=>f.recordId)?.recordId||first.id,sourceRefs:fragments.slice(0,20).map(f=>f.id),
+    recordId:rows.find(f=>f.recordId)?.recordId||rows[0].id,sourceRefs:fragments.slice(0,20).map(f=>f.id),
     origin:first.origin||'',confirmed:false,sourceKind:'stored-repair',source:'已存资料逐段整理，原句保留，待本人核对'}));repaired=true;
+  }
+  // An explicit period is split only at its original month precision. Trailing
+  // status prose remains in the original; no year/day or ongoing end is invented.
+  const periods=rows.filter(f=>/^(项目时间|研究时间)$/.test(fragmentLabel(f.label)));
+  const ranges=periods.map(f=>({f,m:f.value.trim().match(/^((?:19|20)\d{2})[-./](0?[1-9]|1[0-2])\s*(?:至|到|—|–|~|～)\s*((?:19|20)\d{2})[-./](0?[1-9]|1[0-2])(?:[。；;].*)?$/)}));
+  const valid=ranges.filter(r=>r.m).map(({f,m})=>({f,start:m[1]+'-'+m[2].padStart(2,'0'),end:m[3]+'-'+m[4].padStart(2,'0')}));
+  if(valid.length&&valid.every(r=>r.start===valid[0].start&&r.end===valid[0].end&&r.start<=r.end)&&valid.length===periods.length){
+   for(const [label,value] of [['开始月份',valid[0].start],['结束月份',valid[0].end]]){
+    if(rows.some(f=>semanticLabel(f.label,f.section)===label&&f.value===value))continue;
+    const first=valid[0].f;facts.push(normalizeFact({...first,id:crypto.randomUUID(),label,value,recordId:rows.find(f=>f.recordId)?.recordId||rows[0].id,sourceRefs:periods.map(f=>f.id),sourceKind:'stored-repair',source:'已存明确年月范围拆分，待本人核对',confirmed:false}));repaired=true;
+   }
+  }
+  if((repaired||rows.some(f=>['项目描述','项目职责'].includes(semanticLabel(f.label,f.section))))&&!rows.some(f=>semanticLabel(f.label,f.section)==='项目名称')){
+   const first=rows[0];facts.push(normalizeFact({id:crypto.randomUUID(),label:'项目名称',value:first.entity,entity:first.entity,section:'项目经历',origin:first.origin||'',recordId:rows.find(f=>f.recordId)?.recordId||first.id,sourceRefs:[first.id],sourceKind:'stored-repair',source:'原条目的明确所属项目名称，待本人核对',confirmed:false}));
   }
   if(repaired)repairedRecords++;
  }
