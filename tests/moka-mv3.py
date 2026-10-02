@@ -70,7 +70,7 @@ try:
     if value in message():return
     target.wait_for_timeout(80)
    raise AssertionError('Expected '+value+'; actual '+message())
-  click('填写简历');wait_message('本次回读通过 65 项')
+  wait_message('无需先点扫描');click('填写简历');wait_message('本次回读通过 65 项')
   require(target.evaluate('added')==counts,'wrong addition counts')
   require(not [p for p in context.pages if 'record-review.html' in p.url],'new empty records should not require 16 manual bindings')
   for domain,count in counts.items():

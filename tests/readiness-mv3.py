@@ -158,4 +158,3 @@ finally:
  report.update(passed=sum(c['status']=='passed' for c in cases),failed=sum(c['status']=='failed' for c in cases),cases=cases)
  OUT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 if report.get('error') or report['failed']:raise SystemExit(1)
-

@@ -105,6 +105,16 @@ with sync_playwright() as pw:
   page.set_viewport_size({'width':390,'height':844});require(page.evaluate("testRoot.querySelector('.panel').getBoundingClientRect().width<=innerWidth"),'overflow')
   page.screenshot(path=str(ROOT/'test-results/oneclick-mobile.png'))
  case('one-trusted-click-scans-and-fills-without-management-tab',basic,oneclick)
+ def imported_after_empty(page):
+  load_assistant(page)
+  page.evaluate('''()=>{const original=chrome.runtime.sendMessage;window.testHasProfile=false;chrome.runtime.sendMessage=m=>m.type==='page-local-status'?Promise.resolve({data:{hasProfile:testHasProfile,mode:'local'}}):original(m);__resumeLocalAssistant.open();}''')
+  page.wait_for_function("testRoot.querySelector('.primary').textContent==='建立本地资料'")
+  page.evaluate('testHasProfile=true;__resumeLocalAssistant.open()')
+  page.wait_for_function("testRoot.querySelector('.primary').textContent==='填写简历'")
+  click(page,'填写简历');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
+  require(page.locator('#name').input_value()=='SYNTHETIC CANDIDATE','newly imported profile did not fill')
+  require(page.evaluate("!testCalls.includes('page-local-manage')"),'stale empty-library action reopened manager')
+ case('importing-profile-resets-stale-empty-library-primary-action',basic,imported_after_empty)
  def synthetic(page):
   load_assistant(page);page.evaluate("testRoot.querySelector('.primary').click()");page.wait_for_timeout(100);require(page.locator('#name').input_value()=='','synthetic click wrote');require(page.evaluate("!testCalls.includes('page-local-scan')&&!testCalls.includes('page-local-run')"),'synthetic click started a task')
  case('script-generated-click-cannot-start-oneclick-fill',basic,synthetic)

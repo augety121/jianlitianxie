@@ -83,7 +83,7 @@
   try{const s=await send('status');if(dead||g!==generation)return;
    if(s.mode!=='local'){clear();message.textContent='当前是 MCP 模式；“导入 / 核对修正”中可切回本地。';}
    else if(!s.hasProfile){clear();nextAction='profile';fill.textContent='建立本地资料';message.textContent='导入原简历，或在更多操作中读取本页已填内容，按经历核对后即可复用。';}
-   else if(!plan)message.textContent='点击“填写简历”，自动识别并填写本页可确认的空白项。无需先点扫描。';
+   else if(!plan){nextAction='fill';fill.textContent='填写简历';message.textContent='点击“填写简历”，自动识别并填写本页可确认的空白项。无需先点扫描。';}
    showReadiness(s.readiness);
   }catch(e){if(!dead&&g===generation)error(e);}controls();
  }
