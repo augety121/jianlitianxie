@@ -3,7 +3,7 @@
  * Ambiguous site structure is reported, never guessed from a company logo.
  */
 (() => {
-  const VERSION='0.15.0';
+  const VERSION='0.15.1';
   if(globalThis.__resumeRepeatController?.version===VERSION)return;
   globalThis.__resumeRepeatController?.cancel();
   let busy=false,epoch=0;

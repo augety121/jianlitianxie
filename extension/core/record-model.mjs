@@ -13,16 +13,25 @@ export const inOrigin=(f,origin)=>!origin||!f.origin||f.origin===origin;
 export const recordKey=f=>JSON.stringify([scope(f.section),normalize(f.entity),f.origin||'']);
 export function recordDirectory(facts,origin=''){
  const groups=new Map();
- for(const f of facts||[]){const domain=scope(f.section);if(!RECORD_DOMAINS[domain]||!f.entity||!inOrigin(f,origin))continue;
+ for(const f of facts||[]){const domain=scope(f.section);if(!RECORD_DOMAINS[domain]||!f.entity)continue;
   const key=recordKey(f);if(!groups.has(key))groups.set(key,{key,domain,entity:f.entity,origin:f.origin||'',facts:[]});groups.get(key).facts.push(f);
  }
- return [...groups.values()].map(g=>({...g,recordId:g.facts.find(f=>f.recordId)?.recordId||g.facts[0].id,
+ const rows=[...groups.values()],preferred=rows.map(g=>g.facts.find(f=>f.recordId)?.recordId||g.facts[0].id);
+ const owners=new Map(rows.map(g=>[g.facts[0].id,g.key])),uses=new Map();for(const id of preferred)uses.set(id,(uses.get(id)||0)+1);
+ // Imported metadata is not allowed to give two different records one checkbox.
+ // Fact IDs are already unique in a normalized profile; reserve those fallbacks.
+ return rows.map((g,i)=>({...g,recordId:uses.get(preferred[i])===1&&(!owners.has(preferred[i])||owners.get(preferred[i])===g.key)?preferred[i]:g.facts[0].id,
   usable:g.facts.some(f=>f.confirmed===true&&!f.conflict&&[f.label,...f.aliases||[]].some(l=>RECORD_DOMAINS[g.domain].identity.includes(semanticLabel(l,f.section)))),
-  factIds:g.facts.map(f=>f.id)}));
+  factIds:g.facts.map(f=>f.id)})).filter(g=>inOrigin(g,origin));
+}
+export function keepRecordSelection(previous,next){
+ if(!Array.isArray(previous.selectedRecordIds))return next;
+ const selected=new Set(previous.selectedRecordIds),keys=new Set(recordDirectory(previous.facts).filter(g=>selected.has(g.recordId)).map(g=>g.key));
+ return {...next,selectedRecordIds:recordDirectory(next.facts).filter(g=>keys.has(g.key)).map(g=>g.recordId)};
 }
 export function selectedProfileFacts(profile,origin=''){
  const eligible=(profile.facts||[]).filter(f=>inOrigin(f,origin));
  if(!Array.isArray(profile.selectedRecordIds))return eligible;
- const selected=new Set(profile.selectedRecordIds),allowed=new Set(recordDirectory(eligible,origin).filter(g=>selected.has(g.recordId)).flatMap(g=>g.factIds));
+ const selected=new Set(profile.selectedRecordIds),allowed=new Set(recordDirectory(profile.facts,origin).filter(g=>selected.has(g.recordId)).flatMap(g=>g.factIds));
  return eligible.filter(f=>!RECORD_DOMAINS[scope(f.section)]||!f.entity||allowed.has(f.id));
 }

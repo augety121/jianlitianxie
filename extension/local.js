@@ -1,4 +1,4 @@
-import {recordDirectory} from './core/record-model.mjs';
+import {recordDirectory,RECORD_DOMAINS} from './core/record-model.mjs';
 import {readinessText} from './core/profile-readiness.mjs';
 import {acknowledgeUi} from './ui-ready.mjs';
 await acknowledgeUi();
@@ -42,7 +42,8 @@ function setProfile(p){profile=p;const health=profileReadiness(p,state.target);$
 function renderRecordSelection(){
  const area=$('recordSelection');if(!area)return;area.replaceChildren();
  const groups=recordDirectory(profile.facts),chosen=new Set(profile.selectedRecordIds||groups.map(g=>g.recordId));
- for(const group of groups){const label=el('label'),input=el('input');input.type='checkbox';input.dataset.recordId=group.recordId;input.checked=chosen.has(group.recordId);label.append(input,el('span',group.entity+' · '+group.domain+' · '+(group.usable?'可填写':'待整理')));area.append(label);}
+ area.append(el('p',`已选 ${groups.filter(g=>chosen.has(g.recordId)).length} / ${groups.length} 段。`+(Array.isArray(profile.selectedRecordIds)?'更新同一经历会保留选择；新增经历请在这里勾选。':'当前默认使用全部记录；保存选择后仅使用勾选的经历。'),'help'));
+ for(const group of groups){const label=el('label',null,'record-choice'),input=el('input');input.type='checkbox';input.dataset.recordId=group.recordId;input.checked=chosen.has(group.recordId);label.append(input,el('span',group.entity+' · '+RECORD_DOMAINS[group.domain].title+' · '+(group.usable?'可填写':'待整理')+(group.origin?' · '+group.origin:'')));area.append(label);}
 }
 click('saveRecordSelection',()=>task(async()=>{const ids=[...$('recordSelection').querySelectorAll('input:checked')].map(e=>e.dataset.recordId);setProfile(await send('record-selection',{ids,revision:profile.revision,reviewed:true}));clearPlan();notice('已保存本次记录选择；未选记录仍留在资料库，页面已有内容不会删除。');}));
 
@@ -149,10 +150,8 @@ function showImport(data){
   $('importNextMessage').textContent=duplicates===data.items.length?'这份文件的条目已保存，无需再次导入。':'核对导入结果后保存，再去填写申请页。';
   const present=new Set(data.items.map(x=>semanticLabel(x.fact.label,x.fact.section)));
   $('importHealth').textContent='本次文件基础字段检查：'+['姓名','手机号码','邮箱'].map(k=>k+' '+(present.has(semanticLabel(k))?'已识别':'未识别（请检查格式或未归类区域）')).join(' · ');
-  if(data.repair){
-   const groups=new Map();for(const x of data.items){const key=x.fact.section+'|'+x.fact.entity+'|'+x.fact.origin;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(x);}
-   for(const rows of groups.values()){const group=el('section',null,'repair-group');group.append(el('h3',rows[0].fact.section));const input=el('input');input.value=rows[0].fact.entity;input.setAttribute('aria-label','本组所属经历');input.maxLength=200;input.oninput=()=>{for(const row of rows)row.fact.entity=input.value;};group.append(input);for(const row of rows)renderImportRow(row,group,true);$('importRows').append(group);}
-  }else for(const x of data.items)renderImportRow(x);
+  const groups=new Map();for(const x of data.items){const key=JSON.stringify([x.fact.section,x.fact.entity,x.fact.origin||'']);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(x);}
+  for(const rows of groups.values())renderImportGroup(rows,!!data.repair);
   $('continueAfterImport').checked=data.repair===true&&!!tabId;
   $('commitImport').textContent=$('continueAfterImport').checked?'保存并继续填写':'保存到本地并扫描';
   data.skipped=[...data.skipped,...resumeNotes];
@@ -258,10 +257,21 @@ function addVariant(v={name:'短版',value:''}){
 function renderVariants(f){$('editVariants').replaceChildren();for(const v of f.textVariants||[])addVariant(v);}
 click('addVariant',()=>addVariant());
 
-function renderImportRow(x,parent=$('importRows'),grouped=false){
- const row=el('div',null,'import-row'),c=el('input');c.type='checkbox';c.checked=importIds.has(x.fact.id);c.disabled=x.status==='conflict';c.setAttribute('aria-label','导入 '+x.fact.label);c.onchange=()=>{c.checked?importIds.add(x.fact.id):importIds.delete(x.fact.id);controls();};
- const title=el('div');for(const [key,label] of [['label','字段名称'],['section','分区'],['entity','所属经历']]){if(grouped&&key==='entity')continue;const input=el('input');input.value=x.fact[key]||'';input.maxLength=200;input.setAttribute('aria-label',label);input.placeholder=label;input.oninput=()=>{x.fact[key]=input.value;c.checked=true;importIds.add(x.fact.id);controls();};title.append(input);}
- const body=el('div',null,'import-value'),value=el('textarea');value.value=x.fact.value;value.rows=4;value.maxLength=10000;value.setAttribute('aria-label','解析内容');value.oninput=()=>{x.fact.value=value.value;c.checked=true;importIds.add(x.fact.id);controls();};body.append(value);
+function renderImportGroup(rows,repair=false){
+ const first=rows[0].fact,group=el('details',null,repair?'repair-group import-group':'import-group');
+ group.open=repair||!first.entity||rows.some(x=>x.status==='change'||x.status==='conflict');
+ const heading=el('summary'),caption=el('span'),count=el('span',null,'import-group-count');heading.append(caption,count);group.append(heading);
+ const refresh=()=>{caption.textContent=(first.section||'未分区')+(first.entity?' · '+first.entity:'');const selected=rows.filter(x=>importIds.has(x.fact.id)).length;count.textContent=`${rows.length} 条 · 已选 ${selected}`;};
+ if(first.origin)group.append(el('p','仅用于 '+first.origin,'help'));
+ const actions=el('div',null,'import-group-actions');
+ for(const [text,choose] of [['勾选本组新增项',true],['取消本组选择',false]]){const button=el('button',text,'subtle');button.type='button';button.onclick=event=>{if(!event.isTrusted||busy)return;for(const x of rows){if(!choose||x.status==='new'){choose?importIds.add(x.fact.id):importIds.delete(x.fact.id);}}for(const input of group.querySelectorAll('input[data-import-id]'))input.checked=importIds.has(input.dataset.importId);refresh();controls();};actions.append(button);}group.append(actions);
+ if(first.entity){const label=el('label','本组所属经历'),input=el('input');input.value=first.entity;input.className='record-entity';input.setAttribute('aria-label','本组所属经历');input.maxLength=200;input.oninput=()=>{for(const x of rows)x.fact.entity=input.value;refresh();};label.append(input);group.append(label);}
+ for(const row of rows)renderImportRow(row,group,!!first.entity,refresh);refresh();$('importRows').append(group);
+}
+function renderImportRow(x,parent=$('importRows'),grouped=false,onChange=()=>{}){
+ const row=el('div',null,'import-row'),c=el('input');c.type='checkbox';c.dataset.importId=x.fact.id;c.checked=importIds.has(x.fact.id);c.disabled=x.status==='conflict';c.setAttribute('aria-label','导入 '+x.fact.label);c.onchange=()=>{c.checked?importIds.add(x.fact.id):importIds.delete(x.fact.id);onChange();controls();};
+ const title=el('div');for(const [key,label] of [['label','字段名称'],['section','分区'],['entity','所属经历']]){if(grouped&&key==='entity')continue;const input=el('input');input.value=x.fact[key]||'';input.maxLength=200;input.setAttribute('aria-label',label);input.placeholder=label;input.oninput=()=>{x.fact[key]=input.value;c.checked=true;importIds.add(x.fact.id);onChange();controls();};title.append(input);}
+ const body=el('div',null,'import-value'),value=el('textarea');value.value=x.fact.value;value.rows=4;value.maxLength=10000;value.setAttribute('aria-label','解析内容');value.oninput=()=>{x.fact.value=value.value;c.checked=true;importIds.add(x.fact.id);onChange();controls();};body.append(value);
  for(const v of x.fact.textVariants||[]){const d=el('details');d.append(el('summary',v.name+' · '+v.value.length+'字'),el('p',v.value));body.append(d);}
  row.append(c,title,body,el('span',{new:'新增',change:'更新待核对',duplicate:'相同可跳过',conflict:'冲突'}[x.status]));parent.append(row);
 }

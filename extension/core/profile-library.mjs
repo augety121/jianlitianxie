@@ -1,4 +1,5 @@
 import {normalizeProfile} from './profile.mjs';
+import {keepRecordSelection} from './record-model.mjs';
 import {secret} from './workspace-policy.mjs';
 
 export const PROFILE_LIBRARY_KEY = 'resumeLocalLibraryV1';
@@ -94,7 +95,7 @@ export class ProfileLibrary {
   }
   async save(facts, revision, consent) {
     if (!this.accepted && consent !== true) throw Error('请确认免口令资料将在本浏览器未加密保存');
-    const p = profileOf({...this.current(),facts, revision:revision+1});
+    const current=this.current(),p = keepRecordSelection(current,profileOf({...current,facts, revision:revision+1}));
     const next = copy(this.book);
     next.resumes.find(x=>x.id===next.activeId).profile=p;
     return this.commit(next, revision);

@@ -4,7 +4,35 @@ import {ProfileLibrary,PROFILE_LIBRARY_KEY,LEGACY_PROFILE_KEY,LEGACY_BACKUP_KEY}
 import {localHarness,importText,memory} from './helpers/local-harness.mjs';
 import {SiteAccess,SITE_ACCESS_KEY} from '../extension/core/site-access.mjs';
 import {WorkspaceRun} from '../extension/core/workspace-run.mjs';
+import {recordDirectory,selectedProfileFacts} from '../extension/core/record-model.mjs';
 const original={version:1,storage:'plain-local',accepted:true,profile:{revision:7,facts:[{id:'f',label:'姓名',value:'TEST_PERSON',confirmed:true,source:'synthetic'}]}};
+
+test('reviewed field replacement keeps selected records without selecting new or site-distinct records',async()=>{
+ const lib=new ProfileLibrary(memory());await lib.load();
+ const fact=(id,entity,origin='')=>({id,entity,origin,label:'项目名称',section:'项目经历',value:entity,source:'synthetic',confirmed:true});
+ let p=await lib.save([fact('a','项目甲'),fact('b','项目乙')],0,true);
+ p=await lib.selectRecords(['a'],p.revision);
+ p=await lib.save([fact('replacement','项目甲'),fact('b2','项目乙'),fact('c','项目丙'),fact('site','项目甲','https://site.example.invalid')],p.revision,true);
+ assert.deepEqual(selectedProfileFacts(p).map(f=>f.id),['replacement']);
+ const reopened=new ProfileLibrary(lib.storage);await reopened.load();
+ assert.deepEqual(selectedProfileFacts(reopened.current()).map(f=>f.id),['replacement']);
+ p=await reopened.selectRecords([],p.revision);p=await reopened.save([...p.facts,fact('d','项目丁')],p.revision,true);
+ assert.deepEqual(p.selectedRecordIds,[]);
+});
+
+test('colliding imported record IDs cannot select unrelated groups together',()=>{
+ const facts=['甲','乙'].map((entity,i)=>({id:'f'+i,recordId:'same-imported-id',section:'项目经历',entity,label:'项目名称',value:entity,confirmed:true}));
+ const groups=recordDirectory(facts);assert.equal(new Set(groups.map(g=>g.recordId)).size,2);
+ assert.deepEqual(selectedProfileFacts({facts,selectedRecordIds:[groups[0].recordId]}).map(f=>f.entity),['甲']);
+});
+
+test('record selection IDs stay the same when site filtering hides a colliding record',()=>{
+ const facts=['https://one.example.invalid','https://two.example.invalid'].map((origin,i)=>({id:'f'+i,recordId:'shared',origin,section:'项目经历',entity:'同名项目',label:'项目名称',value:'虚构项目',confirmed:true}));
+ const groups=recordDirectory(facts),selectedRecordIds=[groups[0].recordId];
+ assert.equal(recordDirectory(facts,facts[0].origin)[0].recordId,groups[0].recordId);
+ assert.deepEqual(selectedProfileFacts({facts,selectedRecordIds},facts[0].origin).map(f=>f.id),['f0']);
+ assert.deepEqual(selectedProfileFacts({facts,selectedRecordIds},facts[1].origin),[]);
+});
 test('reading legacy is non-mutating; first write keeps an exact legacy backup',async()=>{
  const s=memory({[LEGACY_PROFILE_KEY]:original}),lib=new ProfileLibrary(s);let p=await lib.load();
  assert.equal(p.facts[0].value,'TEST_PERSON');assert.equal(s.data[PROFILE_LIBRARY_KEY],undefined);

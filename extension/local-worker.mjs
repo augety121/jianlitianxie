@@ -63,7 +63,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     return learning={owner:t.owner,tabId:t.tabId,url:tab.url,documentId:t.documentId,snapshotId:t.snapshotId,revision:t.revision,expires:t.expires};
   }
   const holder={get unlocked(){return accepted;},read(){requireProfile(profile,accepted);return structuredClone(profile);}};
-  const broker=new FrameBroker(chrome),run=new WorkspaceRun(holder,broker),logs=new LocalReceipts(storage,Date.now,{extensionId:chrome.runtime.id,mode:'local',adapterVersion:chrome.runtime.getManifest?.().version,buildId:'recovery-20261002.1',version:chrome.runtime.getManifest?.().version||'0.15.0'});
+  const broker=new FrameBroker(chrome),run=new WorkspaceRun(holder,broker),logs=new LocalReceipts(storage,Date.now,{extensionId:chrome.runtime.id,mode:'local',adapterVersion:chrome.runtime.getManifest?.().version,buildId:'import-review-20261002.2',version:chrome.runtime.getManifest?.().version||'0.15.1'});
   const library=new ProfileLibrary(storage),sites=new SiteAccess(chrome);
   const ui=new TrustedUiOpens(chrome,{onState:({view,state,operationId,target})=>{
     logs.add({stage:'ui',operationId,ui:{view,state},...(state==='denied'||state==='timeout'?{executionOutcome:'blocked',coverage:{state:'host-limited'}}:{}),ok:state==='ready',reason:state==='denied'?'host-ui-denied':state==='timeout'?'ui-open-unconfirmed':'none',ms:0,total:0});
@@ -120,7 +120,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     const noPending=data?.summary&&!data.expansion?.profileIncomplete&&!data.expansion?.uncertain&&!data.summary.counts.ready&&!data.summary.counts.missing&&!data.summary.counts.review&&!data.summary.coverage?.unverified&&!data.summary.problems.some(p=>p.code!=='restricted-control');
     const coverageState=error?.code?.startsWith('profile-')?'profile-not-ready':error?.code==='host-ui-denied'?'host-limited':data?.expansion?.uncertain||data?.results?.some(r=>r.status==='needs-user'||r.status==='stale')?'uncertain':data?.outcome==='completed'?'complete-in-scope':data?.outcome==='partial'?'partial':data?.outcome==='no-eligible-fields'&&noPending?'verified-existing':'incomplete';
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.15.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),coverage:data?.summary||error?{state:coverageState,written:data?.counts?.verified||0,consistent:data?.summary?.coverage?.consistent,unverified:data?.summary?.coverage?.unverified,missing:data?.summary?.counts?.missing,manual:data?.summary?.counts?.manual}:undefined,
+    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.15.1',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),coverage:data?.summary||error?{state:coverageState,written:data?.counts?.verified||0,consistent:data?.summary?.coverage?.consistent,unverified:data?.summary?.coverage?.unverified,missing:data?.summary?.counts?.missing,manual:data?.summary?.counts?.manual}:undefined,
       profileState:profileStateDiagnostic(profile,accepted,profileReadiness(profile)),learning:data?.learning,executionOutcome:error?(error.code?.startsWith('profile-')?'not-started':error.code==='host-ui-denied'?'blocked':'interrupted'):data?.outcome==='no-eligible-fields'?'no-write-needed':stage==='fill'||data?.counts?.verified?'applied':undefined,
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
@@ -289,7 +289,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       }
       if(type==='local-oneclick'){
         stage='task';taskId=crypto.randomUUID();
-        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.15.0'});
+        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.15.1'});
         requireProfile(profile,accepted);
         const tab=await attached(m.tabId);alive();activeTarget={tabId:m.tabId,documentIds:[m.documentId]};
         for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);

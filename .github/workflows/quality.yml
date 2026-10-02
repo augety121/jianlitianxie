@@ -179,6 +179,8 @@ jobs:
         run: python tests/empty-record-mv3.py
       - name: Reviewed legacy profile recovery with real installed extension
         run: python tests/readiness-mv3.py
+      - name: Large profile grouped review and selection persistence
+        run: python tests/import-review-mv3.py
       - name: Component strategy browser regressions
         run: python tests/component-adapters-browser.py
       - name: Sandbox-enabled Moka DOM and installed extension workflows
@@ -193,6 +195,9 @@ jobs:
           name: empty-record-windows-verification
           path: |
             test-results/moka-browser.json
+            test-results/import-review-mv3.json
+            test-results/import-review-mobile.png
+            test-results/import-review-installed.png
             test-results/moka-synthetic.png
             test-results/moka-mv3.json
             test-results/moka-installed.png
