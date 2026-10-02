@@ -89,6 +89,9 @@ jobs:
   installed-mv3:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Preserve launch/exit diagnostics for intermittent Chromium worker startup failures.
+      DEBUG: pw:browser
     steps:
       - uses: actions/checkout@v4
         with:
