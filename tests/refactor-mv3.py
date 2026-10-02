@@ -100,12 +100,15 @@ try:
     target.goto(base+'/'+mode);expect(target.locator('#resume-local-assistant')).to_be_visible();wait_text('无需先点扫描')
     with context.expect_page() as opened:click('填写简历')
     review=opened.value;expect(review.locator('.record')).to_have_count(4)
+    # Confirmed independent fields now fill before the aggregate record review.
+    require(target.locator('#email').input_value()=='refactor@example.invalid','independent field blocked by unbound records')
+    baseline=target.locator('input,textarea').evaluate_all('es=>es.map(e=>[e.id,e.value,e.checked])')
     if mode=='reload-review':
      review.reload();expect(review.locator('#state')).to_contain_text('失效');require(review.locator('#continue').is_disabled(),'reloaded review can execute')
     elif mode=='navigate-target':
-     target.goto(base+'/changed-target');review.bring_to_front();review.locator('#continue').click();expect(review.locator('#state')).to_contain_text('失效')
+     target.goto(base+'/changed-target');baseline=target.locator('input,textarea').evaluate_all('es=>es.map(e=>[e.id,e.value,e.checked])');review.bring_to_front();review.locator('#continue').click();expect(review.locator('#state')).to_contain_text('失效')
     review.close();target.bring_to_front()
-    require(target.locator('#email').input_value()=='','revoked popup wrote a value')
+    require(target.locator('input,textarea').evaluate_all('es=>es.map(e=>[e.id,e.value,e.checked])')==baseline,'revoked popup changed fields after revocation')
     require(target.evaluate('submissions')==0,'revoked review submitted')
    target.goto(base+'/apply');expect(target.locator('#resume-local-assistant')).to_be_visible()
   step('installed-review-reload-target-navigation-and-close-revoke-without-writing',review_navigation)
@@ -118,7 +121,8 @@ try:
     print('REVIEW_ERROR',review.locator('#state').inner_text(),flush=True);raise
    require('/record-review.html?' in review.url,'not trusted record review')
    require(target.evaluate('added')=={'education':1,'project':1},'wrong number of cards added')
-   require(target.locator('#email').input_value()=='','values written before the aggregate confirmation')
+   require(target.locator('#email').input_value()=='refactor@example.invalid','independent email was not filled before review')
+   require(target.locator('#project0').input_value()=='' and target.locator('#project1').input_value()=='','ambiguous records written before confirmation')
    # Deliberately reverse all records; one confirmation, not per-field mapping.
    choices=['本科记录','硕士记录','项目乙','项目甲']
    for i,v in enumerate(choices):review.locator('select[data-group]').nth(i).select_option(v)
@@ -146,7 +150,7 @@ try:
    require(target.locator('#person').input_value()=='保留原姓名','existing value overwritten');require(target.evaluate('submissions')==0,'submitted');require(target.locator('#attachment').input_value()=='','attachment uploaded')
    click('填写简历');wait_text('已有内容与简历不同');require(target.evaluate('added')=={'education':1,'project':1},'repeat click added duplicate cards')
    stored=worker.evaluate('()=>chrome.storage.local.get("resumeLocalReceiptsV1")')['resumeLocalReceiptsV1']
-   events=[r for r in stored if r.get('stage')=='task'];require(any(r.get('outcome')=='completed' for r in events),'task completion absent');require(any(r.get('outcome')=='no-eligible-fields' for r in events),'zero-plan terminal missing')
+   events=[r for r in stored if r.get('stage')=='task'];require(any(r.get('outcome')=='partial' for r in events),'unresolved fields must report partial');require(not any(r.get('outcome')=='completed' for r in events),'unresolved fields incorrectly reported complete');require(any(r.get('outcome')=='no-eligible-fields' for r in events),'zero-plan terminal missing')
    exported=json.dumps(stored,ensure_ascii=False)
    for value in ['refactor@example.invalid','示例甲大学','虚构项目乙','保留原姓名',base]:require(value not in exported,'log leaked private value')
   step('no-overwrite-no-extra-facts-no-submit-no-duplicate-records-and-safe-task-logs',boundaries)
