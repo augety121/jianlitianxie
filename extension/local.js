@@ -1,4 +1,4 @@
-import {storedProfileHealth} from './core/stored-profile-repair.mjs';
+import {profileReadiness} from './core/profile-readiness.mjs';
 import {logPreview,logBlob} from './core/log-export.mjs';
 import {explainDiagnostic} from './core/match-diagnostics.mjs';
 import {planExplanation} from './core/page-summary.mjs';
@@ -34,7 +34,7 @@ function controls(){
   $('commitImport').disabled=busy||!preview||!importIds.size;
 }
 function clearPlan(){plan=null;selected.clear();$('entries').replaceChildren();$('review').hidden=true;$('groups').replaceChildren();controls();}
-function setProfile(p){profile=p;const health=storedProfileHealth(p);$('profileHealth').textContent=`教育 ${health.education} 段 · 项目 ${health.projects} 段 · 工作/实习 ${health.work} 段`+(health.projectFragments?' · 检测到项目分段资料，可检查整理':'。条目总数不代表原简历已完整识别。');$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}
+function setProfile(p){profile=p;const health=profileReadiness(p,state.target);$('profileHealth').textContent=`教育 ${health.usable.education} 段 · 项目 ${health.usable.project} 段 · 工作/实习 ${health.usable.work} 段`+(health.needsRepair?` · ${health.repairableProjects} 段旧项目片段需整理后使用`:'。以上为可匹配的记录数，不代表原文已完整导入。');$('repairStored').textContent=health.needsRepair?'整理 '+health.repairableProjects+' 段已存项目':'检查已存资料';$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}
 async function refresh(){
   const g=generation,next=await send('state',{tabId});if(disposed||g!==generation)return;
   state=next;setProfile(next.profile);renderLibrary();$('importOld').hidden=!next.encryptedExists;$('modeWarning').hidden=next.mode!=='mcp';$('autoLogs').checked=next.logging;
@@ -194,7 +194,8 @@ document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{$(b.dataset.
 click('returnTarget',()=>task(async()=>{await send('return',{tabId});notice('已回到申请页。点击右下角“填写简历”即可扫描并填写；复杂项可返回工作台。');}));
 click('showFill',()=>task(async()=>{view('fill');if(profile.facts.length)await scan();}));
 click('continueSaved',()=>task(async()=>{view('fill');await scan();}));
-click('repairStored',()=>task(async()=>{clearImport();clearPlan();const d=await send('repair-preview');if(!d.items.length){notice('没有可自动整理的已存项目片段。未曾导入的教育/项目需从原简历重新提取，原有资料保持不变。');return;}showImport(d);notice('已从本地旧资料整理出项目正文预览。原句保留、原条目不删除，核对后保存即可用于填写。');}));
+async function prepareRepair(){clearImport();clearPlan();const d=await send('repair-preview');if(!d.items.length){view('profile');notice('没有可自动整理的已存项目片段。未曾导入的教育/项目需从原简历重新提取，原有资料保持不变。');return;}showImport(d);notice('已从本地旧资料整理出项目正文预览。原句保留、原条目不删除，核对后保存即可用于填写。');}
+click('repairStored',()=>task(prepareRepair));
 click('goImport',()=>view('profile'));click('goLogs',async()=>{view('logs');await refreshLogs();});
 click('scan',()=>task(scan));click('previewImport',()=>task(async()=>{clearImport();const g=++fileGeneration,d=await send('preview',{text:$('importText').value});if(g===fileGeneration&&!disposed)showImport(d);}));
 $('importFile').onchange=()=>readFile().catch(e=>notice(e.message,true));
@@ -213,7 +214,7 @@ $('autoLogs').onchange=async()=>{try{await send('log-settings',{enabled:$('autoL
 click('clearLogs',async()=>{await send('log-settings',{enabled:$('autoLogs').checked,clear:true});await refreshLogs();notice('日志已清空，资料未修改。');});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){$('showValues').checked=false;renderEntries();}});
 window.addEventListener('pagehide',()=>{disposed=true;exportController?.abort();generation++;fileGeneration++;chrome.runtime.sendMessage({type:'local-stop'}).catch(()=>{});});
-await refresh().then(async()=>{if(disposed)return;if(!profile.facts.length){view('profile');notice('欢迎使用本地速填。上传PDF/Word简历或JSON资料，核对解析结果后保存。');}else if(tabId&&state.mode!=='mcp'){await task(scan);}else notice('本地资料已恢复，无需再次输入口令。请从申请页点击插件图标。');}).catch(e=>notice(e.message,true));
+await refresh().then(async()=>{if(disposed)return;const requested=new URLSearchParams(location.search).get('view');if(requested==='logs'){view('logs');await refreshLogs();return;}if(requested==='repair'){await task(prepareRepair);return;}if(requested==='profile'){view('profile');return;}if(!profile.facts.length){view('profile');notice('欢迎使用本地速填。上传PDF/Word简历或JSON资料，核对解析结果后保存。');}else if(tabId&&state.mode!=='mcp'){await task(scan);}else notice('本地资料已恢复，无需再次输入口令。请从申请页点击插件图标。');}).catch(e=>notice(e.message,true));
 
 function timingText(phases){
   if(!phases)return '';

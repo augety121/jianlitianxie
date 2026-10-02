@@ -92,6 +92,9 @@ with sync_playwright() as pw:
   }''',profile)
   page.add_script_tag(path=str(ROOT/'extension/page-assistant.js'));page.wait_for_function("testRoot.querySelector('.message').textContent.includes('无需先点扫描')")
  def click(page,label):
+  if label in ['仅检查缺项','导入 / 核对修正','我补完了，记住内容','读取本页已填内容，核对保存','导出问题日志']:
+   collapsed=page.evaluate("()=>{const m=testRoot.querySelector('.more-tools');if(!m||m.open)return null;const r=m.querySelector('summary').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}")
+   if collapsed:page.mouse.click(collapsed['x'],collapsed['y'])
   box=page.evaluate('''label=>{const n=[...testRoot.querySelectorAll('button')].find(n=>n.textContent===label&&n.getClientRects().length);const r=n.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}''',label);page.mouse.click(box['x'],box['y'])
  def oneclick(page):
   load_assistant(page);require(page.evaluate("testRoot.querySelector('.primary').textContent==='填写简历'"),'no primary')

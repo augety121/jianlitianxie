@@ -3,7 +3,7 @@
  * Ambiguous site structure is reported, never guessed from a company logo.
  */
 (() => {
-  const VERSION='0.12.0';
+  const VERSION='0.13.0';
   if(globalThis.__resumeRepeatController?.version===VERSION)return;
   globalThis.__resumeRepeatController?.cancel();
   let busy=false,epoch=0;
@@ -42,14 +42,24 @@
     for(const domain of Object.keys(domains)){
       const hs=leaves.filter(h=>domains[domain].test(headingName(h))),target=targets[domain]||0;
       if(!hs.length){inventory.push({domain,present:hs.length>0,current:0,target,code:target?'section-not-found':'no-source-records'});continue;}
-      if(hs.length!==1){issues.push({domain,code:'section-ambiguous'});inventory.push({domain,present:hs.length>0,current:0,target,code:'section-ambiguous'});continue;}
-      const heading=hs[0],end=leaves.find(h=>h!==heading&&!!(heading.compareDocumentPosition(h)&Node.DOCUMENT_POSITION_FOLLOWING))||null;let selected=null;
-      for(let p=heading.parentElement,depth=0;p&&p!==document.body&&p!==document.documentElement&&depth<9;p=p.parentElement,depth++){
-        const ref={section:p,heading,end,domain},bs=addButtons(p).filter(b=>inRegion(b,ref));if(bs.length>1)break;
-        if(bs.length===1)selected={...ref,button:bs[0]};
-        if(leaves.filter(h=>p.contains(h)).length>1||p.tagName==='FORM')break;
+      const resolved=[];let competing=false;
+      for(const heading of hs){
+        const end=leaves.find(h=>h!==heading&&!!(heading.compareDocumentPosition(h)&Node.DOCUMENT_POSITION_FOLLOWING))||null;
+        let selected=null;
+        for(let p=heading.parentElement,depth=0;p&&p!==document.body&&p!==document.documentElement&&depth<9;p=p.parentElement,depth++){
+          const ref={section:p,heading,end,domain},bs=addButtons(p).filter(b=>inRegion(b,ref));
+          if(bs.length>1){competing=true;selected=null;break;}
+          if(bs.length===1)selected={...ref,button:bs[0]};
+          if(leaves.filter(h=>p.contains(h)).length>1||p.tagName==='FORM')break;
+        }
+        if(selected&&!resolved.some(r=>r.button===selected.button))resolved.push(selected);
       }
-      if(!selected){const code='add-control-unrecognized';issues.push({domain,code});inventory.push({domain,present:hs.length>0,current:0,target,code});continue;}
+      // A plain div table of contents has the same titles but no bounded add action.
+      // Two real sections or competing buttons remain ambiguous; never select the first.
+      if(competing||resolved.length>1){const code='section-ambiguous';issues.push({domain,code});inventory.push({domain,present:true,current:0,target,code});continue;}
+      const selected=resolved[0];
+      if(!selected){const code='add-control-unrecognized';issues.push({domain,code});inventory.push({domain,present:true,current:0,target,code});continue;}
+      const {heading}=selected;
       const {section,button}=selected,current=rows(selected).length;
       if(!current&&inputs(selected).length){const code='record-container-unrecognized';issues.push({domain,code});inventory.push({domain,present:hs.length>0,current:0,target,code});continue;}
       const code=!target?'no-source-records':current>=target?'satisfied':'needs-add';

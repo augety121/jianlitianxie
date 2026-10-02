@@ -73,7 +73,14 @@ try:
    raise AssertionError('assistant missing expected text: '+expected+'; '+text(assistant())[:600])
   def button(name):return next(n for n in walk(assistant()) if n.get('nodeName')=='BUTTON' and text(n)==name)
   def click(name):
-   b=button(name);box=cdp.send('DOM.getBoxModel',{'backendNodeId':b['backendNodeId']})['model']['border'];target.mouse.click((box[0]+box[4])/2,(box[1]+box[5])/2)
+   if name in ['仅检查缺项','导入 / 核对修正','我补完了，记住内容','读取本页已填内容，核对保存','导出问题日志']:
+    more=next((n for n in walk(assistant()) if n.get('nodeName')=='DETAILS' and 'more-tools' in dict(zip(n.get('attributes',[])[::2],n.get('attributes',[])[1::2])).get('class','')),None)
+    if more and 'open' not in more.get('attributes',[]):
+     summary=next(n for n in walk(more) if n.get('nodeName')=='SUMMARY')
+     cdp.send('DOM.scrollIntoViewIfNeeded',{'backendNodeId':summary['backendNodeId']})
+     bounds=cdp.send('DOM.getBoxModel',{'backendNodeId':summary['backendNodeId']})['model']['border']
+     target.mouse.click((bounds[0]+bounds[4])/2,(bounds[1]+bounds[5])/2)
+   b=button(name);cdp.send('DOM.scrollIntoViewIfNeeded',{'backendNodeId':b['backendNodeId']});box=cdp.send('DOM.getBoxModel',{'backendNodeId':b['backendNodeId']})['model']['border'];target.mouse.click((box[0]+box[4])/2,(box[1]+box[5])/2)
   def scan():
    wait_text('无需先点扫描');click('仅检查缺项');wait_text('可填 3')
    visible=text(assistant());require(NAME not in visible and EMAIL not in visible,'page UI received private values before authorization')

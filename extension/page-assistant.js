@@ -5,7 +5,7 @@
 (()=>{
  if(window!==window.top||!/^https?:$/.test(location.protocol))return;
  const previous=globalThis.__resumeLocalAssistant;
- if(previous?.version==='0.12.0'){previous.open();return;}
+ if(previous?.version==='0.13.0'){previous.open();return;}
  previous?.destroy();
  const host=document.createElement('div');host.id='resume-local-assistant';
  host.style.cssText='all:initial!important;position:fixed!important;right:18px!important;bottom:20px!important;z-index:2147483646!important;display:block!important;';
@@ -14,18 +14,21 @@
  const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;};
  const b=(label,cls)=>{const e=n('button',label,cls);e.type='button';return e;};
  const panel=n('section',null,'panel'),head=n('div',null,'head'),title=n('div');
- title.append(n('strong','本地简历速填'),n('small','0.12.0 · 资料已在本机 · 不自动提交'));
+ title.append(n('strong','本地简历速填'),n('small','0.13.0 · 资料已在本机 · 不自动提交'));
  const close=b('收起','close');head.append(title,close);
  const body=n('div',null,'body'),message=n('p','点击下方按钮，直接补全这张简历表。','message');
  message.setAttribute('role','status');message.setAttribute('aria-live','polite');
  const allowAdd=b('允许添加经历并继续填写','primary');allowAdd.hidden=true;allowAdd.style.marginTop='10px';
  const additionNote=n('p',null,'note');additionNote.hidden=true;
+ const repair=b('整理已存项目资料','subtle');repair.hidden=true;repair.style.width='100%';
+ const repairNote=n('p',null,'note');repairNote.hidden=true;
  const fill=b('填写简历','primary'),counts=n('div',null,'counts'),links=n('div',null,'links');
  const remember=b('我补完了，记住内容','subtle');remember.style.width='100%';remember.style.marginTop='10px';
  const saveExisting=b('读取本页已填内容，核对保存','subtle');saveExisting.style.width='100%';saveExisting.style.marginTop='8px';
- const scan=b('仅检查缺项','subtle'),manage=b('导入 / 核对修正','subtle');links.append(scan,manage);
+ const scan=b('仅检查缺项','subtle'),manage=b('导入 / 核对修正','subtle'),feedback=b('导出问题日志','subtle');links.append(scan,manage);
+ const more=n('details',null,'more-tools');more.append(n('summary','更多操作'),remember,saveExisting,feedback,links);
  const details=n('details'),summary=n('summary','查看待处理项'),problems=n('ul',null,'problem-list');details.append(summary,problems);details.hidden=true;
- body.append(message,fill,additionNote,allowAdd,n('p','点击即使用已核对的本地资料填写普通空白项；一致内容保留；差异在“核对修正”中确认，敏感项另行确认。','note'),counts,remember,saveExisting,details,links);
+ body.append(message,fill,additionNote,allowAdd,n('p','点击即使用已核对的本地资料填写普通空白项；一致内容保留；差异在“核对修正”中确认，敏感项另行确认。','note'),counts,repairNote,repair,details,more);
  panel.append(head,body);
  const pill=n('div',null,'pill'),quick=b('填写简历','run'),stop=b('停止','danger'),expand=b('展开','subtle');
  pill.append(quick,expand,stop);pill.hidden=true;stop.hidden=true;
@@ -37,14 +40,14 @@
   return document.elementFromPoint(e.clientX,e.clientY)===host;
  };
  async function send(type,data={}){
-  const r=await chrome.runtime.sendMessage({type:'page-local-'+type,clientVersion:'0.12.0',...data});
+  const r=await chrome.runtime.sendMessage({type:'page-local-'+type,clientVersion:'0.13.0',...data});
   if(!r)throw Error('插件已更新或后台未响应。请重新点击浏览器工具栏插件图标。');
   if(r.error)throw Error(r.error);return r.data;
  }
  function show(){panel.hidden=false;pill.hidden=true;}
  function collapse(){panel.hidden=true;pill.hidden=false;}
- function controls(){allowAdd.disabled=fill.disabled=quick.disabled=scan.disabled=manage.disabled=remember.disabled=saveExisting.disabled=busy;stop.hidden=!busy;quick.textContent=busy?'正在填写…':'填写简历';}
- function clear(){allowAdd.hidden=true;additionNote.hidden=true;additionNote.textContent='';plan=null;problems.replaceChildren();details.hidden=true;counts.textContent='';}
+ function controls(){repair.disabled=feedback.disabled=allowAdd.disabled=fill.disabled=quick.disabled=scan.disabled=manage.disabled=remember.disabled=saveExisting.disabled=busy;stop.hidden=!busy;quick.textContent=busy?'正在填写…':'填写简历';}
+ function clear(){repair.hidden=true;repairNote.hidden=true;allowAdd.hidden=true;additionNote.hidden=true;additionNote.textContent='';plan=null;problems.replaceChildren();details.hidden=true;counts.textContent='';}
  function error(e){clear();message.textContent=e.message||'本次没有完成，请先检查网页已填内容。';show();}
  function render(p){
   plan=p;counts.textContent=`扫描 ${p.total} · 可填 ${p.counts.ready} · 待匹配 ${p.counts.missing} · 差异 ${p.counts.review||0} · 人工 ${p.counts.manual} · 保留 ${p.counts.preserve}`;
@@ -67,6 +70,10 @@
   // The primary action remains visible/enabled even when automatic matches are zero.
   fill.textContent=p.quick.length?'填写简历':'重新识别并补填';controls();
  }
+ function showReadiness(r){
+  repair.hidden=!r?.needsRepair;repairNote.hidden=!r?.needsRepair;
+  if(r?.needsRepair)repairNote.textContent=`已存资料中有 ${r.repairableProjects} 段项目仍是旧格式片段。点击整理，核对保存后继续；无需重新上传文件。`;
+ }
  async function open(){
   show();if(busy)return;
   if(observedUrl!==location.href){observedUrl=location.href;clear();}
@@ -75,6 +82,7 @@
    if(s.mode!=='local'){clear();message.textContent='当前是 MCP 模式；“导入 / 核对修正”中可切回本地。';}
    else if(!s.hasProfile){clear();message.textContent='先点“导入 / 核对修正”导入一次；之后在本页点“填写简历”即可。';}
    else if(!plan)message.textContent='点击“填写简历”，自动识别并填写本页可确认的空白项。无需先点扫描。';
+   showReadiness(s.readiness);
   }catch(e){if(!dead&&g===generation)error(e);}controls();
  }
  async function start(event,write,addConsent=false){
@@ -111,7 +119,9 @@
  };
  allowAdd.onclick=e=>start(e,true,true);
  fill.onclick=e=>start(e,true);quick.onclick=e=>start(e,true);scan.onclick=e=>start(e,false);
- manage.onclick=async e=>{if(!validClick(e)||busy)return;try{await send('manage');}catch(e){error(e);}};
+ manage.onclick=async e=>{if(!validClick(e)||busy)return;try{await send('manage',{view:'profile'});}catch(e){error(e);}};
+ repair.onclick=async e=>{if(!validClick(e)||busy)return;try{await send('manage',{view:'repair'});}catch(e){error(e);}};
+ feedback.onclick=async e=>{if(!validClick(e)||busy)return;try{await send('manage',{view:'logs'});}catch(e){error(e);}};
  stop.onclick=async e=>{if(!validClick(e))return;generation++;stop.disabled=true;
   try{await send('stop');clear();message.textContent='已请求停止；已写内容不会撤销，请检查网页后再操作。';show();}
   catch(e){error(e);}finally{stop.disabled=false;}
@@ -140,7 +150,7 @@
   const expansion=result.expansion,domainNames={education:'教育',work:'实习/工作',project:'项目'};
   if(expansion?.inventory){
    const pending=expansion.inventory.filter(x=>x.code==='needs-add');
-   const absent=expansion.inventory.filter(x=>x.present&&x.code==='no-source-records');
+   const absent=expansion.inventory.filter(x=>x.present&&x.target===0);
    const broken=expansion.inventory.filter(x=>x.present&&x.target&&!['satisfied','needs-add'].includes(x.code));
    const notes=[];
    if(expansion.decision==='consent-required'&&pending.length){
@@ -150,8 +160,9 @@
    if(broken.length)notes.push(broken.map(x=>domainNames[x.domain]).join('、')+' 的新增结构未确认，已跳过；其他可填项照常处理。');
    if(notes.length){additionNote.hidden=false;additionNote.textContent=notes.join('\n');}
   }
+  showReadiness(result.readiness);
   if(details)details.open=false;fill.textContent='填写简历';controls();
  }
  function finished(report){clear();message.textContent=report.verified?'这项资料已填写并回读通过。其余空白项可继续点“填写简历”。':'这项未通过回读，请核对网页；未自动重试。';show();}
- globalThis.__resumeLocalAssistant={version:'0.12.0',open,destroy,finished,taskFinished,progress:stage=>{const labels={adding:'正在补足已允许的经历卡片…',scanning:'正在识别记录和字段…',filling:'正在填写并回读…'};if(labels[stage]){message.textContent=labels[stage];quick.textContent=labels[stage];}},remembered:n=>{clear();message.textContent=`已记住 ${n} 条补充资料，仅保存在本地。下次点击填写简历会继续使用。`;show();}};open();
+ globalThis.__resumeLocalAssistant={version:'0.13.0',open,destroy,finished,taskFinished,progress:stage=>{const labels={adding:'正在补足已允许的经历卡片…',scanning:'正在识别记录和字段…',filling:'正在填写并回读…'};if(labels[stage]){message.textContent=labels[stage];quick.textContent=labels[stage];}},remembered:n=>{clear();message.textContent=`已记住 ${n} 条补充资料，仅保存在本地。下次点击填写简历会继续使用。`;show();}};open();
 })();

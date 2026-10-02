@@ -1,5 +1,6 @@
 import {observeReviewWindow,bindReviewDocument} from './core/review-window-lifecycle.mjs';
-import {recordTargets,cleanAddition} from './core/addition-status.mjs';
+import {profileReadiness} from './core/profile-readiness.mjs';
+import {cleanAddition} from './core/addition-status.mjs';
 import {ProfileLibrary,LEGACY_PROFILE_KEY} from './core/profile-library.mjs';
 import {SiteAccess} from './core/site-access.mjs';
 import {scope} from './core/semantics.mjs';
@@ -80,17 +81,18 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
     }
     return tab;
   }
-  async function open(tab){
+  async function open(tab,view=''){
     await ready;secureTarget(tab.url);
     await chrome.storage.session.set({['workspace-target-'+tab.id]:new URL(tab.url).origin});
     const url=chrome.runtime.getURL('local.html')+'?tab='+tab.id,key='local-manager-'+tab.id;
+    const requested=url+(['profile','logs','repair'].includes(view)?'&view='+view:'');
     const known=(await chrome.storage.session.get(key))[key];
     if(Number.isSafeInteger(known)){
       try{const manager=await chrome.tabs.get(known);
-        if(manager.url?.split('&')[0]===url)return await chrome.tabs.update(known,{active:true,url:url+'&refresh='+Date.now()});
+        if(manager.url?.split('&')[0]===url)return await chrome.tabs.update(known,{active:true,url:requested+'&refresh='+Date.now()});
       }catch{}
     }
-    const created=await chrome.tabs.create({url});
+    const created=await chrome.tabs.create({url:requested});
     if(Number.isSafeInteger(created?.id))await chrome.storage.session.set({[key]:created.id});
     return created;
   }
@@ -108,7 +110,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const combined={...original,...e,...(stage==='fill'?{reasonCode:e.reasonCode}:{})};
       return {index:order.get(e.id)||i+1,status:e.status,...fieldDiagnostic(combined,profile.facts,group?.bindingMethod)};});
     const problematic=fields.filter(e=>!['verified','preserve','ready'].includes(e.status)),normal=fields.filter(e=>['verified','preserve','ready'].includes(e.status));
-    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.12.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),
+    logs.add({stage,taskId:data?.taskId,outcome:data?.outcome||(error?'failed':undefined),version:chrome.runtime.getManifest?.().version||'0.13.0',engineVersion:sourceVersion||run.job?.frames?.[0]?.snapshot?.engineVersion,profile:profileDiagnostic(profile.facts),ok:!error,reason:error?receiptReason(error):'none',ms:Math.round(performance.now()-start),total:fields.length||data?.items?.length||data?.facts?.length||Object.values(data?.counts||{}).filter(Number.isSafeInteger).reduce((n,v)=>n+v,0),addition:cleanAddition(data?.expansion),
       fields:[...problematic,...normal].slice(0,300),omitted:Math.max(0,fields.length-300),performance:stage==='fill'?{apply:data?.performance}:data?.performance});
   }
   async function perform(m,own){
@@ -119,7 +121,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       const old=(await storage.get('resumeVaultV1')).resumeVaultV1;
       let target='';try{target=new URL((await attached(m.tabId)).url).origin;}catch{}
       let targetTitle='';try{targetTitle=String((await attached(m.tabId)).title||'').slice(0,160);}catch{}
-      return {library:library.describe(),site:target?await sites.get(target):null,target,targetTitle,health:storedProfileHealth(profile),profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
+      return {library:library.describe(),site:target?await sites.get(target):null,target,targetTitle,health:storedProfileHealth(profile),readiness:profileReadiness(profile,target),profile:structuredClone(profile),accepted,busy:active,encryptedExists:!!old,mode:await mode(),logging:(await storage.get('resumeLocalReceiptsEnabled')).resumeLocalReceiptsEnabled!==false};
     }
     if(type==='local-logs'){await ready;const data=await logs.read();return {...exportReceipts(data,{includeExplanations:false}),enabled:data.enabled};}
     if(type==='local-log-settings'){await ready;await logs.settings(m.enabled,m.clear===true);return {ok:true};}
@@ -271,13 +273,13 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       }
       if(type==='local-oneclick'){
         stage='task';taskId=crypto.randomUUID();
-        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.12.0'});
+        logs.add({stage:'task',taskId,outcome:'running',ok:true,ms:0,total:0,version:chrome.runtime.getManifest?.().version||'0.13.0'});
         const tab=await attached(m.tabId);alive();activeTarget={tabId:m.tabId,documentIds:[m.documentId]};
         for(const [id,t] of recordReviews)if(t.expires<Date.now())recordReviews.delete(id);
         if(recordReviews.size)throw Error('请先完成或关闭已打开的经历核对窗口');
         const origin=new URL(tab.url).origin;
         const prefs=m.allowAdd===true?await sites.grantAdd(origin):await sites.get(origin);alive();
-        const targets=recordTargets(profile.facts,origin);
+        const readiness=profileReadiness(profile,origin),targets=readiness.usable;
         if(Object.values(targets).some(n=>n>20))throw Error('单类经历超过20段，请在当前简历中选择本次要用的记录');
         let expansion={added:0,attempted:0,issues:[],complete:true};
         const progress=async label=>{
@@ -320,16 +322,16 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
             const win=await chrome.windows.create({url:ticket.reviewUrl,type:'popup',width:650,height:700,focused:true});alive();
             if(!Number.isSafeInteger(win.tabs?.[0]?.id))throw Error('经历核对窗口未打开');ticket.pickerTab=win.tabs[0].id;
           }catch(e){recordReviews.delete(id);throw e;}
-          data={taskId,outcome:'needs-confirmation',groups:pending.length,expansion,counts:{},submitted:false};return data;
+          data={taskId,outcome:'needs-confirmation',groups:pending.length,readiness,expansion,counts:{},submitted:false};return data;
         }
         const idsToFill=plan.entries.filter(e=>e.frameId===0&&e.status==='ready'&&!sensitive(e.label)&&e.kind!=='repeat-group').map(e=>e.id);
-        if(!idsToFill.length){data={taskId,outcome:'no-eligible-fields',summary:pageSummary(plan),expansion,counts:{},submitted:false};return data;}
+        if(!idsToFill.length){data={taskId,outcome:'no-eligible-fields',summary:pageSummary(plan),readiness,expansion,counts:{},submitted:false};return data;}
         await progress('filling');
         const report=await run.apply(own,{planId:plan.id,ids:idsToFill,reviewed:true});alive();
         record('fill',start,report,null,sourceEntries,sourceVersion);
         const counts={};for(const f of report.results)counts[f.status]=(counts[f.status]||0)+1;
         data={taskId,outcome:report.results.every(f=>f.status==='verified'||f.status==='preserve')?'completed':'partial',counts,
-          summary:pageSummary(plan),expansion,performance:{...plan.performance,apply:report.performance},submitted:false};return data;
+          summary:pageSummary(plan),readiness,expansion,performance:{...plan.performance,apply:report.performance},submitted:false};return data;
       }
       if(type==='local-records-read'||type==='local-records-fill'){
         const t=recordReviews.get(m.ticket);
@@ -345,7 +347,7 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
         if(ids.length)data=await run.apply(own,{planId:plan.id,ids,reviewed:true});else data={results:[],submitted:false};
         const counts={};for(const f of data.results)counts[f.status]=(counts[f.status]||0)+1;
         const report={taskId:t.taskId,outcome:!ids.length?'no-eligible-fields':data.results.every(f=>f.status==='verified'||f.status==='preserve')?'completed':'partial',
-          counts,summary:pageSummary(plan),expansion:t.expansion,submitted:false};
+          counts,summary:pageSummary(plan),readiness:profileReadiness(profile,new URL(t.url).origin),expansion:t.expansion,submitted:false};
         recordReviews.delete(t.id);
         logs.add({stage:'task',taskId:t.taskId,outcome:report.outcome,ok:true,total:ids.length,ms:Math.round(performance.now()-start)});
         await chrome.scripting.executeScript({target:{tabId:t.tabId,documentIds:[t.documentId]},func:r=>globalThis.__resumeLocalAssistant?.taskFinished?.(r),args:[report]}).catch(()=>{});
@@ -461,11 +463,11 @@ export function createLocalWorkflow(chrome,{externalBusy=()=>false,mode=async()=
       return j;
     };
     if(m.type==='page-local-manage'){
-      await open(tab);return {opened:true};
+      await open(tab,m.view);return {opened:true};
     }
     if(m.type==='page-local-status'){
       await ready;if(!active)await refresh();
-      return {hasProfile:accepted&&profile.facts.length>0,mode:await mode(),busy:active};
+      return {hasProfile:accepted&&profile.facts.length>0,mode:await mode(),busy:active,readiness:profileReadiness(profile,new URL(tab.url).origin)};
     }
     if(m.type==='page-local-run'){
       if(m.reviewed!==true)throw Error('请本人点击填写简历');
