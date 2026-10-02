@@ -77,7 +77,7 @@ try:
    require(not [u for u in network if u.startswith('http') and not u.startswith(base+'/')],'non-local networking')
   step('automatic-logs-report-real-version-and-component-evidence-without-private-values',logs)
   def repeat():
-   before=target.evaluate('window.writes||0');click('填写简历');target.wait_for_timeout(900)
+   before=target.evaluate('window.writes||0');manager.evaluate('tab=>chrome.runtime.sendMessage({type:"local-resume-task",tabId:tab,reviewed:true})',tab);target.wait_for_timeout(900)
    require(target.evaluate('window.writes||0')==before,'second click rewrote chosen values')
    require(target.locator('#email').input_value()=='candidate@example.invalid','saved email changed')
   step('repeat-click-preserves-existing-values-instead-of-replaying-writes',repeat)

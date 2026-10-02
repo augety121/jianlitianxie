@@ -87,21 +87,21 @@ try:
    require(target.locator('#name').input_value()=='','scan wrote data')
   step('actual-mouse-scan-produces-ordinary-field-list-without-profile-values',scan)
   def untrusted_click():
-   b=button('填写简历');obj=cdp.send('DOM.resolveNode',{'backendNodeId':b['backendNodeId']})['object']['objectId']
+   b=button('填写空白项（3）');obj=cdp.send('DOM.resolveNode',{'backendNodeId':b['backendNodeId']})['object']['objectId']
    cdp.send('Runtime.callFunctionOn',{'objectId':obj,'functionDeclaration':'function(){this.click()}'});target.wait_for_timeout(150)
    require(target.locator('#name').input_value()=='','synthetic DOM click triggered fill')
   step('synthetic-DOM-click-cannot-authorize-filling',untrusted_click)
   def fill():
-   click('填写简历');wait_text('回读通过 2 项')
+   click('填写空白项（3）');wait_text('回读通过 2 项')
    require(target.locator('#name').input_value()==NAME,'name value missing');require(target.locator('#email').input_value()==EMAIL,'email value missing')
    require(target.locator('#gender').input_value()=='' and target.locator('#secret').input_value()=='','unselected sensitive data written');require(target.evaluate('submitted')==0,'form submitted')
    target.screenshot(path=str(ROOT/'test-results/page-entry-installed.png'))
   step('actual-in-page-confirmation-fills-correct-fields-once-without-submit',fill)
   def no_match():
    target.goto(base+'/unmatched');expect(target.locator('#resume-local-assistant')).to_be_visible();wait_text('无需先点扫描');click('填写简历');wait_text('待匹配 6')
-   t=text(assistant());require('保留 13' in t and '人工 1' in t and '没有可自动补全' in t,'zero-match reason hidden')
+   t=text(assistant());require('待核实 13' in t and '人工 1' in t and '没有可自动补全' in t,'zero-match reason hidden')
    require(target.evaluate('submitted')==0,'zero-match submitted')
-   b=button('填写简历');require('disabled' not in b.get('attributes',[]),'zero matches hid or disabled main action')
+   b=button('核对已有内容');require('disabled' not in b.get('attributes',[]),'zero matches hid or disabled main action')
   step('same-origin-navigation-reattaches-and-zero-ready-is-explained-not-retried',no_match)
   def pick_one():
    detail=next(n for n in walk(assistant()) if n.get('nodeName')=='DETAILS');require('open' not in detail.get('attributes',[]),'details should stay collapsed until requested')
@@ -127,7 +127,7 @@ try:
   step('trusted-small-picker-fills-one-ambiguous-field-without-management-page',pick_one)
   def remember_manual():
    target.goto(base+'/learn');expect(target.locator('#resume-local-assistant')).to_be_visible();wait_text('无需先点扫描');click('填写简历');wait_text('回读通过 2 项')
-   require(target.locator('#hobby').input_value()=='','missing optional data should stay empty');require('暂缺资料已跳过' in text(assistant()),'not a simple skip workflow')
+   require(target.locator('#hobby').input_value()=='','missing optional data should stay empty');require('仍有未匹配项' in text(assistant()),'not a simple skip workflow')
    target.locator('#hobby').fill('SYNTHETIC USER HOBBY')
    with context.expect_page() as opened:click('我补完了，记住内容')
    learner=opened.value;expect(learner.locator('.item')).to_have_count(1,timeout=10000)

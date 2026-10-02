@@ -1,5 +1,6 @@
-import {profileReadiness} from '../extension/core/profile-readiness.mjs';
-import {logPreview,logBlob} from '../extension/core/log-export.mjs';
+import {profileReadiness,readinessText} from '../extension/core/profile-readiness.mjs';
+import {recordDirectory} from '../extension/core/record-model.mjs';
+import {logPreview,logBlob,selectLogExport} from '../extension/core/log-export.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -20,7 +21,7 @@ test('management UI uploads Word, edits draft, saves confirmed facts and prepare
  const oldParser=globalThis.DOMParser;globalThis.DOMParser=w.DOMParser;
  w.scrollTo=()=>{};w.confirm=()=>true;
  w.chrome={runtime:{sendMessage:async message=>{try{return {data:await h.workflow.request(message,h.sender)};}catch(e){return {error:e.message};}},getManifest:()=>({version:'0.9.0'})}};
- Object.assign(w,{profileReadiness,logPreview,logBlob,planExplanation,semanticLabel,reviewPage,mappingCandidates,parseResumeText,extractResumeFile,explainDiagnostic});
+ Object.assign(w,{acknowledgeUi:async()=>{},recordDirectory,readinessText,profileReadiness,logPreview,logBlob,selectLogExport,planExplanation,semanticLabel,reviewPage,mappingCandidates,parseResumeText,extractResumeFile,explainDiagnostic});
  const waitUntil=async condition=>{for(let i=0;i<80;i++){if(condition())return;await new Promise(r=>setTimeout(r,10));}throw Error(w.document.querySelector('#notice').textContent);};
  try{
   await w.eval('(async()=>{'+source+'})()');

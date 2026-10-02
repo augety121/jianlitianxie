@@ -1,5 +1,9 @@
+import {recordDirectory} from './core/record-model.mjs';
+import {readinessText} from './core/profile-readiness.mjs';
+import {acknowledgeUi} from './ui-ready.mjs';
+await acknowledgeUi();
 import {profileReadiness} from './core/profile-readiness.mjs';
-import {logPreview,logBlob} from './core/log-export.mjs';
+import {logPreview,logBlob,selectLogExport} from './core/log-export.mjs';
 import {explainDiagnostic} from './core/match-diagnostics.mjs';
 import {planExplanation} from './core/page-summary.mjs';
 import {semanticLabel} from './core/semantics.mjs';
@@ -19,7 +23,7 @@ function notice(text,error=false){$('notice').textContent=text;$('notice').datas
 async function send(action,data={}){const r=await chrome.runtime.sendMessage({type:'local-'+action,...data});if(!r)throw Error('扩展后台未响应，请重新打开。不要重复填写。');if(r.error)throw Error(r.error);return r.data;}
 function view(name){window.scrollTo({top:0,behavior:'instant'});document.querySelectorAll('[data-section]').forEach(n=>n.hidden=n.dataset.section!==name);document.querySelectorAll('[data-view]').forEach(n=>n.classList.toggle('active',n.dataset.view===name));}
 function controls(){
-  for(const id of ['activeResume','newResume','copyResume','renameResume','backupResumes','restoreResumes','saveSite'])if($(id))$(id).disabled=busy;
+  for(const id of ['activeResume','newResume','copyResume','renameResume','backupResumes','restoreResumes','restorePrevious','saveSite'])if($(id))$(id).disabled=busy;
 
   $('returnTarget').disabled=busy||!tabId;
   $('continueSaved').disabled=busy||!profile.facts.length;
@@ -34,7 +38,14 @@ function controls(){
   $('commitImport').disabled=busy||!preview||!importIds.size;
 }
 function clearPlan(){plan=null;selected.clear();$('entries').replaceChildren();$('review').hidden=true;$('groups').replaceChildren();controls();}
-function setProfile(p){profile=p;const health=profileReadiness(p,state.target);$('profileHealth').textContent=`教育 ${health.usable.education} 段 · 项目 ${health.usable.project} 段 · 工作/实习 ${health.usable.work} 段`+(health.needsRepair?` · ${health.repairableProjects} 段旧项目片段需整理后使用`:'。以上为可匹配的记录数，不代表原文已完整导入。');$('repairStored').textContent=health.needsRepair?'整理 '+health.repairableProjects+' 段已存项目':'检查已存资料';$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();controls();}
+function setProfile(p){profile=p;const health=profileReadiness(p,state.target);$('profileHealth').textContent=readinessText(health);$('repairStored').textContent=health.needsRepair?'整理 '+health.repairableRecords+' 段已有资料':'检查已存资料';$('savedCount').textContent=p.facts.filter(f=>f.confirmed&&!f.conflict).length;$('firstRun').hidden=p.facts.length>0;renderFacts();renderRecordSelection();controls();}
+function renderRecordSelection(){
+ const area=$('recordSelection');if(!area)return;area.replaceChildren();
+ const groups=recordDirectory(profile.facts),chosen=new Set(profile.selectedRecordIds||groups.map(g=>g.recordId));
+ for(const group of groups){const label=el('label'),input=el('input');input.type='checkbox';input.dataset.recordId=group.recordId;input.checked=chosen.has(group.recordId);label.append(input,el('span',group.entity+' · '+group.domain+' · '+(group.usable?'可填写':'待整理')));area.append(label);}
+}
+click('saveRecordSelection',()=>task(async()=>{const ids=[...$('recordSelection').querySelectorAll('input:checked')].map(e=>e.dataset.recordId);setProfile(await send('record-selection',{ids,revision:profile.revision,reviewed:true}));clearPlan();notice('已保存本次记录选择；未选记录仍留在资料库，页面已有内容不会删除。');}));
+
 async function refresh(){
   const g=generation,next=await send('state',{tabId});if(disposed||g!==generation)return;
   state=next;setProfile(next.profile);renderLibrary();$('importOld').hidden=!next.encryptedExists;$('modeWarning').hidden=next.mode!=='mcp';$('autoLogs').checked=next.logging;
@@ -65,6 +76,12 @@ click('backupResumes',()=>task(async()=>{
   const a=document.createElement('a');a.href=url;a.download='resume-versions-local-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }));
 click('restoreResumes',()=>{if(!busy)$('libraryBackupFile').click();});
+click('restorePrevious',()=>task(async()=>{
+ const envelope=await send('library-previous');if(!envelope)throw Error('尚无修改前的版本快照');
+ const book=envelope.library,description=book.resumes.map(r=>`${r.name}：${r.profile.facts.length} 条`).join('\n');
+ if(!confirm('恢复最近一次修改前的全部版本：\n'+description+'\n当前版本会保留为新的恢复快照。确认恢复？'))return;
+ await libraryChange('library-restore',{envelope,reviewed:true,acceptPlaintext:true});
+}));
 $('libraryBackupFile').onchange=()=>task(async()=>{
   const input=$('libraryBackupFile'),file=input.files?.[0];input.value='';
   if(!file)return;if(file.size>3*1024*1024)throw Error('版本备份最多3MB');
@@ -132,7 +149,12 @@ function showImport(data){
   $('importNextMessage').textContent=duplicates===data.items.length?'这份文件的条目已保存，无需再次导入。':'核对导入结果后保存，再去填写申请页。';
   const present=new Set(data.items.map(x=>semanticLabel(x.fact.label,x.fact.section)));
   $('importHealth').textContent='本次文件基础字段检查：'+['姓名','手机号码','邮箱'].map(k=>k+' '+(present.has(semanticLabel(k))?'已识别':'未识别（请检查格式或未归类区域）')).join(' · ');
-  for(const x of data.items)renderImportRow(x);
+  if(data.repair){
+   const groups=new Map();for(const x of data.items){const key=x.fact.section+'|'+x.fact.entity+'|'+x.fact.origin;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(x);}
+   for(const rows of groups.values()){const group=el('section',null,'repair-group');group.append(el('h3',rows[0].fact.section));const input=el('input');input.value=rows[0].fact.entity;input.setAttribute('aria-label','本组所属经历');input.maxLength=200;input.oninput=()=>{for(const row of rows)row.fact.entity=input.value;};group.append(input);for(const row of rows)renderImportRow(row,group,true);$('importRows').append(group);}
+  }else for(const x of data.items)renderImportRow(x);
+  $('continueAfterImport').checked=data.repair===true&&!!tabId;
+  $('commitImport').textContent=$('continueAfterImport').checked?'保存并继续填写':'保存到本地并扫描';
   data.skipped=[...data.skipped,...resumeNotes];
   if(data.warnings?.length)$('importHealth').textContent+='。'+data.warnings.join('；');
   $('skippedBox').hidden=!data.skipped.length;$('skippedCount').textContent=`${data.skipped.length} 行没有自动归类，展开核对`;$('skippedText').textContent=data.skipped.map(x=>`第${x.line}行：${x.text}`).join('\n');$('importPreview').hidden=false;view('profile');controls();notice('已识别的资料如下。勾选项保存后立即可用于匹配；未知段落不会猜测。');
@@ -183,7 +205,7 @@ async function previewLogs(){
 }
 async function downloadLogs(){
  if(!exportData||exportController)return;const controller=new AbortController();exportController=controller;$('downloadLogs').disabled=true;
- try{const blob=await logBlob(exportData,{signal:controller.signal,onProgress:(done,total)=>{$('downloadLogs').textContent=`正在生成 ${done}/${total} · 可关闭取消`;}});
+ try{const blob=await logBlob(selectLogExport(exportData,{scope:$('logScope').value,environment:$('logEnvironment').value}),{signal:controller.signal,onProgress:(done,total)=>{$('downloadLogs').textContent=`正在生成 ${done}/${total} · 可关闭取消`;}});
   if(disposed||controller.signal.aborted)return;const url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download='local-fill-diagnostics.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);$('logDialog').close();notice(`日志已生成（${Math.ceil(blob.size/1024)} KB），请查看浏览器下载列表。`);
  }catch(e){if(e.name!=='AbortError')notice('导出失败：'+e.message,true);}
  finally{if(exportController===controller)exportController=null;$('downloadLogs').disabled=false;$('downloadLogs').textContent='确认导出 JSON';}
@@ -194,12 +216,13 @@ document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{$(b.dataset.
 click('returnTarget',()=>task(async()=>{await send('return',{tabId});notice('已回到申请页。点击右下角“填写简历”即可扫描并填写；复杂项可返回工作台。');}));
 click('showFill',()=>task(async()=>{view('fill');if(profile.facts.length)await scan();}));
 click('continueSaved',()=>task(async()=>{view('fill');await scan();}));
-async function prepareRepair(){clearImport();clearPlan();const d=await send('repair-preview');if(!d.items.length){view('profile');notice('没有可自动整理的已存项目片段。未曾导入的教育/项目需从原简历重新提取，原有资料保持不变。');return;}showImport(d);notice('已从本地旧资料整理出项目正文预览。原句保留、原条目不删除，核对后保存即可用于填写。');}
+async function prepareRepair(){clearImport();clearPlan();const d=await send('repair-preview');d.repair=true;if(!d.items.length){view('profile');notice('没有可直接整理的旧资料。可从已填页面建立记录；真正缺少的资料再从原稿补充。');return;}showImport(d);notice('已按经历整理已有资料。核对整组内容后保存并继续；旧片段保留，差异默认不选。');}
 click('repairStored',()=>task(prepareRepair));
 click('goImport',()=>view('profile'));click('goLogs',async()=>{view('logs');await refreshLogs();});
 click('scan',()=>task(scan));click('previewImport',()=>task(async()=>{clearImport();const g=++fileGeneration,d=await send('preview',{text:$('importText').value});if(g===fileGeneration&&!disposed)showImport(d);}));
 $('importFile').onchange=()=>readFile().catch(e=>notice(e.message,true));
-click('commitImport',()=>task(async()=>{const g=++generation,p=await send('commit',{previewId:preview.id,ids:[...importIds],edits:preview.items.filter(x=>importIds.has(x.fact.id)).map(x=>({id:x.fact.id,label:x.fact.label,section:x.fact.section,entity:x.fact.entity,value:x.fact.value})),reviewed:true,acceptPlaintext:true});if(disposed||g!==generation)return;setProfile(p);clearImport();$('importText').value='';$('importFile').value='';$('fileState').textContent='资料已保存；不会在关闭时删除。';clearPlan();if(tabId&&state.mode!=='mcp'){view('fill');await scan();}else notice('已经保存到本浏览器。到申请页点击插件图标即可扫描。');}));
+$('continueAfterImport').onchange=()=>{$('commitImport').textContent=$('continueAfterImport').checked?'保存并继续填写':'保存到本地并扫描';};
+click('commitImport',()=>task(async()=>{const resume=$('continueAfterImport').checked,g=++generation,p=await send('commit',{previewId:preview.id,ids:[...importIds],edits:preview.items.filter(x=>importIds.has(x.fact.id)).map(x=>({id:x.fact.id,label:x.fact.label,section:x.fact.section,entity:x.fact.entity,value:x.fact.value})),reviewed:true,acceptPlaintext:true});if(disposed||g!==generation)return;setProfile(p);clearImport();$('importText').value='';$('importFile').value='';$('fileState').textContent='资料已保存；不会在关闭时删除。';clearPlan();if(resume&&tabId&&state.mode!=='mcp'){await send('return',{tabId});const r=await send('resume-task',{tabId,reviewed:true});notice('已继续原申请页任务，本次回读通过 '+(r.counts?.verified||0)+' 项；剩余情况见页内摘要。');}else if(tabId&&state.mode!=='mcp'){view('fill');await scan();}else notice('已经保存到本浏览器。到申请页点击插件图标即可扫描。');}));
 click('fillSelected',()=>task(async()=>{const g=++generation,requested=plan,labels=new Map(plan.entries.map((e,i)=>[e.id,`#${i+1} ${e.label}`]));try{const r=await send('fill',{planId:plan.id,ids:[...selected],reviewed:true});if(disposed||g!==generation)return;$('result').hidden=false;$('result').textContent=`回读通过 ${r.results.filter(x=>x.status==='verified').length} 项；未提交。\n`+timingText({apply:r.performance})+'\n'+r.results.filter(x=>x.status!=='verified').map(x=>`${labels.get(x.id)}：${statusNames[x.status]}`).join('\n');notice('填写结束。问题日志已自动记录；请核对网页内容后自行提交。');}catch(e){notice(e.message+'；未自动重试，请先检查网页已填内容。',true);}finally{if(g===generation)clearPlan();}}));
 click('stop',async()=>{generation++;fileGeneration++;const r=await send('stop');clearPlan();clearImport();notice(r.state==='stopping'?'已请求停止，等待执行结束。已填入的内容不会撤销。':'已停止；本地资料仍然保留。');});
 click('switchLocal',()=>task(async()=>{await send('switch');await refresh();notice('已切回本地模式。不需要模型、配对或口令。');}));
@@ -235,12 +258,12 @@ function addVariant(v={name:'短版',value:''}){
 function renderVariants(f){$('editVariants').replaceChildren();for(const v of f.textVariants||[])addVariant(v);}
 click('addVariant',()=>addVariant());
 
-function renderImportRow(x){
+function renderImportRow(x,parent=$('importRows'),grouped=false){
  const row=el('div',null,'import-row'),c=el('input');c.type='checkbox';c.checked=importIds.has(x.fact.id);c.disabled=x.status==='conflict';c.setAttribute('aria-label','导入 '+x.fact.label);c.onchange=()=>{c.checked?importIds.add(x.fact.id):importIds.delete(x.fact.id);controls();};
- const title=el('div');for(const [key,label] of [['label','字段名称'],['section','分区'],['entity','所属经历']]){const input=el('input');input.value=x.fact[key]||'';input.maxLength=200;input.setAttribute('aria-label',label);input.placeholder=label;input.oninput=()=>{x.fact[key]=input.value;c.checked=true;importIds.add(x.fact.id);controls();};title.append(input);}
+ const title=el('div');for(const [key,label] of [['label','字段名称'],['section','分区'],['entity','所属经历']]){if(grouped&&key==='entity')continue;const input=el('input');input.value=x.fact[key]||'';input.maxLength=200;input.setAttribute('aria-label',label);input.placeholder=label;input.oninput=()=>{x.fact[key]=input.value;c.checked=true;importIds.add(x.fact.id);controls();};title.append(input);}
  const body=el('div',null,'import-value'),value=el('textarea');value.value=x.fact.value;value.rows=4;value.maxLength=10000;value.setAttribute('aria-label','解析内容');value.oninput=()=>{x.fact.value=value.value;c.checked=true;importIds.add(x.fact.id);controls();};body.append(value);
  for(const v of x.fact.textVariants||[]){const d=el('details');d.append(el('summary',v.name+' · '+v.value.length+'字'),el('p',v.value));body.append(d);}
- row.append(c,title,body,el('span',{new:'新增',change:'更新待核对',duplicate:'相同可跳过',conflict:'冲突'}[x.status]));$('importRows').append(row);
+ row.append(c,title,body,el('span',{new:'新增',change:'更新待核对',duplicate:'相同可跳过',conflict:'冲突'}[x.status]));parent.append(row);
 }
 click('addDraftFact',()=>{if(!preview||busy)return;const x={fact:{id:crypto.randomUUID(),label:'',section:'基本信息',entity:'',value:'',source:'本人补充',confirmed:false},status:'new'};preview.items.push(x);importIds.add(x.fact.id);renderImportRow(x);controls();});
 

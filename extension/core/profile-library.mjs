@@ -4,6 +4,7 @@ import {secret} from './workspace-policy.mjs';
 export const PROFILE_LIBRARY_KEY = 'resumeLocalLibraryV1';
 export const LEGACY_PROFILE_KEY = 'resumePlainLocalV1';
 export const LEGACY_BACKUP_KEY = 'resumePlainBeforeLibraryV1';
+export const BEFORE_CHANGE_KEY='resumeLocalBeforeChangeV1';
 const MAX_VERSIONS = 12, MAX_BYTES = 3 * 1024 * 1024;
 const copy = value => structuredClone(value);
 const versionId = () => 'resume-' + crypto.randomUUID();
@@ -83,6 +84,7 @@ export class ProfileLibrary {
     const active = candidate.resumes.find(x=>x.id===candidate.activeId);
     const projection = {version:1, storage:'plain-local', accepted:true, profile:{...copy(active.profile),revision:candidate.revision}};
     const update = {[PROFILE_LIBRARY_KEY]:candidate, [LEGACY_PROFILE_KEY]:projection};
+    if(this.accepted)update[BEFORE_CHANGE_KEY]=this.backup();
     if (!this.persisted && this.legacy && !(await this.storage.get(LEGACY_BACKUP_KEY))[LEGACY_BACKUP_KEY]) update[LEGACY_BACKUP_KEY] = copy(this.legacy);
     // All public state changes only after storage success. The library key, not the
     // compatibility projection, is authoritative if a process dies during delivery.
@@ -92,10 +94,15 @@ export class ProfileLibrary {
   }
   async save(facts, revision, consent) {
     if (!this.accepted && consent !== true) throw Error('请确认免口令资料将在本浏览器未加密保存');
-    const p = profileOf({facts, revision:revision+1});
+    const p = profileOf({...this.current(),facts, revision:revision+1});
     const next = copy(this.book);
     next.resumes.find(x=>x.id===next.activeId).profile=p;
     return this.commit(next, revision);
+  }
+  async selectRecords(ids, revision) {
+    const current=this.current(),next=copy(this.book);
+    next.resumes.find(x=>x.id===next.activeId).profile=profileOf({...current,selectedRecordIds:ids});
+    return this.commit(next,revision);
   }
   async create(name, duplicate, revision, consent) {
     if (!this.accepted && consent !== true) throw Error('请确认新简历将在本浏览器未加密保存');

@@ -148,8 +148,8 @@ try:
   def boundaries():
    for key in ['password','familyName','familyPhone','referral','health','listening']:require(target.locator('#'+key).input_value()=='','unprovided or restricted value written: '+key)
    require(target.locator('#person').input_value()=='保留原姓名','existing value overwritten');require(target.evaluate('submissions')==0,'submitted');require(target.locator('#attachment').input_value()=='','attachment uploaded')
-   click('填写简历');wait_text('已有内容与简历不同');require(target.evaluate('added')=={'education':1,'project':1},'repeat click added duplicate cards')
-   stored=worker.evaluate('()=>chrome.storage.local.get("resumeLocalReceiptsV1")')['resumeLocalReceiptsV1']
+   again=manager.evaluate('tab=>chrome.runtime.sendMessage({type:"local-resume-task",tabId:tab,reviewed:true})',tab);require(not again.get('error'),str(again));wait_text('已有内容与简历不同');require(target.evaluate('added')=={'education':1,'project':1},'repeat click added duplicate cards')
+   stored=manager.evaluate('()=>chrome.runtime.sendMessage({type:"local-logs"})')['data']['records']
    events=[r for r in stored if r.get('stage')=='task'];require(any(r.get('outcome')=='partial' for r in events),'unresolved fields must report partial');require(not any(r.get('outcome')=='completed' for r in events),'unresolved fields incorrectly reported complete');require(any(r.get('outcome')=='no-eligible-fields' for r in events),'zero-plan terminal missing')
    exported=json.dumps(stored,ensure_ascii=False)
    for value in ['refactor@example.invalid','示例甲大学','虚构项目乙','保留原姓名',base]:require(value not in exported,'log leaked private value')

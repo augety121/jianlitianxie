@@ -1,3 +1,5 @@
+import {acknowledgeUi} from './ui-ready.mjs';
+await acknowledgeUi();
 // No network or page DOM access. Only a short-lived worker ticket can read candidates.
 const $=id=>document.getElementById(id),ticket=new URL(location.href).searchParams.get('ticket');
 let data=null,selected='',busy=false,done=false;

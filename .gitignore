@@ -2,6 +2,7 @@ legacy/
 node_modules/
 dist/
 private/
+resume-versions-local-backup*.json
 *.local.*
 *.pdf
 *.docx

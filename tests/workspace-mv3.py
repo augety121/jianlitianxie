@@ -5,7 +5,7 @@ real toolbar clicks, store packaging or real recruiting sites. No policy bypass.
 Requires full Playwright Chromium, not chromium-headless-shell.
 """
 from pathlib import Path
-import contextlib,http.server,json,os,shutil,subprocess,tempfile,threading,time,sys
+import contextlib,http.server,json,os,shutil,subprocess,tempfile,threading,time,sys,socket
 from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'test-results/workspace-mv3.json';OUT.parent.mkdir(exist_ok=True)
 NAME='MV3_SYNTHETIC_PERSON';EMAIL='mv3@example.invalid';results=[];report={};bridge=None;context=None
@@ -27,6 +27,13 @@ def step(name,fn):
 try:
   with tempfile.TemporaryDirectory(prefix='resume-mv3-') as directory,sync_playwright() as p:
     root=Path(directory);ext=root/'extension';shutil.copytree(ROOT/'extension',ext)
+    # Bind an independent port for this fixture; never stop/reuse the user's bridge.
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1',0));bridge_port=probe.getsockname()[1]
+    for source in ext.rglob('*'):
+        if source.suffix in ['.js','.mjs','.json','.html']:
+            content=source.read_text(encoding='utf-8')
+            if '127.0.0.1:19327' in content:source.write_text(content.replace('127.0.0.1:19327','127.0.0.1:'+str(bridge_port)),encoding='utf-8')
     m=json.loads((ext/'manifest.json').read_text());m['host_permissions'].append(base+'/*');m['permissions'].append('webNavigation');(ext/'manifest.json').write_text(json.dumps(m))
     opts={'headless':True,'args':[f'--disable-extensions-except={ext}',f'--load-extension={ext}','--no-sandbox'],'viewport':{'width':1200,'height':850}}
     if os.environ.get('CHROMIUM_PATH'):opts['executable_path']=os.environ['CHROMIUM_PATH']
@@ -64,7 +71,7 @@ try:
     step('real-same-origin-frame-enumeration-read-only-child-plan',children)
     def start_mcp():
         global bridge
-        data=root/'private';data.mkdir();bridge=subprocess.Popen(['node','bridge/server.mjs'],cwd=ROOT,env={**os.environ,'RESUME_DATA_DIR':str(data),'RESUME_BRIDGE_PORT':'19327'},stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        data=root/'private';data.mkdir();bridge=subprocess.Popen(['node','bridge/server.mjs'],cwd=ROOT,env={**os.environ,'RESUME_DATA_DIR':str(data),'RESUME_BRIDGE_PORT':str(bridge_port)},stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         # The process must bind its own temporary instance; never use an existing service.
         deadline=time.monotonic()+8;ready=threading.Event();logs=[]
         def consume():

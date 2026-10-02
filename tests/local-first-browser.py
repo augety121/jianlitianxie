@@ -42,7 +42,10 @@ with sync_playwright() as p:
    page.locator('#fillSelected').click();expect(page.locator('#result')).to_contain_text('回读通过 2');require(rpc({'type':'inspect'})['data']['values']=={'name':'LOCAL_UI_PERSON','email':'local@example.invalid'},'incorrect selected destinations')
   step('single-reviewed-fill-click-only-selected-fields',fill)
   def logs():
-   page.locator('[data-view=logs]').click();expect(page.locator('.log')).to_have_count(4)
+   page.locator('[data-view=logs]').click();expect(page.locator('.log').first).to_be_visible()
+   receipts=rpc({'type':'local-logs'})['data']['records']
+   require({'preview','import','scan','fill'}.issubset({r['stage'] for r in receipts}),'missing actual operation stages')
+   require(any(f['status']=='verified' for r in receipts for f in r['fields']),'missing actual verified receipt')
    page.locator('#exportLogs').click();expect(page.locator('#logDialog')).to_be_visible();expect(page.locator('#downloadLogs')).to_be_enabled();data=page.locator('#logPreview').text_content()
    for private in ['LOCAL_UI_PERSON','local@example.invalid','https://']:require(private not in data,'private value in logs')
    require('verified' in data,'no real completion receipt');page.locator('[data-close=logDialog]').click()

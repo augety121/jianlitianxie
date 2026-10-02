@@ -105,6 +105,16 @@ with sync_playwright() as pw:
   page.set_viewport_size({'width':390,'height':844});require(page.evaluate("testRoot.querySelector('.panel').getBoundingClientRect().width<=innerWidth"),'overflow')
   page.screenshot(path=str(ROOT/'test-results/oneclick-mobile.png'))
  case('one-trusted-click-scans-and-fills-without-management-tab',basic,oneclick)
+ def imported_after_empty(page):
+  load_assistant(page)
+  page.evaluate('''()=>{const original=chrome.runtime.sendMessage;window.testHasProfile=false;chrome.runtime.sendMessage=m=>m.type==='page-local-status'?Promise.resolve({data:{hasProfile:testHasProfile,mode:'local'}}):original(m);__resumeLocalAssistant.open();}''')
+  page.wait_for_function("testRoot.querySelector('.primary').textContent==='建立本地资料'")
+  page.evaluate('testHasProfile=true;__resumeLocalAssistant.open()')
+  page.wait_for_function("testRoot.querySelector('.primary').textContent==='填写简历'")
+  click(page,'填写简历');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
+  require(page.locator('#name').input_value()=='SYNTHETIC CANDIDATE','newly imported profile did not fill')
+  require(page.evaluate("!testCalls.includes('page-local-manage')"),'stale empty-library action reopened manager')
+ case('importing-profile-resets-stale-empty-library-primary-action',basic,imported_after_empty)
  def synthetic(page):
   load_assistant(page);page.evaluate("testRoot.querySelector('.primary').click()");page.wait_for_timeout(100);require(page.locator('#name').input_value()=='','synthetic click wrote');require(page.evaluate("!testCalls.includes('page-local-scan')&&!testCalls.includes('page-local-run')"),'synthetic click started a task')
  case('script-generated-click-cannot-start-oneclick-fill',basic,synthetic)
@@ -142,11 +152,11 @@ with sync_playwright() as pw:
     if(!m.allowAdd)return {data:{outcome:'no-eligible-fields',counts:{},expansion:{enabled:false,decision:'consent-required',inventory:[{domain:'education',present:true,current:0,target:2,code:'needs-add'}]}}};
     return original(m);
   }}''')
-  click(page,'填写简历');page.wait_for_function("[...testRoot.querySelectorAll('button')].some(b=>!b.hidden&&!b.disabled&&b.textContent==='允许添加经历并继续填写')")
+  click(page,'填写简历');page.wait_for_function("[...testRoot.querySelectorAll('button')].some(b=>!b.hidden&&!b.disabled&&b.textContent==='按简历顺序添加经历并填写')")
   require(page.locator('#name').input_value()=='','consent prompt wrote fields')
-  page.evaluate("[...testRoot.querySelectorAll('button')].find(b=>b.textContent==='允许添加经历并继续填写').click()")
+  page.evaluate("[...testRoot.querySelectorAll('button')].find(b=>b.textContent==='按简历顺序添加经历并填写').click()")
   page.wait_for_timeout(50);require(page.evaluate('addDecisions.length===1'),'synthetic click enabled addition')
-  click(page,'允许添加经历并继续填写');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
+  click(page,'按简历顺序添加经历并填写');page.wait_for_function("testRoot.querySelector('.message').textContent.includes('回读通过 2')")
   require(page.evaluate('JSON.stringify(addDecisions)===JSON.stringify([false,true])'),'wrong permission ordering')
   require(page.locator('#name').input_value()=='SYNTHETIC CANDIDATE','allowed continuation did not run')
  case('in-page-add-consent-is-visible-and-requires-one-real-user-choice',basic,add_consent_ui)

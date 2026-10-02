@@ -51,7 +51,7 @@ test('family and emergency contexts reject unscoped and personal name/phone fact
 });
 test('repair concatenates only explicit source fragments, never invents identity, dates or abilities',()=>{
  const originals=[fact('项目背景','第一段。'),fact('方案设计','第二段。'),fact('其他字段','不混入正文')];const before=JSON.stringify(originals);
- const p=proposeStoredRepair({facts:originals});assert.equal(p.facts.length,1);assert.equal(p.facts[0].label,'项目描述');
+ const p=proposeStoredRepair({facts:originals});assert.equal(p.facts.length,2);assert.equal(p.facts[0].label,'项目描述');
  assert.equal(p.facts[0].value,'项目背景：第一段。\n方案设计：第二段。');assert.equal(p.facts[0].confirmed,false);assert.equal(JSON.stringify(originals),before);
 });
 test('repair is idempotent after confirmation, rejects contradictory fragments and separates origins',()=>{
@@ -60,14 +60,14 @@ test('repair is idempotent after confirmation, rejects contradictory fragments a
  assert.equal(proposeStoredRepair({facts:[...originals,...recovered]}).facts.length,0);
  assert.equal(proposeStoredRepair({facts:[...originals,fact('项目背景','相反内容')]}).facts.length,0);
  const scoped=proposeStoredRepair({facts:[fact('项目背景','甲','项目经历','A',{origin:'https://a.invalid'}),fact('方案设计','乙','项目经历','A',{origin:'https://b.invalid'})]}).facts;
- assert.equal(scoped.length,2);assert(scoped.every(f=>f.origin));assert(scoped.every(f=>!(f.value.includes('甲')&&f.value.includes('乙'))));
+ assert.equal(scoped.length,4);assert(scoped.every(f=>f.origin));assert(scoped.every(f=>!(f.value.includes('甲')&&f.value.includes('乙'))));
 });
 test('trusted repair preview does not write; review commit retains original facts and stale preview is rejected',async()=>{
  const h=localHarness();await h.attach();await importText(h,'## 科研与项目经历\n### 测试甲\n项目背景：保留第一段\n方案设计：保留第二段');
  const initial=JSON.stringify(h.local.data.resumePlainLocalV1),p=await h.api('repair-preview');
- assert.equal(JSON.stringify(h.local.data.resumePlainLocalV1),initial);assert.equal(p.items.length,1);
+ assert.equal(JSON.stringify(h.local.data.resumePlainLocalV1),initial);assert.equal(p.items.length,2);
  await assert.rejects(h.api('commit',{previewId:p.id,ids:[p.items[0].fact.id],reviewed:false}),/核对/);
- const saved=await h.api('commit',{previewId:p.id,ids:[p.items[0].fact.id],reviewed:true});assert.equal(saved.facts.length,3);assert.equal(saved.revision,2);
+ const saved=await h.api('commit',{previewId:p.id,ids:p.items.map(i=>i.fact.id),reviewed:true});assert.equal(saved.facts.length,4);assert.equal(saved.revision,2);
  assert.equal((await h.api('repair-preview')).items.length,0);
  await assert.rejects(h.api('commit',{previewId:p.id,ids:[p.items[0].fact.id],reviewed:true}),/失效/);
 });

@@ -44,7 +44,7 @@ try:
    manager.locator('#importFile').set_input_files({'name':'synthetic-source-shaped.docx','mimeType':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','buffer':data.getvalue()})
    expect(manager.locator('#importPreview')).to_be_visible()
    require(manager.locator('.import-row').count()>40,'resume structure was not extracted')
-   manager.locator('#commitImport').click();expect(manager.locator('#profileHealth')).to_contain_text('教育 2 段 · 项目 5 段 · 工作/实习 1 段')
+   manager.locator('#commitImport').click();expect(manager.locator('#profileHealth')).to_contain_text('教育 2 段 · 实习/工作 1 段 · 项目 5 段')
    # Multiple blank records cannot be assigned by source order before user review.
    expect(manager.locator('#counts')).to_contain_text('缺项')
    require(manager.locator('.field input:checked').count()<len(expected),'ambiguous records were silently selected')
@@ -99,10 +99,10 @@ try:
    source='## 科研与项目经历\n### 旧片段演示记录\n项目背景：这段旧资料已经保存在本机。\n方案设计：只整理原句，核对后保存。'
    manager.locator('#importFile').set_input_files({'name':'stored-fragments.md','mimeType':'text/markdown','buffer':source.encode()})
    expect(manager.locator('.import-row')).to_have_count(2);manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text(str(oldcount+2))
-   manager.locator('#repairStored').click();expect(manager.locator('.import-row')).to_have_count(1)
+   manager.locator('#repairStored').click();expect(manager.locator('.import-row')).to_have_count(2)
    expect(manager.locator('#savedCount')).to_have_text(str(oldcount+2))
    manager.screenshot(path=str(ROOT/'test-results/recovery-preview-installed.png'),full_page=False)
-   manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text(str(oldcount+3))
+   manager.locator('#commitImport').click();expect(manager.locator('#savedCount')).to_have_text(str(oldcount+4))
    require(all(target.locator('#'+key).input_value()==value for key,value in expected.items()),'repair modified website without fill action')
   step('stored-fragment-repair-preview-requires-review-preserves-originals-and-does-not-write-page',repair)
 except Exception as e:

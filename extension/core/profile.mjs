@@ -40,6 +40,9 @@ export function normalizeFact(raw) {
     entity: text(raw.entity, '经历标识', 200).trim(),
     source: text(raw.source, '来源', 500, true),
     aliases: strings(raw.aliases, '字段别名'),
+    ...(raw.recordId?{recordId:text(raw.recordId,'记录ID',128,true)}:{}),
+    ...(raw.sourceRefs?{sourceRefs:strings(raw.sourceRefs,'来源条目')} : {}),
+    ...(['page-observed','file-imported','stored-repair','manual'].includes(raw.sourceKind)?{sourceKind:raw.sourceKind}:{}),
     entityAliases: strings(raw.entityAliases, '经历别名'), origin,
     ...(raw.textVariants!==undefined?{textVariants:normalizeTextVariants(raw.textVariants,raw.label)}:{}),
     confirmed: raw.confirmed === true, conflict: raw.conflict === true
@@ -57,6 +60,10 @@ export function normalizeProfile(raw) {
     facts
   };
   if(raw.presets!==undefined)result.presets=normalizePresets(raw.presets,facts);
+  if(raw.selectedRecordIds!==undefined){
+    if(!Array.isArray(raw.selectedRecordIds)||raw.selectedRecordIds.length>1000)throw Error('记录选择格式无效');
+    result.selectedRecordIds=[...new Set(raw.selectedRecordIds.map(v=>text(v,'所选记录ID',128,true)))];
+  }
   if (encoder.encode(JSON.stringify(result)).length > MAX_PROFILE_BYTES) throw Error('资料总大小超过2MB');
   return result;
 }

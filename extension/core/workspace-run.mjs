@@ -23,7 +23,7 @@ export class WorkspaceRun {
         facts, reviewExisting:request.reviewExisting===true, expiresAt: this.clock() + PLAN_TTL, frames: observed.frames.map(f => ({...f, mappings: {}, entityBindings: {},corrections:{}}))};
       if(request.autoBindEmpty===true)for(const frame of this.job.frames){
         if(frame.frameId!==0)continue;
-        const resolved=resolveRecords(frame.snapshot,facts);
+        const resolved=resolveRecords(frame.snapshot,facts,{},request.orderedEmptyDomains||[]);
         frame.entityBindings=resolved.bindings;frame.bindingMethods=resolved.methods;
       }
       return this.preview();

@@ -18,6 +18,20 @@ function harness(html){
 }
 const field=(label,control='<input>')=>`<div class="field_abc"><div class="label_abc">${label}</div><div class="input_abc">${control}</div></div>`;
 const moka=value=>`<div class="item-test"><div class="sd-Tooltip-container-test"><div class="sd-Dropdown-container-test"><label class="sd-Input-container-test sd-Select-container-test"><span class="sd-Input-display-value-test">${value}</span><input><span class="sd-Input-addon-test">⌄</span></label></div></div></div>`;
+
+test('real Moka error label does not replace name and required marker stays in its own field',async()=>{
+ const h=harness(`<form><div class="apply-field-test"><div class="title-test"><span>姓名</span><span class="required-asterisk-test"></span></div><div class="ctrl-test"><div class="sd-Tooltip-container-test"><label class="sd-Input-container-test sd-Input-error-test"><input placeholder="姓名" autocomplete="new_password"><div class="sd-Input-message-test sd-Input-error-test"><span></span>必填项未填写</div></label></div><div><div class="describe-test"></div></div></div></div><div class="apply-field-test"><div class="title-test">邮箱</div><input placeholder="邮箱"></div></form>`);
+ try{const s=await h.engine.scan();assert.equal(s.fields[0].label,'姓名');assert.equal(s.fields[0].required,true);assert.equal(s.fields[1].required,false);
+ const p=makePlan(s,{facts:[{id:'name',label:'姓名',value:'虚构测试人',confirmed:true}]});assert.equal(p.entries[0].status,'ready');
+ h.w.document.querySelector('[class*=sd-Input-message]').remove();const next=await h.engine.scan();assert.equal(next.fields[0].label,'姓名');assert.equal(next.fields[0].required,true);
+ }finally{h.close();}
+});
+
+test('Moka ongoing checkbox text outside its immediate wrapper retains start year and month',async()=>{
+ const range=field('起止时间','<div><span>'+moka('2026')+moka('5')+'</span><div><input type="checkbox" checked><svg></svg></div><span>至今</span></div>');
+ const h=harness(`<form><section><h3>项目经验</h3><div>${range}${field('项目名称','<input value="虚构项目">')}</div></section></form>`);
+ try{const s=await h.engine.scan();assert.deepEqual(Array.from(s.fields.slice(0,2),f=>[f.dateLabel,f.datePart]),[['开始时间','year'],['开始时间','month']]);}finally{h.close();}
+});
 test('Moka uncommitted search is blank while a disabled menu option does not disable the field',async()=>{
  const h=harness(`<form>${field('专业',moka(''))}</form>`);
  try{const input=h.w.document.querySelector('input');input.value='仅输入搜索';const menu=h.w.document.createElement('div');menu.className='sd-Dropdown-dropdown-test';menu.innerHTML='<div class="sd-Menu-content-item-test" aria-disabled="true">无结果</div>';input.closest('[class*="sd-Dropdown-container"]').append(menu);
@@ -163,4 +177,22 @@ test('a unique exact long project duty binds a partially filled card, shared dut
  let r=resolveRecords(snapshot,facts);assert.equal(Object.values(r.bindings)[0],'甲');assert.equal(Object.values(r.methods)[0],'exact-content');
  facts.find(f=>f.id==='乙项目职责').value=description;r=resolveRecords(snapshot,facts);assert.equal(Object.keys(r.bindings).length,0);
  snapshot.fields[0].value='不存在的名字';r=resolveRecords(snapshot,facts);assert.equal(Object.keys(r.bindings).length,0);
+});
+
+
+test('real-shaped Moka month picker preserves month precision and refuses a zero year',async()=>{
+ for(const initial of [1999,0]){
+  const h=harness(`<form><div class="apply-field-test"><div class="title-test">出生日期 (年龄)</div><div class="sd-Dropdown-container-test"><label class="day_info"><input readonly placeholder="出生日期 (25岁)"><span class="sd-picker-addon-test"></span></label><div hidden class="sd-panal-menu-wrapper-test"><span class="sd-Icon-icondoubleLeft-test"></span><span class="sd-basic-selector-year-test">${initial}年</span><span class="sd-Icon-icondoubleRight-test"></span>${['一','二','三','四','五','六','七','八','九','十','十一','十二'].map(x=>`<div class="sd-basic-year-item-test">${x}月</div>`).join('')}</div></div></div></form>`);
+  try{const d=h.w.document,input=d.querySelector('input'),panel=d.querySelector('[class*=sd-panal-menu]'),year=d.querySelector('[class*=selector-year]');let clicks=0;
+   // Distinct synthetic geometry preserves actual hit-testing for menu controls.
+   const nodes=[input,...panel.children];for(const [i,node] of nodes.entries())node.getBoundingClientRect=()=>({left:10,top:10+i*24,right:210,bottom:30+i*24,width:200,height:20});
+   d.elementFromPoint=(_x,y)=>nodes.find(n=>{const r=n.getBoundingClientRect();return y>=r.top&&y<=r.bottom;});
+   input.onclick=()=>{panel.hidden=false;};d.querySelector('[class*=doubleRight]').onclick=()=>{year.textContent=(parseInt(year.textContent)+1)+'年';clicks++;};
+   [...d.querySelectorAll('[class*=basic-year-item]')].forEach((n,i)=>n.onclick=()=>{input.value=parseInt(year.textContent)+'-'+String(i+1).padStart(2,'0')+' (25岁)';input.placeholder='';panel.hidden=true;});
+   const snapshot=await h.engine.scan();assert.equal(snapshot.fields[0].datePrecision,'month');
+   const p=makePlan(snapshot,{facts:[{id:'birth',label:'出生日期',value:'2000-09',confirmed:true}]});assert.equal(p.entries[0].status,'ready');const r=await h.engine.apply(p);
+   if(initial){assert.equal(r.results[0].status,'verified',JSON.stringify(r));assert.equal(clicks,1);assert.equal((await h.engine.scan()).fields[0].value,'2000-09');}
+   else{assert.equal(input.value,'');assert.equal(clicks,0);assert.equal(r.results[0].attempted,false);}
+  }finally{h.close();}
+ }
 });

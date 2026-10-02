@@ -1,6 +1,11 @@
 // Receipts arriving here have already passed the background's privacy allowlist.
 // Never render a complete report in the DOM. Keep the file complete and yield
 // between bounded records so close/cancel and other page input remain responsive.
+export function selectLogExport(report,{scope='recent',environment='unspecified'}={}){
+ const lastTask=[...(report.records||[])].reverse().find(r=>r.taskId)?.taskId;
+ return {...report,exportScope:scope==='task'?'task':'recent',environment:{value:['Edge','IAB','other'].includes(environment)?environment:'unspecified',source:'user-declared'},
+  records:scope==='task'?(report.records||[]).filter(r=>lastTask?r.taskId===lastTask:r.operationId===(report.records||[]).at(-1)?.operationId):(report.records||[])};
+}
 export function logPreview(report) {
  const records=report.records||[], counts={};
  for(const r of records)for(const f of r.fields||[])counts[f.code||f.status]=(counts[f.code||f.status]||0)+1;

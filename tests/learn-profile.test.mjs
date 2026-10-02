@@ -8,6 +8,19 @@ import {semanticLabel} from '../extension/core/semantics.mjs';
 const origin='https://jobs.example.invalid';
 const fact=(id,label,value,entity='',section='基本信息')=>({id,label,value,entity,section,source:'synthetic fixture',confirmed:true});
 const cap=(fields)=>({fields:fields.map((f,i)=>({id:'f'+i,type:'text',section:'基本信息',...f}))});
+
+test('an observed language card proposes one shared record and saves all four fields together',()=>{
+ const preview=learningPreview(cap(['语言类型','掌握程度','听说','读写'].map((label,i)=>({label,value:i?'良好':'英语',section:'语言能力',groupId:'lang-card'}))),{facts:[]},origin);
+ assert(preview.items.every(i=>i.recordRequired&&i.entity==='英语'));
+ const result=mergeLearned({facts:[]},preview.items,preview.items.map(i=>({id:i.id,entity:i.entity})),origin);
+ assert.equal(new Set(result.facts.map(f=>f.recordId)).size,1);assert.equal(new Set(result.facts.map(f=>f.entity)).size,1);
+ assert.throws(()=>mergeLearned({facts:[]},preview.items,[{id:'f0',entity:'英语'},{id:'f1',entity:'日语'}],origin),/同一记录/);
+});
+
+test('same school different degree cards remain separate drafts',()=>{
+ const rows=['本科','硕士'].flatMap((degree,i)=>[{label:'学校',value:'虚构学校',section:'教育经历',groupId:'card'+i},{label:'学历',value:degree,section:'教育经历',groupId:'card'+i}]);
+ const preview=learningPreview(cap(rows),{facts:[]},origin);assert.equal(new Set(preview.items.map(i=>i.entity)).size,2);
+});
 test('learning suggests only selected-context fields and never treats them as already saved',()=>{
  const profile={facts:[fact('e','邮箱','a@example.invalid')]};
  const preview=learningPreview(cap([{label:'爱好',value:'SYNTHETIC READING'},{label:'邮箱',value:'a@example.invalid'},{label:'密码',value:'NEVER_CAPTURE'},{label:'验证码',value:'NEVER_CAPTURE'}]),profile,origin);
@@ -53,7 +66,7 @@ async function setup(){
  return {h,page,popup,pageSender,setValue(v){current[0].value=v;}};
 }
 test('real controller opens a trusted review, saves only after confirmation, and logs no personal values',async()=>{
- const s=await setup();await s.page('scan');const response=await s.page('learn');assert(response.opened);assert(!JSON.stringify(response).includes('SYNTHETIC LEARNED'));
+ const s=await setup();await s.page('scan');const response=await s.page('learn');assert(response.requested);assert.equal(response.opened,false);assert(!JSON.stringify(response).includes('SYNTHETIC LEARNED'));
  await assert.rejects(s.popup('read',{},s.pageSender),/只有保存/);await assert.rejects(s.popup('read',{}, {tab:{id:92}}),/不属于/);
  const preview=await s.popup('read');assert.equal(preview.items[0].value,'SYNTHETIC LEARNED');
  await assert.rejects(s.popup('save',{selections:[{id:'h'}]}),/核对/);
@@ -66,7 +79,7 @@ test('real controller opens a trusted review, saves only after confirmation, and
 });
 
 test('explicit read-existing action scans and opens review without requiring a prior fill or writing the page',async()=>{
- const s=await setup();const result=await s.page('learn-existing');assert(result.opened);
+ const s=await setup();const result=await s.page('learn-existing');assert(result.requested);
  assert.equal((await s.h.api('state')).profile.facts.length,2);assert.deepEqual(s.h.values,{});
  const preview=await s.popup('read');assert.equal(preview.items[0].value,'SYNTHETIC LEARNED');
  await s.popup('save',{selections:[{id:'h'}],reviewed:true});assert.equal((await s.h.api('state')).profile.facts.length,3);
@@ -86,7 +99,7 @@ test('worker recreation preserves only bounded learning context, not captured va
  const metadata=s.h.session.data.resumeManualLearningContextV1;
  assert(metadata?.snapshotId);assert(!JSON.stringify(metadata).includes(origin));assert(!JSON.stringify(metadata).includes('SYNTHETIC'));
  s.h.restart();
- assert.equal((await s.page('learn')).opened,true);
+ assert.equal((await s.page('learn')).requested,true);
  const p=await s.popup('read');assert.equal(p.items[0].value,'SYNTHETIC LEARNED');
  await s.popup('save',{selections:[{id:'h'}],reviewed:true});
  assert.equal((await s.h.api('state')).profile.facts.length,3);

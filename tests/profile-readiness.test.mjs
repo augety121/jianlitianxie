@@ -4,15 +4,32 @@ import {profileReadiness,readinessText} from '../extension/core/profile-readines
 import {proposeStoredRepair} from '../extension/core/stored-profile-repair.mjs';
 import {localHarness,importText} from './helpers/local-harness.mjs';
 const fact=(label,value,entity='记录甲',extra={})=>({id:crypto.randomUUID(),label,value,entity,section:'项目经历',confirmed:true,...extra});
+
+test('engineering fragments and explicit periods recover complete review drafts without losing source text',()=>{
+ const rows=[fact('前后端实现','原句一'),fact('工程验证','原句二'),fact('项目时间','2024-02至2025-03；项目状态：已结项。'),fact('未知说明','待分类原文')];
+ const repair=proposeStoredRepair({facts:rows});const byLabel=Object.fromEntries(repair.facts.map(f=>[f.label,f]));
+ assert.equal(byLabel['项目描述'].value,'前后端实现：原句一\n工程验证：原句二');assert.equal(byLabel['项目名称'].value,'记录甲');
+ assert.equal(byLabel['开始月份'].value,'2024-02');assert.equal(byLabel['结束月份'].value,'2025-03');assert(repair.facts.every(f=>!f.confirmed));
+ assert.equal(new Set(repair.facts.map(f=>f.recordId)).size,1);assert.equal(rows[3].value,'待分类原文');
+ assert.equal(proposeStoredRepair({facts:[...rows,...repair.facts.map(f=>({...f,confirmed:true}))]}).facts.length,0);
+ for(const value of ['2025至2026','2025-13至2026-02','2026-02至2025-01','2025-01至今'])assert.equal(proposeStoredRepair({facts:[fact('项目时间',value)]}).facts.length,0);
+});
+
+test('legacy language facts become one usable record only after reviewed grouping',()=>{
+ const profile={facts:['语言类型','掌握程度','听说','读写'].map((label,i)=>fact(label,i?'良好':'英语','',{section:'语言能力',source:'fixture'}))};
+ assert.equal(profileReadiness(profile).usable.language,0);assert.equal(profileReadiness(profile).repairable.language,1);
+ const repair=proposeStoredRepair(profile);assert.equal(repair.facts.length,4);assert(repair.facts.every(f=>!f.confirmed&&f.entity==='英语'));
+ const saved={facts:[...profile.facts,...repair.facts.map(f=>({...f,confirmed:true}))]};assert.equal(profileReadiness(saved).usable.language,1);assert.equal(proposeStoredRepair(saved).facts.length,0);
+});
 test('old fragments are repairable but never presented as already fillable records',()=>{
  const p={facts:[fact('项目背景','虚构段落甲'),fact('方案设计','虚构段落乙')]};
- const r=profileReadiness(p);assert.equal(r.usable.project,0);assert.equal(r.repairableProjects,1);assert.equal(r.repairableFields,1);
+ const r=profileReadiness(p);assert.equal(r.usable.project,0);assert.equal(r.repairableProjects,1);assert.equal(r.repairableFields,2);
  assert.equal(r.hasUsableRecords,false);assert.equal(r.needsRepair,true);
  assert(!JSON.stringify(r).includes('虚构')&&!JSON.stringify(r).includes('记录甲'));assert(readinessText(r).includes('核对保存'));
 });
 test('reviewed recovery becomes usable, is idempotent, and never invents names or dates',()=>{
  const p={facts:[fact('**项目背景**','段落甲'),fact('方案设计：','段落乙')]};const old=JSON.stringify(p);
- const repaired=proposeStoredRepair(p);assert.equal(repaired.facts.length,1);assert.equal(repaired.facts[0].label,'项目描述');
+ const repaired=proposeStoredRepair(p);assert.equal(repaired.facts.length,2);assert.equal(repaired.facts[0].label,'项目描述');
  assert.equal(repaired.facts[0].confirmed,false);assert.equal(profileReadiness({...p,facts:[...p.facts,...repaired.facts]}).usable.project,0);
  const saved={facts:[...p.facts,...repaired.facts.map(f=>({...f,confirmed:true}))]};
  assert.equal(profileReadiness(saved).usable.project,1);assert.equal(profileReadiness(saved).needsRepair,false);assert.equal(JSON.stringify(p),old);
@@ -35,5 +52,5 @@ test('webpage cannot read repair candidates; trusted preview leaves source recor
  await assert.rejects(h.api('repair-preview',{},sender),/只有/);
  const state=await h.api('state',{tabId:11});assert.equal(state.readiness.needsRepair,true);assert.equal(state.readiness.usable.project,0);
  const before=JSON.stringify(h.local.data.resumeLocalLibraryV1),preview=await h.api('repair-preview');
- assert.equal(JSON.stringify(h.local.data.resumeLocalLibraryV1),before);assert.equal(preview.items.length,1);
+ assert.equal(JSON.stringify(h.local.data.resumeLocalLibraryV1),before);assert.equal(preview.items.length,2);
 });
