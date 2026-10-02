@@ -14,7 +14,7 @@ function profileState(value){if(!value)return undefined;return {accepted:value.a
 function runtimeIdentity(r={}){
   return {extensionId:/^[a-p]{32}$/.test(r.extensionId||'')?r.extensionId:'unknown',
     mode:['local','mcp'].includes(r.mode)?r.mode:'unknown',adapterVersion:/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(r.adapterVersion||'')?r.adapterVersion:'unknown',
-    buildId:['moka-20261002.1','recovery-20261002.1'].includes(r.buildId)?r.buildId:'unknown'};
+    buildId:['moka-20261002.1','recovery-20261002.1','import-review-20261002.2'].includes(r.buildId)?r.buildId:'unknown'};
 }
 function safe(r) {
   if(!r || !stages.has(r.stage))return null;
