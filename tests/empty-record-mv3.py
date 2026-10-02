@@ -111,7 +111,7 @@ try:
    additions=[r.get('addition',{}) for r in data['records'] if r['stage']=='add']
    require(any(a.get('decision')=='consent-required' and not a['enabled'] for a in additions),'missing consent-stage diagnosis')
    require(any(a.get('added')==8 and a.get('attempted')==8 for a in additions),'missing actual additions')
-   require(any(a.get('decision')=='checked' and all(x['code']=='satisfied' for x in a['inventory']) for a in additions),'missing repeat no-op diagnosis')
+   require(any(a.get('decision')=='checked' and all(x['code']=='satisfied' for x in a['inventory'] if x['target']) for a in additions),'missing repeat no-op diagnosis')
    serialized=json.dumps(data,ensure_ascii=False)
    for value in ['SYNTHETIC PERSON','empty@example.invalid','测试大学甲','虚构项目4',BASE]:require(value not in serialized,'private content in logs')
    prefs=worker.evaluate('()=>chrome.storage.local.get("resumeSiteAccessV1")')['resumeSiteAccessV1']

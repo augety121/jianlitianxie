@@ -4,6 +4,13 @@
  */
 export function createComponentCatalog({visible}) {
   const contracts = [
+    {id:'moka',root:'[class*="sd-Dropdown-container"]:has([class*="sd-Select-container"])',
+      trigger:['[class*="sd-Select-container"]'],
+      display:['[class*="sd-Input-display-value"]','[class*="sd-Select-value"]'],
+      placeholder:'[class*="sd-Input-placeholder"],[class*="sd-Select-placeholder"]',
+      menu:'[class*="sd-Dropdown-dropdown"],[class*="sd-Select-menu"],[class*="sd-panal-menu-wrapper"]',
+      option:'[class*="sd-Menu-content-item"],[role=option]',
+      disabled:'[aria-disabled=true],[class*="sd-Select-disabled"],[class*="sd-Select-containerDisabled"]'},
     {id:'phoenix', root:'.phoenix-select',
       trigger:['.phoenix-select__content','.phoenix-select__input'],
       display:['.phoenix-select__tipEle','.phoenix-select-selection-selected-value','.phoenix-select__content [data-selected-label]'],
@@ -90,7 +97,7 @@ export function createComponentCatalog({visible}) {
   }
   function disabled(node) {
     const item=identify(node);return !!(item&&(item.root.getAttribute('aria-disabled')==='true'||
-      item.contract.disabled&&item.root.matches(item.contract.disabled)));
+      item.contract.disabled&&(item.root.matches(item.contract.disabled)||[...item.root.querySelectorAll(item.contract.disabled)].some(n=>!n.closest(menuSelector)))));
   }
   function multiple(node) {
     const item=identify(node);return !!(item&&(item.root.getAttribute('aria-multiselectable')==='true'||

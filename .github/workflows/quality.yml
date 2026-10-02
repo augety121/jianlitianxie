@@ -178,11 +178,21 @@ jobs:
         run: python tests/readiness-mv3.py
       - name: Component strategy browser regressions
         run: python tests/component-adapters-browser.py
+      - name: Sandbox-enabled Moka DOM and installed extension workflows
+        run: |
+          python tests/moka-browser.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/moka-mv3.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: empty-record-windows-verification
           path: |
+            test-results/moka-browser.json
+            test-results/moka-synthetic.png
+            test-results/moka-mv3.json
+            test-results/moka-installed.png
             test-results/readiness-mv3.json
             test-results/readiness-repair-entry.png
             test-results/readiness-review.png

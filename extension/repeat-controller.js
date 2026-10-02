@@ -3,13 +3,13 @@
  * Ambiguous site structure is reported, never guessed from a company logo.
  */
 (() => {
-  const VERSION='0.13.0';
+  const VERSION='0.14.0';
   if(globalThis.__resumeRepeatController?.version===VERSION)return;
   globalThis.__resumeRepeatController?.cancel();
   let busy=false,epoch=0;
   const selector='fieldset,[data-resume-record],.resume-record';
   const controls='input:not([type=hidden]):not([type=file]):not([type=button]):not([type=submit]),textarea,select,[role=combobox]';
-  const domains={education:/^(教育背景|教育经历)$/,work:/^(实习经历|工作经历)$/,project:/^(项目经历|项目经验|科研与项目经历)$/};
+  const domains={education:/^(教育背景|教育经历)$/,work:/^(实习经历|工作经历)$/,project:/^(项目经历|项目经验|科研与项目经历)$/,language:/^语言能力$/,award:/^(获奖经历|奖励荣誉)$/};
   const text=e=>(e?.textContent||'').replace(/[\s*：:]+/g,'').trim();
   const visible=e=>e?.isConnected&&!!e.getClientRects().length&&!e.closest('[hidden],[inert],[aria-hidden=true]')&&
     getComputedStyle(e).visibility==='visible'&&getComputedStyle(e).opacity!=='0';
@@ -18,6 +18,11 @@
   const rows=ref=>(globalThis.__resumeFillEngine?.repeatMarkers?globalThis.__resumeFillEngine.repeatMarkers(ref.section,ref.domain):
     [...ref.section.querySelectorAll(selector)].filter(r=>visible(r)&&r.querySelector(controls)&&!r.parentElement?.closest(selector))).filter(e=>inRegion(e,ref));
   const inputs=ref=>[...ref.section.querySelectorAll(controls)].filter(e=>visible(e)&&inRegion(e,ref));
+  const selected=e=>{
+    const root=e.closest('[class*="sd-Select-container"],.ant-select,.el-select,.ivu-select,.Select,.phoenix-select,.atsx-select');
+    if(!root)return e.matches('[role=combobox]')?e.textContent:null;
+    return [...root.querySelectorAll('[class*="sd-Input-display-value"],.ant-select-selection-item,.ant-select-selection-selected-value,.el-select__selected-item,.ivu-select-selected-value,.Select-value-label,.phoenix-select__tipEle,.atsx-select-selection-item')].filter(visible).map(n=>n.textContent).join('\n');
+  };
   function targetsValid(targets){
     if(!targets||typeof targets!=='object'||Object.keys(targets).some(k=>!Object.hasOwn(domains,k))||
       Object.values(targets).some(n=>!Number.isSafeInteger(n)||n<0||n>20))throw Error('经历新增数量无效');
@@ -33,7 +38,7 @@
     const addButtons=section=>{
       const possible=[...section.querySelectorAll('button,[role=button],a,span,div')].filter(b=>visible(b)&&
         !b.closest('nav,aside,[role=navigation],#resume-local-assistant')&&!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&
-        /^(?:\+|＋)?(?:添加|新增)(?:教育背景|教育经历|工作经历|实习经历|项目经历|项目经验)?$/.test(text(b))&&
+        /^(?:\+|＋|[\uE000-\uF8FF])?(?:添加|新增)(?:教育背景|教育经历|工作经历|实习经历|项目经历|项目经验|语言能力|获奖经历)?$/.test(text(b))&&
         !b.querySelector(controls)&&(!b.matches('button')||b.type==='button')&&
         (!b.matches('a[href]')||b.getAttribute('href')==='#')&&
         (b.matches('button,[role=button],a')||b.tabIndex>=0||getComputedStyle(b).cursor==='pointer'));
@@ -58,7 +63,7 @@
       // Two real sections or competing buttons remain ambiguous; never select the first.
       if(competing||resolved.length>1){const code='section-ambiguous';issues.push({domain,code});inventory.push({domain,present:true,current:0,target,code});continue;}
       const selected=resolved[0];
-      if(!selected){const code='add-control-unrecognized';issues.push({domain,code});inventory.push({domain,present:true,current:0,target,code});continue;}
+      if(!selected){const code=target?'add-control-unrecognized':'no-source-records';issues.push({domain,code});inventory.push({domain,present:true,current:0,target,code});continue;}
       const {heading}=selected;
       const {section,button}=selected,current=rows(selected).length;
       if(!current&&inputs(selected).length){const code='record-container-unrecognized';issues.push({domain,code});inventory.push({domain,present:hs.length>0,current:0,target,code});continue;}
@@ -113,12 +118,12 @@
             if(!alive()||!ref.section.contains(ref.button)||text(ref.heading)!==ref.headingText)throw Error('新增目标已经变化');
             const beforeRows=rows(ref),before=beforeRows.length;
             if(before!==ref.current+step)throw Error('页面记录数已变化');
-            const old=inputs(ref).map(el=>({el,value:el.value,checked:el.checked,text:el.matches('[role=combobox]')?el.textContent:null}));
+            const old=inputs(ref).map(el=>({el,value:el.value,checked:el.checked,selected:selected(el)}));
             hit(ref.button);if(!alive())throw Error('新增已取消');
             attempted++;ref.button.click();
             try{await waitGrowth(ref,before,alive);}catch(error){added+=Math.max(0,rows(ref).length-before);throw error;}
             added++;
-            if(rows(ref).filter(r=>!beforeRows.includes(r)).length!==1||old.some(x=>!x.el.isConnected||x.el.value!==x.value||x.el.checked!==x.checked||x.text!==null&&x.el.textContent!==x.text))throw Error('新增改变了已有记录，停止并核对');
+            if(rows(ref).filter(r=>!beforeRows.includes(r)).length!==1||old.some(x=>!x.el.isConnected||x.el.value!==x.value||x.el.checked!==x.checked||selected(x.el)!==x.selected))throw Error('新增改变了已有记录，停止并核对');
           }
         }
       }

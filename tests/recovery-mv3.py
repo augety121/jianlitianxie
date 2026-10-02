@@ -87,7 +87,8 @@ try:
    r=manager.evaluate('()=>chrome.runtime.sendMessage({type:"local-logs"})');require(not r.get('error'),str(r));data=r.get('data',{})
    fills=[r for r in data.get('records',[]) if r.get('stage')=='fill'];require(fills,'fill receipt absent')
    require(fills[-1]['version']==manifest['version'] and fills[-1]['engineVersion']==manifest['version'],'version lost after consuming plan')
-   require(sum(f['status']=='verified' for f in fills[-1]['fields'])==len(expected),'receipt count disagrees with DOM')
+   task_id=fills[-1]['taskId'];task_fills=[r for r in fills if r.get('taskId')==task_id]
+   require(sum(f['status']=='verified' for r in task_fills for f in r['fields'])==len(expected),'task receipt count disagrees with independently verified DOM')
    serialized=json.dumps(data,ensure_ascii=False)
    for value in ['recovery@example.invalid','示例学院甲','虚构技术有限公司','PRIVATE_SENTINEL',base]:require(value not in serialized,'private values in logs')
    require(not [u for u in network if u.startswith('http') and not u.startswith(base+'/')],'non-local networking')

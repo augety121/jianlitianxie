@@ -41,8 +41,9 @@ with sync_playwright() as pw:
   except Exception as error:
    cases.append({'name':name,'passed':False,'error':str(error)[:2200]});print('FAIL',name,str(error),flush=True)
   finally:page.close()
- for kind in ['phoenix','ant','ant-legacy','element','ivu','react','atsx']:
-  case(kind,search=kind in ['ant','atsx'])
+ for kind in ['moka','phoenix','ant','ant-legacy','element','ivu','react','atsx']:
+  case(kind,search=kind in ['moka','ant','atsx'])
+ case('moka',existing=True)
  case('phoenix',existing=True)
  case('element',existing=True)
  browser_version=browser.version;browser.close()
